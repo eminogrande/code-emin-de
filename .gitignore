@@ -1,0 +1,7 @@
+.env
+.ssh/
+node_modules/
+workspace/
+!workspace/.gitkeep
+*.sqlite*
+.DS_Store

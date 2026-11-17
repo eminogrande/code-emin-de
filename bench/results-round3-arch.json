@@ -1,0 +1,116 @@
+{
+  "optmem": {
+    "promptSetupChars": 2067,
+    "promptSetupApproxTokens": 517,
+    "seededMemories": 48,
+    "napMergesRequired": 46,
+    "wakeBlockedWhenUncompressed": false,
+    "writeMs": 3099.5,
+    "rawDumpApproxTokens": 794,
+    "wake16ApproxTokens": 259,
+    "wakeTokenSavingsPct": 67.4,
+    "wakePreservedCriticalRulesInTree": true,
+    "wakeLatencyMs": 34.44,
+    "recallLatencyMs": 32.87,
+    "recallExactHits": "2/2"
+  },
+  "gates": {
+    "deterministicGate": {
+      "noGate": {
+        "withGate": false,
+        "pass": true,
+        "blockedDestructive": false,
+        "yieldContinuations": 0,
+        "wallSec": 18.82,
+        "tokens": 14948,
+        "costUsd": 0.0021
+      },
+      "gated": {
+        "withGate": true,
+        "pass": true,
+        "blockedDestructive": true,
+        "yieldContinuations": 1,
+        "wallSec": 13.83,
+        "tokens": 16651,
+        "costUsd": 0.0012
+      }
+    },
+    "system1JevTriage": {
+      "accuracy": "6/6",
+      "batchWallMs": 895,
+      "avgLatencyMs": 795,
+      "totalCostUsd": 0.00011,
+      "costPerDecisionUsd": 0.000018,
+      "calls": [
+        {
+          "scenario": "nginx-scanner-noise",
+          "expected": "stay_silent",
+          "picked": "stay_silent",
+          "correct": true,
+          "confidence": 1,
+          "latencyMs": 540,
+          "tokens": 480,
+          "costUsd": 0.000018144
+        },
+        {
+          "scenario": "sqlite-disk-full-500",
+          "expected": "page_immediately",
+          "picked": "page_immediately",
+          "correct": true,
+          "confidence": 1,
+          "latencyMs": 874,
+          "tokens": 486,
+          "costUsd": 0.000018354
+        },
+        {
+          "scenario": "vip-support-refund-email",
+          "expected": "draft_only",
+          "picked": "draft_only",
+          "correct": true,
+          "confidence": 1,
+          "latencyMs": 871,
+          "tokens": 476,
+          "costUsd": 0.000018018
+        },
+        {
+          "scenario": "unrelated-3-task-user-prompt",
+          "expected": "fanout_parallel",
+          "picked": "fanout_parallel",
+          "correct": true,
+          "confidence": 1,
+          "latencyMs": 894,
+          "tokens": 490,
+          "costUsd": 0.00001848
+        },
+        {
+          "scenario": "single-coupled-refactor",
+          "expected": "single_agent",
+          "picked": "single_agent",
+          "correct": true,
+          "confidence": 1,
+          "latencyMs": 732,
+          "tokens": 489,
+          "costUsd": 0.00001848
+        },
+        {
+          "scenario": "followup-question-on-current-diff",
+          "expected": "side_chat_readonly",
+          "picked": "side_chat_readonly",
+          "correct": true,
+          "confidence": 1,
+          "latencyMs": 860,
+          "tokens": 495,
+          "costUsd": 0.000018564
+        }
+      ]
+    }
+  },
+  "sigkill": {
+    "sigkillDeliveredMidTool": true,
+    "autoResumedWithoutResubmit": true,
+    "completedToken": "SURVIVED_SIGKILL_99",
+    "recoveryWallSec": 2.01,
+    "totalWallSec": 5.55,
+    "stdout": "RECOVERED_ENTRIES=5"
+  }
+}

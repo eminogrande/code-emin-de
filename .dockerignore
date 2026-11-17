@@ -1,0 +1,6 @@
+.git
+.env
+.ssh
+node_modules
+workspace
+*.sqlite*

@@ -1,0 +1,12 @@
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+PermitRootLogin no
+AllowUsers agent
+PermitUserEnvironment yes
+X11Forwarding no
+AllowTcpForwarding local
+AllowStreamLocalForwarding local
+PermitOpen 127.0.0.1:*
+PermitTunnel no
+GatewayPorts no

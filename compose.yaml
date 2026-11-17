@@ -1,0 +1,36 @@
+services:
+  swarm:
+    build: .
+    container_name: pi-durable-swarm
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:2222:22"
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - pi-home:/home/agent/.pi
+      - swarm-data:/home/agent/.pi-durable
+      - ./workspace:/workspace
+      - ./.ssh/authorized_keys:/etc/pi-ssh/authorized_keys:ro
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SYS_CHROOT
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+      - FOWNER
+      - AUDIT_WRITE
+    healthcheck:
+      test: ["CMD", "sh", "-c", "/usr/sbin/sshd -t && test -S /home/agent/.pi-durable/swarm.sock"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+
+volumes:
+  pi-home:
+  swarm-data:
