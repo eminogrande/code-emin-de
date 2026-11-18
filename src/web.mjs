@@ -373,8 +373,8 @@ async function syncHistory() {
 
 // Poll history only while no chat request is active; back off on errors; pause when hidden.
 const POLL_MS = 3000;
-let pollTimer = null;
-let backoff = POLL_MS;
+var pollTimer = null;
+var backoff = POLL_MS;
 
 function schedulePoll(ms) {
   clearTimeout(pollTimer);
