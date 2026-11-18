@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { startWebServer } from "../src/web.mjs";
 import { b64uDecode, b64uEncode, openPasskeyStore } from "../src/webauthn.mjs";
 
 function sha256(b) {
@@ -156,6 +158,112 @@ test("WebAuthn Passkey store: one-time enrollment, ES256 verify, replay & unauth
 
     store.close();
   } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("HTTP WebServer E2E: Passkey cookie -> /api/history + /api/chat over Unix socket", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "web-http-e2e-"));
+  const sockPath = join(dir, "mock-swarm.sock");
+  const authDbPath = join(dir, "auth.sqlite");
+
+  // Mock swarmd Unix socket returning exact daemon shapes (`{ status: 'done', text: '...' }`)
+  const mockDaemon = createServer((req, res) => {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    if (req.url?.startsWith("/transcript")) {
+      res.end(JSON.stringify({ conversationId: 1, entries: [{ id: 1, role: "assistant", text: "Ready." }] }));
+    } else if (req.url === "/chat") {
+      res.end(JSON.stringify({ route: "single_agent", conversationId: 1, status: "done", text: "Hello Emin." }));
+    } else {
+      res.end(JSON.stringify({ ok: true }));
+    }
+  });
+  await new Promise((r) => mockDaemon.listen(sockPath, r));
+
+  const web = await startWebServer({
+    port: 0,
+    host: "127.0.0.1",
+    sockPath,
+    authDbPath,
+    rpId: "localhost",
+    origin: "http://localhost",
+  });
+  const port = web.server.address().port;
+
+  try {
+    // 1. Unauthenticated /api/chat MUST return 401
+    const rUnauth = await fetch(`http://127.0.0.1:${port}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "hi" }),
+    });
+    assert.equal(rUnauth.status, 401);
+
+    // 2. Enroll passkey via HTTP & obtain session cookie
+    const { token } = web.auth.createEnrollToken("e2e-key");
+    const rOpt = await fetch(`http://127.0.0.1:${port}/auth/register/options`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    const regOpts = await rOpt.json();
+    const { publicKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+    const jwk = publicKey.export({ format: "jwk" });
+    const credId = Buffer.from("http-e2e-cred", "utf8");
+    const coseKey = cborMap([
+      [cborInt(1), cborInt(2)],
+      [cborInt(3), cborInt(-7)],
+      [cborInt(-1), cborInt(1)],
+      [cborInt(-2), cborBytes(b64uDecode(jwk.x))],
+      [cborInt(-3), cborBytes(b64uDecode(jwk.y))],
+    ]);
+    const rpHash = sha256(Buffer.from("localhost", "utf8"));
+    const signCount1 = Buffer.alloc(4);
+    signCount1.writeUInt32BE(1, 0);
+    const credLen = Buffer.alloc(2);
+    credLen.writeUInt16BE(credId.length, 0);
+    const authData = Buffer.concat([rpHash, Buffer.from([0x45]), signCount1, Buffer.alloc(16, 0), credLen, credId, coseKey]);
+    const attObj = cborMap([
+      [cborText("fmt"), cborText("none")],
+      [cborText("authData"), cborBytes(authData)],
+    ]);
+    const clientData = Buffer.from(
+      JSON.stringify({ type: "webauthn.create", challenge: regOpts.challenge, origin: "http://localhost" }),
+      "utf8",
+    );
+
+    const rVer = await fetch(`http://127.0.0.1:${port}/auth/register/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: b64uEncode(credId),
+        type: "public-key",
+        response: { clientDataJSON: b64uEncode(clientData), attestationObject: b64uEncode(attObj) },
+      }),
+    });
+    assert.equal(rVer.status, 200);
+    const cookie = rVer.headers.get("set-cookie").split(";")[0];
+
+    // 3. Authenticated /api/history MUST return HTTP 200 + entries
+    const rHist = await fetch(`http://127.0.0.1:${port}/api/history`, { headers: { Cookie: cookie } });
+    assert.equal(rHist.status, 200);
+    const histBody = await rHist.json();
+    assert.equal(histBody.entries[0].text, "Ready.");
+
+    // 4. Authenticated /api/chat MUST return HTTP 200 + text (NOT 'Invalid status code: done'!)
+    const rChat = await fetch(`http://127.0.0.1:${port}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ text: "hi" }),
+    });
+    assert.equal(rChat.status, 200);
+    const chatBody = await rChat.json();
+    assert.equal(chatBody.status, "done");
+    assert.equal(chatBody.text, "Hello Emin.");
+  } finally {
+    web.server.close();
+    web.auth.close();
+    mockDaemon.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });

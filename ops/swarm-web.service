@@ -1,0 +1,26 @@
+[Unit]
+Description=code.emin.de Minimal Solarized Passkey Web Gateway
+After=swarmd.service
+Requires=swarmd.service
+
+[Service]
+Type=simple
+User=swarm
+Group=swarm
+WorkingDirectory=/opt/pi-durable-swarm
+EnvironmentFile=/opt/pi-durable-swarm/.env
+Environment=HOME=/home/swarm
+Environment=SWARM_DATA_DIR=/home/swarm/.pi-durable
+Environment=SWARM_SOCK=/home/swarm/.pi-durable/swarm.sock
+Environment=SWARM_AUTH_DB=/home/swarm/.pi-durable/webauthn.sqlite
+Environment=WEBAUTHN_RP_ID=code.emin.de
+Environment=WEBAUTHN_ORIGIN=https://code.emin.de
+Environment=SWARM_WEB_PORT=3001
+ExecStart=/usr/bin/node --no-warnings /opt/pi-durable-swarm/src/web.mjs serve
+Restart=always
+RestartSec=1
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

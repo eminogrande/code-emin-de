@@ -1,0 +1,24 @@
+[Unit]
+Description=pi-durable-swarm Headless Daemon (Unix Socket)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=swarm
+Group=swarm
+WorkingDirectory=/opt/pi-durable-swarm/workspace
+EnvironmentFile=/opt/pi-durable-swarm/.env
+Environment=HOME=/home/swarm
+Environment=PI_CODING_AGENT_DIR=/home/swarm/.pi/agent
+Environment=SWARM_DATA_DIR=/home/swarm/.pi-durable
+Environment=SWARM_WORKSPACE=/opt/pi-durable-swarm/workspace
+Environment=SWARM_SOCK=/home/swarm/.pi-durable/swarm.sock
+ExecStart=/usr/bin/node --no-warnings /opt/pi-durable-swarm/src/cli.mjs serve
+Restart=always
+RestartSec=1
+NoNewPrivileges=false
+ProtectSystem=false
+
+[Install]
+WantedBy=multi-user.target

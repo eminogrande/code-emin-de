@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+REPO="/opt/pi-durable-swarm"
+
+check_all() {
+  for f in "$REPO"/src/*.mjs; do
+    node --no-warnings --check "$f"
+  done
+  su -s /bin/bash swarm -c "cd '$REPO' && node --no-warnings --test test/webauthn.test.mjs"
+}
+
+health_wait() {
+  for _ in $(seq 1 15); do
+    if [ -S /home/swarm/.pi-durable/swarm.sock ] && curl -fsS http://127.0.0.1:3001/healthz >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+case "${1:-}" in
+  check)
+    check_all
+    echo "CHECK_OK"
+    ;;
+  reload)
+    check_all
+    PREV_SHA=$(su -s /bin/bash swarm -c "cd '$REPO' && git rev-parse HEAD" 2>/dev/null || echo "")
+    systemctl restart swarmd.service swarm-web.service
+    if health_wait; then
+      echo "RELOADED_OK (${PREV_SHA:0:7})"
+    else
+      echo "HEALTHCHECK_FAILED — rolling back to previous commit" >&2
+      if [ -n "$PREV_SHA" ]; then
+        su -s /bin/bash swarm -c "cd '$REPO' && git reset --hard HEAD~1" || true
+        systemctl restart swarmd.service swarm-web.service
+      fi
+      exit 1
+    fi
+    ;;
+  reload-web)
+    check_all
+    systemctl restart swarm-web.service
+    health_wait
+    echo "RELOADED_WEB_OK"
+    ;;
+  pull)
+    su -s /bin/bash swarm -c "cd '$REPO' && git pull --ff-only origin main && npm ci --omit=dev --ignore-scripts --no-audit --no-fund"
+    "$0" reload
+    ;;
+  status)
+    systemctl --no-pager -l status swarmd.service swarm-web.service caddy.service | head -n 45
+    ;;
+  *)
+    echo "Usage: swarm-ctl {check|reload|reload-web|pull|status}" >&2
+    exit 1
+    ;;
+esac

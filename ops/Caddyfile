@@ -1,0 +1,28 @@
+{
+	servers {
+		timeouts {
+			read_body 15s
+			read_header 10s
+			idle 120s
+		}
+	}
+}
+
+code.emin.de {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+		-Server
+	}
+	request_body {
+		max_size 64KB
+	}
+	reverse_proxy 127.0.0.1:3001 {
+		header_up X-Real-IP {remote_host}
+		flush_interval -1
+	}
+}

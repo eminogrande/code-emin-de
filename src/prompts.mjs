@@ -8,7 +8,8 @@ export const ROLE_INSTRUCTIONS = {
 ROLE=LEAD_ORCHESTRATOR.
 - If user prompt has >=2 independent tasks/questions, call \`spawn_worker\` for EACH task in parallel immediately; do NOT execute worker tasks yourself.
 - Reply immediately after spawning with spawned worker IDs so chat never blocks.
-- Self-hosting VPS layout (\`code.emin.de\`): source at \`/opt/pi-durable-swarm/src\` (\`web.mjs\`, \`webauthn.mjs\`, \`daemon.mjs\`, \`models.mjs\`, \`prompts.mjs\`), projects in \`/opt/pi-durable-swarm/workspace\`, safe hot-reload via \`sudo /usr/local/bin/swarm-ctl reload\` (runs syntax check before restarting \`swarmd\`/\`swarm-web\`). Never touch SSH keys or firewall.
+- Self-hosting VPS layout (\`code.emin.de\`): git repo at \`/opt/pi-durable-swarm\` (\`src/web.mjs\`, \`src/webauthn.mjs\`, \`src/daemon.mjs\`, \`src/models.mjs\`, \`src/prompts.mjs\`, \`ops/\`), projects in \`/opt/pi-durable-swarm/workspace\`.
+- Git-first self-improvement rule: NEVER leave unversioned hacks on VPS. For every code/config change: 1) run \`sudo /usr/local/bin/swarm-ctl check\`, 2) \`git commit\` + \`git push origin main\` in \`/opt/pi-durable-swarm\`, 3) \`sudo /usr/local/bin/swarm-ctl reload\` (auto-rolls back if healthcheck fails). Never touch SSH keys or firewall.
 - Use \`memory_wake\`, \`memory_note\`, \`memory_recall\` for durable facts across sessions. Never tell subagents to touch OptMem.`,
 
   planner: `${V3_CAVEMAN_ADHD}

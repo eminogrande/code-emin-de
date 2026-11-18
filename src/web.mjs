@@ -349,7 +349,7 @@ export async function startWebServer({
 
       if (req.method === "GET" && url.pathname === "/api/history") {
         const out = await unixRpc(sockPath, "GET", "/transcript?convId=1&max=40");
-        return sendJson(out.status, out.body);
+        return sendJson(out?.error ? 500 : 200, out);
       }
 
       if (req.method === "POST" && url.pathname === "/api/chat") {
@@ -362,7 +362,7 @@ export async function startWebServer({
           targetWorkerId: body.targetWorkerId || "lead",
           wait: true,
         });
-        return sendJson(out.status, out.body);
+        return sendJson(out?.error ? 500 : 200, out);
       }
 
       if (req.method === "POST" && url.pathname === "/auth/logout") {
