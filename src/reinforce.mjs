@@ -61,6 +61,7 @@ export const EPISODE_1_MARKDOWN_MERMAID = {
   prompt:
     "ok do both so i see the mermaid, and i see code, and i see the markdown correctly, like in github in readmes etc.\n\n" +
     "Target repository: current workspace (`src/web.mjs` and any focused helper/test files under `src/` and `test/`). " +
+    "Installed npm packages (`marked`, `highlight.js`, `dompurify`, `jsdom`, `mermaid`) are ALREADY present in `./node_modules` (mounted read-only; do NOT run `npm install`, add imports in code directly). " +
     "Preserve existing Passkey WebAuthn & SSH bridge endpoints (`test/webauthn.test.mjs` must keep passing), sanitize rendered HTML against XSS (`javascript:`, `onerror`, `<script>`), " +
     "render GFM Markdown + syntax-highlighted code blocks with copy buttons + fenced `mermaid` diagrams safely, and write automated `node --test` tests proving Markdown, XSS sanitization, and Mermaid rendering.",
   verifyCmd: "for f in src/*.mjs; do node --no-warnings --check \"$f\"; done && node --no-warnings --test test/webauthn.test.mjs",
@@ -232,7 +233,7 @@ export async function callFrontierJudge({
       body: JSON.stringify({
         model: judgeModel,
         temperature: 0,
-        max_tokens: 1024,
+        max_tokens: 4096,
         messages: [
           { role: "system", content: `${JUDGE_SYSTEM_PROMPT}\n\nPersona (${personaName}): ${personaPrompt}` },
           { role: "user", content: buildJudgeUserPrompt({ blindLabel, issue, verifierSummary, patch }) },
@@ -568,7 +569,6 @@ export async function runCandidateInDocker({
 
     const innerScript = [
       `mkdir -p /tmp/agent-home`,
-      `ln -s /opt/host_node_modules /workspace/node_modules`,
       `node --no-warnings -e '
         import { readFile, writeFile } from "node:fs/promises";
         import { executeCandidateEpisode } from "/workspace/src/reinforce.mjs";
@@ -602,7 +602,7 @@ export async function runCandidateInDocker({
         "-v",
         `${sandboxRoot}:/sandbox`,
         "-v",
-        `${resolve(repoDir, "node_modules")}:/opt/host_node_modules:ro`,
+        `${resolve(repoDir, "node_modules")}:/workspace/node_modules:ro`,
         "--entrypoint",
         "/bin/bash",
         dockerImage,
