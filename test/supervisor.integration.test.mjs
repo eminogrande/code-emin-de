@@ -44,12 +44,6 @@ test("integration: real harness auto-continues a turn_limit worker, then notifie
   try {
     await daemon.chat("spawn one worker", { wait: true });
 
-    const resumed = await waitFor(async () => {
-      const s = await daemon.harness.snapshot((await import("@earendil-works/pi-durable")).SwarmDoc ?? null, undefined).catch(() => null);
-      return s;
-    }, 1000);
-    assert.ok(resumed !== null || true);
-
     const ok = await waitFor(async () => {
       const st = await daemon.status();
       return st.swarm.workers["w-t"]?.supervisor?.status === "done";
@@ -71,7 +65,7 @@ test("integration: real harness auto-continues a turn_limit worker, then notifie
     assert.match(resumeMsg.body, /turn_limit/);
   } finally {
     await daemon.close();
-    faux.unregister();
+    faux.unregister?.();
     await rm(root, { recursive: true, force: true });
   }
 });

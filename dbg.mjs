@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
-const src = readFileSync("/opt/pi-durable-swarm/src/web.mjs","utf8");
+const src = readFileSync("src/web.mjs","utf8");
 const cs = [...src.matchAll(/<script>\n([\s\S]*?)\n<\/script>/g)].pop()[1];
 const history=[{id:7,role:"user",text:"hi",html:"<p>hi</p>"},{id:8,role:"assistant",text:"yo",html:"<p>yo</p>"}];
 const dom=new JSDOM(`<!doctype html><body><div id="log"></div><div id="sshBar"><span id="sshDesc"></span><button id="sshApprove"></button><button id="sshDeny"></button></div><form id="f"><textarea id="q"></textarea></form></body>`,{runScripts:"outside-only",pretendToBeVisual:true});
@@ -9,8 +9,8 @@ w.fetch=async(u)=>({ok:true,status:200,json:async()=>String(u).startsWith("/api/
 w.eval(cs);
 await new Promise(r=>setTimeout(r,50));
 const log=w.document.getElementById("log");
-console.log("n1",log.children.length,[...log.children].map(n=>n.dataset.id));
-const first=log.children[0];
+log.children[0].mark=1;
+console.log("before mark",log.children[0].mark);
 await w.eval("syncHistory()");
-console.log("n2",log.children.length,[...log.children].map(n=>n.dataset.id));
-console.log("same",log.children[0].isSameNode(first));
+console.log("after mark",log.children[0].mark, log.children.length);
+console.log("rendered size", await w.eval("rendered.size"));
