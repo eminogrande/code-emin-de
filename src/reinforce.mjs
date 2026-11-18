@@ -56,14 +56,14 @@ export const DEFAULT_FRONTIER_JUDGES = ["claude-fable-5-2", "gpt-6.2-astra"];
 export const EPISODE_1_MARKDOWN_MERMAID = {
   id: "ep1-markdown-mermaid-ui",
   title: "GFM Markdown + Highlight + Copy Button + Safe Mermaid Rendering in Solarized Chat UI",
-  baseCommit: "5b2d6e5",
+  baseCommit: "849e970",
   baselineEndCommit: "082cb72",
   prompt:
     "ok do both so i see the mermaid, and i see code, and i see the markdown correctly, like in github in readmes etc.\n\n" +
-    "Target repository: current workspace (`src/web.mjs` and any focused helper/test files under `src/` and `test/`). " +
-    "Installed npm packages (`marked`, `highlight.js`, `dompurify`, `jsdom`, `mermaid`) are ALREADY present in `./node_modules` (mounted read-only; do NOT run `npm install`, add imports in code directly). " +
-    "Preserve existing Passkey WebAuthn & SSH bridge endpoints (`test/webauthn.test.mjs` must keep passing), sanitize rendered HTML against XSS (`javascript:`, `onerror`, `<script>`), " +
-    "render GFM Markdown + syntax-highlighted code blocks with copy buttons + fenced `mermaid` diagrams safely, and write automated `node --test` tests proving Markdown, XSS sanitization, and Mermaid rendering.",
+    "Target repository: current workspace (`src/web.mjs` and focused helper/test files under `src/` and `test/`). " +
+    "Installed npm packages (`marked`, `highlight.js`, `dompurify`, `jsdom`, `mermaid`) are ALREADY present in `./node_modules` (mounted read-only; do NOT run `npm install` or copy minified vendor bundles into `src/` — serve `mermaid.min.js` directly from `./node_modules/mermaid/dist/mermaid.min.js`). " +
+    "Preserve existing Passkey WebAuthn & SSH bridge endpoints (`test/webauthn.test.mjs` must keep passing), sanitize rendered HTML strictly with DOMPurify against XSS (`javascript:`, `data:text/html`, `onerror`, `<script>`), " +
+    "render GFM Markdown + syntax-highlighted code blocks with copy buttons + fenced `mermaid` diagrams safely in `src/web.mjs`, and write passing `node --test` unit tests in `test/` proving Markdown, XSS sanitization, and real Mermaid SVG rendering.",
   verifyCmd: "for f in src/*.mjs; do node --no-warnings --check \"$f\"; done && node --no-warnings --test test/webauthn.test.mjs",
   liveBaselineMetrics: {
     label: "live-baseline-session1 (kimi-k3.1-pro + deepseek-v4.1-flash-uncensored, pre-supervisor)",
@@ -95,20 +95,22 @@ export const DEFAULT_CANDIDATES = [
     reviewerModel: "glm-5.3",
     optmem: true,
     optmemSeedNotes: [
-      "src/web.mjs embeds client JS inside a template literal (`renderMinimalChat`): escape any backticks (`\\`...\\``) and `${}` inside inline `<script>`.",
-      "Keep Passkey WebAuthn + SSH bridge routes intact; verify with `node --no-warnings --test test/webauthn.test.mjs` plus focused markdown/mermaid tests.",
+      "Assign 1 single coder worker when changes touch `src/web.mjs` + markdown/mermaid helpers so two coders never overwrite `src/web.mjs`.",
+      "src/web.mjs embeds client JS inside a template literal (`renderMinimalChat`): escape backticks (`\\`...\\``) and `${}` inside inline `<script>`, or serve `/chat-client.js` as a separate static route.",
+      "Never vendor minified mermaid into `src/`; serve `./node_modules/mermaid/dist/mermaid.min.js` via a route and run Mermaid with `securityLevel: 'strict'`.",
     ],
     supervisor: { maxAutoResumes: 2, backoffMs: 1000, intervalMs: 1000 },
   },
   {
-    id: "cand-glm53-dsv4pro-optmem-on",
-    leadModel: "glm-5.3",
+    id: "cand-kimi-dsv4pro-optmem-on",
+    leadModel: "kimi-k3.1-pro",
     coderModel: "deepseek-v4-pro",
     reviewerModel: "glm-5.3",
     optmem: true,
     optmemSeedNotes: [
-      "src/web.mjs embeds client JS inside a template literal (`renderMinimalChat`): escape any backticks (`\\`...\\``) and `${}` inside inline `<script>`.",
-      "Keep Passkey WebAuthn + SSH bridge routes intact; verify with `node --no-warnings --test test/webauthn.test.mjs` plus focused markdown/mermaid tests.",
+      "Assign 1 single coder worker when changes touch `src/web.mjs` + markdown/mermaid helpers so two coders never overwrite `src/web.mjs`.",
+      "src/web.mjs embeds client JS inside a template literal (`renderMinimalChat`): escape backticks (`\\`...\\``) and `${}` inside inline `<script>`, or serve `/chat-client.js` as a separate static route.",
+      "Never vendor minified mermaid into `src/`; serve `./node_modules/mermaid/dist/mermaid.min.js` via a route and run Mermaid with `securityLevel: 'strict'`.",
     ],
     supervisor: { maxAutoResumes: 2, backoffMs: 1000, intervalMs: 1000 },
   },
@@ -119,8 +121,9 @@ export const DEFAULT_CANDIDATES = [
     reviewerModel: "deepseek-v4-pro",
     optmem: true,
     optmemSeedNotes: [
-      "src/web.mjs embeds client JS inside a template literal (`renderMinimalChat`): escape any backticks (`\\`...\\``) and `${}` inside inline `<script>`.",
-      "Keep Passkey WebAuthn + SSH bridge routes intact; verify with `node --no-warnings --test test/webauthn.test.mjs` plus focused markdown/mermaid tests.",
+      "Assign 1 single coder worker when changes touch `src/web.mjs` + markdown/mermaid helpers so two coders never overwrite `src/web.mjs`.",
+      "src/web.mjs embeds client JS inside a template literal (`renderMinimalChat`): escape backticks (`\\`...\\``) and `${}` inside inline `<script>`, or serve `/chat-client.js` as a separate static route.",
+      "Never vendor minified mermaid into `src/`; serve `./node_modules/mermaid/dist/mermaid.min.js` via a route and run Mermaid with `securityLevel: 'strict'`.",
     ],
     supervisor: { maxAutoResumes: 2, backoffMs: 1000, intervalMs: 1000 },
   },
@@ -448,11 +451,11 @@ export async function executeCandidateEpisode({
       0,
     );
 
-    // Run Episode verification command + any newly created test/*.test.mjs files (excluding live LLM swarm.test.mjs)
+      // Run Episode verification command + ALL newly created test/*.test.mjs files (excluding live LLM swarm.test.mjs)
     let testPass = false;
     let verifierOutput = "";
     try {
-      const cmd = `${episode.verifyCmd} && for t in test/*.test.mjs; do [ "$t" = "test/swarm.test.mjs" ] && continue; node --no-warnings --test "$t"; done`;
+      const cmd = `set -euo pipefail; ${episode.verifyCmd}; new_tests=0; for t in test/*.test.mjs; do [ "$t" = "test/swarm.test.mjs" ] && continue; [ "$t" != "test/webauthn.test.mjs" ] && new_tests=$((new_tests+1)); node --no-warnings --test "$t"; done; [ "$new_tests" -ge 1 ] || { echo "Missing new markdown/mermaid unit test file in test/*.test.mjs" >&2; exit 1; }`;
       const { stdout, stderr } = await execFileAsync("bash", ["-lc", cmd], {
         cwd: workspaceDir,
         timeout: 60_000,
@@ -461,7 +464,7 @@ export async function executeCandidateEpisode({
       verifierOutput = `${stdout}\n${stderr}`.trim().slice(-4000);
     } catch (err) {
       testPass = false;
-      verifierOutput = String(err?.stdout || "" + "\n" + (err?.stderr || err?.message || err)).trim().slice(-4000);
+      verifierOutput = `${err?.stdout || ""}\n${err?.stderr || err?.message || err}`.trim().slice(-4000);
     }
 
     // Capture full git diff (including untracked files via git add -N)
@@ -472,6 +475,10 @@ export async function executeCandidateEpisode({
       { cwd: workspaceDir, maxBuffer: 8 * 1024 * 1024 },
     );
     const loc = computeDiffLoc(patch);
+    if (loc.changed === 0) {
+      testPass = false;
+      verifierOutput = `Empty patch (0 LOC changed).\n${verifierOutput}`.trim();
+    }
 
     return {
       candidateId: candidate.id,

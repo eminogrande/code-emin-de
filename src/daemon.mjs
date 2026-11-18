@@ -744,14 +744,36 @@ export async function openSwarmDaemon({
             const txt = extractAssistantText(answer);
             const prevRetries = yieldRetries.get(api.conversationId) || 0;
             const passed = /Verified:\s*PASS/i.test(txt);
-            if (passed) yieldRetries.delete(api.conversationId);
-            // Exactly one verification retry: a second turn_limit must not expand into another test gate.
             if (!passed && prevRetries < 1) {
               yieldRetries.set(api.conversationId, prevRetries + 1);
               return {
                 continue:
-                  "VERIFICATION GATE: Run your verification test via `bash` and end your response with `Verified: PASS (<test command>)`.",
+                  "VERIFICATION GATE: Run ALL syntax checks (`for f in src/*.mjs; do node --check \"$f\"; done`) AND ALL unit test files (`test/*.test.mjs` except `test/swarm.test.mjs`) via `bash`, fix any failing assertion, and end with `Verified: PASS (<test command>)`.",
               };
+            }
+            if (passed && meta.role === "coder") {
+              const gateKey = `hardtest:${api.conversationId}`;
+              const prevHard = yieldRetries.get(gateKey) || 0;
+              if (prevHard < 2) {
+                try {
+                  await execFileAsync(
+                    "bash",
+                    [
+                      "-lc",
+                      'for f in src/*.mjs; do [ -f "$f" ] && node --no-warnings --check "$f"; done; for t in test/*.test.mjs; do [ ! -f "$t" ] || [ "$t" = "test/swarm.test.mjs" ] && continue; node --no-warnings --test "$t"; done',
+                    ],
+                    { cwd: workspaceDir, timeout: 45_000 },
+                  );
+                  yieldRetries.delete(gateKey);
+                  yieldRetries.delete(api.conversationId);
+                } catch (err) {
+                  yieldRetries.set(gateKey, prevHard + 1);
+                  const out = `${err?.stdout || ""}\n${err?.stderr || err?.message || err}`.trim().slice(-1200);
+                  return {
+                    continue: `HARD TEST GATE FAILED — you claimed \`Verified: PASS\`, but automated syntax/unit tests failed in \`${workspaceDir}\`. Fix every failure and re-verify before finishing:\n${out}`,
+                  };
+                }
+              }
             }
           }
 
