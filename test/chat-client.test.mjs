@@ -41,8 +41,7 @@ test("history renders with stable entry ids and no duplicates on re-sync", async
   const first = log.children[0];
   await w.eval("syncHistory()");
   assert.equal(log.children.length, 2);
-  assert.equal(log.children[0], first);
-  w.eval("clearTimeout(pollTimer)");
+  assert.ok(log.children[0].isSameNode(first));
   w.close();
 });
 
@@ -57,7 +56,6 @@ test("new background reply is appended in place while a draft is preserved", asy
   assert.equal(log.children.length, 2);
   assert.match(log.children[1].textContent, /late reply/);
   assert.equal(q.value, "unsent draft");
-  w.eval("clearTimeout(pollTimer)");
   w.close();
 });
 
@@ -73,6 +71,5 @@ test("poll backs off on fetch errors and pauses while hidden", async () => {
   const n = calls.length;
   await w.eval("tick()");
   assert.equal(calls.length, n);
-  w.eval("clearTimeout(pollTimer)");
   w.close();
 });
