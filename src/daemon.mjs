@@ -31,6 +31,7 @@ import { createOpenModels, ROLE_MODELS } from "./models.mjs";
 import { createOptMem } from "./optmem.mjs";
 import { ROLE_INSTRUCTIONS } from "./prompts.mjs";
 import { classifyUserPrompt, triageWatcherEvent } from "./triage.mjs";
+import { createSupervisor, SUPERVISOR_DEFAULTS } from "./supervisor.mjs";
 
 export const SwarmDoc = defineDoc({
   kind: "swarm.registry",
@@ -47,7 +48,6 @@ export const SwarmDoc = defineDoc({
 });
 
 // Durable auto-continue supervisor defaults: only `turn_limit` is retried, `auth`/`billing`/`policy` never.
-export const SUPERVISOR_DEFAULTS = { maxAutoResumes: 3, backoffMs: 2_000, intervalMs: 2_000 };
 const RETRYABLE_FAILURES = new Set(["turn_limit"]);
 
 export const RoleMetaDoc = defineDoc({
@@ -124,9 +124,9 @@ export async function openSwarmDaemon({
   models = createOpenModels(),
   roleModels = ROLE_MODELS,
   triageOpts = {},
-  supervisor = {},
+  supervisor: supervisorOverride = {},
 } = {}) {
-  const supervisorOpts = { ...SUPERVISOR_DEFAULTS, ...supervisor };
+  const supervisorOpts = { ...SUPERVISOR_DEFAULTS, ...supervisorOverride };
   if (!dataDir || !workspaceDir) throw new Error("openSwarmDaemon requires dataDir and workspaceDir");
   await mkdir(dataDir, { recursive: true });
   await mkdir(workspaceDir, { recursive: true });
@@ -308,7 +308,9 @@ export async function openSwarmDaemon({
           modelId: mRef.modelId,
           convId,
           requireVerified,
+          goal: args.brief, // original goal survives every auto-resume
           createdAt: Date.now(),
+          supervisor: { status: "supervising", autoResumes: 0, nextAt: 0 },
         };
       }, context);
 
@@ -621,6 +623,43 @@ export async function openSwarmDaemon({
     },
   });
 
+  // Durable auto-continue supervisor: bounded turn_limit recovery + lead notifications
+  const supervisor = createSupervisor({
+    opts: supervisorOpts,
+    workers: async () => {
+      const s = (await harness.snapshot(SwarmDoc, BACKGROUND_CONTEXT)) ?? { workers: {} };
+      return s.workers || {};
+    },
+    live: (convId) => harness.snapshot(LiveDoc, convId, BACKGROUND_CONTEXT),
+    patch: async (workerId, mutate) => {
+      await harness.commit(async (tx) => {
+        const s = await tx.doc(SwarmDoc);
+        const w = s.workers[workerId];
+        if (w) mutate(w);
+      }, BACKGROUND_CONTEXT);
+    },
+    transcript: readConversationTranscript,
+    resumeWorker: async (worker, { notice }) => {
+      const conv = await harness.conversation(worker.convId, BACKGROUND_CONTEXT);
+      if (!conv) return;
+      await conv.commit(async (tx) => {
+        const agent = await tx.doc(RoleMetaDoc, conv.id);
+        agent.role = agent.role || worker.role;
+      }, BACKGROUND_CONTEXT);
+      await conv.configure({ maxTurns: (worker.maxTurns || 40) + 20 }, BACKGROUND_CONTEXT);
+      await conv.submit({ type: "input", content: notice }, BACKGROUND_CONTEXT);
+      harness.resume();
+    },
+    notifyLead: async (topic, body) => {
+      bus.send({ from: "supervisor", to: "lead", topic, body });
+      // Wake idle lead only; a busy lead gets the bus message and is never interrupted.
+      const live = await harness.snapshot(LiveDoc, ROOT_CONVERSATION_ID, BACKGROUND_CONTEXT);
+      if (live?.run) return;
+      await lead.submit({ type: "input", content: `[BUS ${topic}]\n${body}` }, BACKGROUND_CONTEXT);
+      harness.resume();
+    },
+  });
+
   // Deterministic Rule Gates (`beforeTool` + `onYield`)
   const swarmExtension = defineExtension({
     name: "swarm-core",
@@ -811,10 +850,13 @@ export async function openSwarmDaemon({
     return btwConv;
   }
 
+  supervisor.start();
+
   return {
     harness,
     lead,
     bus,
+    supervisor,
     optmem,
     workspaceDir,
     dataDir,
@@ -927,6 +969,7 @@ export async function openSwarmDaemon({
     readTranscript: readConversationTranscript,
 
     async close() {
+      supervisor.stop();
       try {
         await harness.close(BACKGROUND_CONTEXT);
       } finally {
