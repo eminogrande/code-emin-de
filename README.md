@@ -1,6 +1,8 @@
 # pi-durable Open-Weights Swarm Daemon
 
-Headless multi-agent coding, review, memory, and forever-agent daemon on `@earendil-works/pi-durable@1.5.2` + `@earendil-works/pi-coding-agent@1.5.2`.
+Headless + Solarized Light browser-hosted (`https://code.emin.de`) multi-agent coding, review, memory, and self-hosting daemon on `@earendil-works/pi-durable@1.5.2` + `@earendil-works/pi-coding-agent@1.5.2`.
+
+See **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** for full VPS hardening, the **Unified Local Smartcard Bridge (`127.0.0.1:4199`)** (Safari T=0 `ACS ACR39U` WebAuthn Passkeys + Click-to-Sign remote SSH), and automatic append-only GitHub backup.
 
 ## Security Invariants
 

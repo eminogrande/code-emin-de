@@ -37,6 +37,7 @@ Two browser/OS boundaries prevent a raw web tab from directly using a T=0 contac
 - **Zero private keys leave the card:** `/home/swarm/.ssh/id_nuri_pcsc_sk_backup` on the VPS is only the public key handle stub (`ECDSA-SK`), useless without physical card presence + browser click.
 - **Zero silent background SSH:** If `code.emin.de` is closed or you click `Deny`, the VPS cannot open an SSH session. `ControlPersist 15m` reuses an approved connection for 15 minutes so follow-up commands don't spam prompts.
 - **Same local daemon (`127.0.0.1:4199`)** also exposes `/webauthn-create` and `/webauthn-get` (`rpId` pinned strictly to `code.emin.de`) so Safari can enroll and unlock `code.emin.de` directly with the `ACR39U` smartcard.
+- **Reproducible Mac install (`launchd`):** run `./ops/install-mac-smartcard-bridge.sh` (installs `ops/de.emin.code.smartcard-bridge.plist` -> `~/Library/LaunchAgents/` and verifies `http://127.0.0.1:4199/healthz`).
 
 ## 3. VPS-First Self-Improvement + Append-Only GitHub Backup
 
