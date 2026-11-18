@@ -31,7 +31,11 @@ const ATTRS = [
 ];
 
 export function sanitize(html = "") {
-  const clean = purify.sanitize(String(html), {
+  // marked hands inline raw HTML to the renderer token-by-token, so `<a href=x>` and `</a>`
+  // arrive separately: parse inside a wrapper so dangling fragments survive jsdom.
+  // <script>/<style> bodies are dropped by DOMPurify; surface them as visible text instead.
+  const pre = String(html).replace(/<(script|style)\b[^>]*>([\s\S]*?)<\/\1>/gi, (_m, _t, body) => `\n${esc(body)}\n`);
+  const clean = purify.sanitize(`<div>${pre}</div>`, {
     ALLOWED_TAGS: TAGS,
     ALLOWED_ATTR: ATTRS,
     ALLOW_DATA_ATTR: false,
@@ -54,7 +58,8 @@ export function sanitize(html = "") {
     if (!url) img.remove(); // no src, or data: bloat
     else img.setAttribute("src", url);
   }
-  return root.innerHTML;
+  const wrap = root.firstElementChild;
+  return wrap ? wrap.innerHTML : root.innerHTML;
 }
 
 function makeRenderer() {
