@@ -1,9 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 REPO="/opt/pi-durable-swarm"
+LOCKFILE="/run/swarm-ctl.lock"
 
 run_swarm() {
   su -s /bin/bash swarm -c "$1"
+}
+
+with_lock() {
+  exec 9>"$LOCKFILE"
+  if ! flock -w 90 9; then
+    echo "swarm-ctl: timed out waiting for deploy lock ($LOCKFILE)" >&2
+    exit 1
+  fi
 }
 
 check_all() {
@@ -16,7 +25,7 @@ check_all() {
 # Guarantee zero secrets / SQLite / keys ever get staged
 guard_secrets() {
   local bad
-  bad=$(run_swarm "cd '$REPO' && git status --porcelain | awk '{print \$2}' | grep -E '(^\\.env|\\.sqlite|\\.pem$|\\.key$|authorized_keys)' || true")
+  bad=$(run_swarm "cd '$REPO' && git status --porcelain | awk '{print \$2}' | grep -E '(^\\.env|\\.sqlite|\\.db$|\\.pem$|\\.key$|authorized_keys)' || true")
   if [ -n "$bad" ]; then
     echo "BLOCKED: refusing to stage sensitive file(s): $bad" >&2
     exit 1
@@ -53,22 +62,34 @@ case "${1:-}" in
     echo "CHECK_OK"
     ;;
   apply|reload)
+    with_lock
     MSG="${2:-chore(vps): verified self-update on code.emin.de}"
     check_all
     PREV_SHA=$(run_swarm "cd '$REPO' && git rev-parse HEAD")
-    # Sync systemd/caddy ops files if edited inside repo
+    # Inspect dirty + unpushed files BEFORE committing so we restart only affected services
+    DIRTY=$(run_swarm "cd '$REPO' && git status --porcelain src/ ops/ || true")
+    UNPUSHED=$(run_swarm "cd '$REPO' && git diff --name-only @{u}..HEAD -- src/ ops/ 2>/dev/null || true")
+    TOUCHED=$(printf '%s\n%s\n' "$DIRTY" "$UNPUSHED")
     install -m 644 "$REPO/ops/swarmd.service" /etc/systemd/system/swarmd.service
     install -m 644 "$REPO/ops/swarm-web.service" /etc/systemd/system/swarm-web.service
+    if [ -f "$REPO/ops/Caddyfile" ] && ! cmp -s "$REPO/ops/Caddyfile" /etc/caddy/Caddyfile; then
+      install -m 644 "$REPO/ops/Caddyfile" /etc/caddy/Caddyfile
+      systemctl reload caddy.service || true
+    fi
     systemctl daemon-reload
-    # Restart ONLY swarm-web first when called from inside swarmd so agent turn isn't killed mid-push;
-    # schedule swarmd restart in background if daemon files changed!
-    CHANGED=$(run_swarm "cd '$REPO' && git status --porcelain src/ ops/" || true)
     backup_to_github "$MSG"
     NEW_SHA=$(run_swarm "cd '$REPO' && git rev-parse --short HEAD")
-    systemctl restart swarm-web.service
-    if echo "$CHANGED" | grep -qvE '^.. src/web(authn)?\.mjs$'; then
-      # Restart swarmd cleanly 3s after returning so active HTTP/socket reply finishes first
-      nohup bash -c 'sleep 3 && systemctl restart swarmd.service' >/dev/null 2>&1 &
+    if echo "$TOUCHED" | grep -qE 'src/(web|webauthn|markdown|worker-meta|chat-client)\.|ops/swarm-web\.service'; then
+      systemctl restart swarm-web.service
+    fi
+    if echo "$TOUCHED" | grep -qE 'src/(daemon|supervisor|models|prompts|triage|bus|optmem|cli|reinforce)\.|ops/swarmd\.service'; then
+      # Coalesce background daemon restarts via pidfile so parallel apply calls don't double-restart
+      nohup bash -c '
+        exec 8>/run/swarmd-restart.lock
+        flock -n 8 || exit 0
+        sleep 3
+        systemctl restart swarmd.service
+      ' >/dev/null 2>&1 &
     fi
     if health_wait; then
       echo "APPLIED_AND_BACKED_UP_OK ($NEW_SHA)"
@@ -80,6 +101,7 @@ case "${1:-}" in
     fi
     ;;
   reload-web)
+    with_lock
     MSG="${2:-chore(web): verified UI self-update on code.emin.de}"
     check_all
     backup_to_github "$MSG"
@@ -89,7 +111,16 @@ case "${1:-}" in
     echo "WEB_APPLIED_AND_BACKED_UP_OK ($NEW_SHA)"
     ;;
   pull)
+    with_lock
     run_swarm "cd '$REPO' && git pull --ff-only origin main && npm ci --omit=dev --ignore-scripts --no-audit --no-fund"
+    install -m 644 "$REPO/ops/swarmd.service" /etc/systemd/system/swarmd.service
+    install -m 644 "$REPO/ops/swarm-web.service" /etc/systemd/system/swarm-web.service
+    if [ -f "$REPO/ops/Caddyfile" ] && ! cmp -s "$REPO/ops/Caddyfile" /etc/caddy/Caddyfile; then
+      install -m 644 "$REPO/ops/Caddyfile" /etc/caddy/Caddyfile
+      systemctl reload caddy.service || true
+    fi
+    install -m 755 "$REPO/ops/swarm-ctl" /usr/local/bin/swarm-ctl
+    systemctl daemon-reload
     check_all
     systemctl restart swarmd.service swarm-web.service
     health_wait
@@ -99,6 +130,7 @@ case "${1:-}" in
     systemctl --no-pager -l status swarmd.service swarm-web.service caddy.service | head -n 45
     ;;
   rollback)
+    with_lock
     TARGET="${2:-HEAD~1}"
     run_swarm "cd '$REPO' && git revert --no-edit '$TARGET' && git push origin main"
     check_all

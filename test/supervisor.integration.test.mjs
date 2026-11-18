@@ -19,17 +19,26 @@ async function waitFor(fn, ms = 20_000) {
 
 test("integration: real harness auto-continues a turn_limit worker, then notifies lead once", async () => {
   const root = await mkdtemp(join(tmpdir(), "sup-int-"));
-  const faux = fauxProvider({ provider: "faux", models: [{ id: "faux-1" }] });
+  const leadFaux = fauxProvider({ provider: "faux-lead", models: [{ id: "faux-lead-1" }] });
+  const workerFaux = fauxProvider({ provider: "faux-worker", models: [{ id: "faux-worker-1" }] });
   const models = createModels();
-  models.setProvider(faux.provider);
-  const ref = { provider: faux.models[0].provider, modelId: faux.models[0].id };
-  const roleModels = { lead: ref, coder: ref, reviewer: ref, btw: ref };
+  models.setProvider(leadFaux.provider);
+  models.setProvider(workerFaux.provider);
+  const leadRef = { provider: leadFaux.models[0].provider, modelId: leadFaux.models[0].id };
+  const workerRef = { provider: workerFaux.models[0].provider, modelId: workerFaux.models[0].id };
+  const roleModels = { lead: leadRef, coder: workerRef, reviewer: workerRef, btw: leadRef };
 
-  // lead: spawn worker, then answer. worker: 40 tool rounds (= maxTurns) -> turn_limit, then finish.
-  faux.appendResponses([
-    fauxAssistantMessage(fauxToolCall("spawn_worker", { workerId: "w-t", role: "coder", brief: "GOAL-ALPHA build thing" })),
+  // lead: spawn worker, then answer + ack bus notifications.
+  leadFaux.appendResponses([
+    fauxAssistantMessage(fauxToolCall("spawn_worker", { workerId: "w-t", role: "coder", brief: "GOAL-ALPHA build thing" }), { stopReason: "toolUse" }),
     fauxAssistantMessage("spawned w-t"),
-    ...Array.from({ length: 40 }, () => fauxAssistantMessage(fauxToolCall("bash", { command: "true" }))),
+    fauxAssistantMessage("ack start"),
+    fauxAssistantMessage("ack resume"),
+    fauxAssistantMessage("ack done"),
+  ]);
+  // worker: 40 tool rounds (= maxTurns) -> turn_limit, then auto-resumed finish.
+  workerFaux.appendResponses([
+    ...Array.from({ length: 40 }, () => fauxAssistantMessage(fauxToolCall("bash", { command: "true" }), { stopReason: "toolUse" })),
     fauxAssistantMessage("resumed and done. Verified: PASS (true)"),
   ]);
 
@@ -65,7 +74,8 @@ test("integration: real harness auto-continues a turn_limit worker, then notifie
     assert.match(resumeMsg.body, /turn_limit/);
   } finally {
     await daemon.close();
-    faux.unregister?.();
+    leadFaux.unregister?.();
+    workerFaux.unregister?.();
     await rm(root, { recursive: true, force: true });
   }
 });

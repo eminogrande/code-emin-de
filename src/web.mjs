@@ -357,8 +357,20 @@ const sshDesc = document.getElementById('sshDesc');
 const sshApprove = document.getElementById('sshApprove');
 const sshDeny = document.getElementById('sshDeny');
 const BRIDGE = 'http://127.0.0.1:4199';
-let busy = false;
+var busy = false;
+var workersTimer = null;
+var sshTimer = null;
 let currentSshReq = null;
+
+async function safeJson(r) {
+  if (!r) return null;
+  if (typeof r.text === 'function') {
+    const raw = await r.text();
+    if (!raw) return {};
+    try { return JSON.parse(raw); } catch { return { _nonJson: true, status: r.status }; }
+  }
+  return r.json();
+}
 
 function renderMd(text) {
   return fetch('/api/render', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) })
@@ -552,13 +564,14 @@ async function pollWorkers() {
     const r = await fetch('/api/workers');
     if (r.status === 401) { location.reload(); return; }
     if (!r.ok) return;
-    const d = await r.json();
+    const d = await safeJson(r);
+    if (!d || d._nonJson) return;
     const list = (d.workers || []).filter((w) => w && w.id && w.id !== 'lead');
     renderAgents(list);
     renderTargets(list);
   } catch {}
 }
-setInterval(pollWorkers, POLL_MS);
+workersTimer = setInterval(pollWorkers, POLL_MS);
 
 // ---- responsive drawers ----
 const leftCol = document.getElementById('leftCol');
@@ -591,7 +604,8 @@ async function pollSsh() {
   try {
     const r = await fetch('/api/ssh-sign/pending');
     if (r.ok) {
-      const d = await r.json();
+      const d = await safeJson(r);
+      if (!d || d._nonJson) return;
       const p = (d.pending || [])[0] || null;
       currentSshReq = p;
       if (p) {
@@ -603,7 +617,8 @@ async function pollSsh() {
     }
   } catch {}
 }
-setInterval(pollSsh, 1500);
+sshTimer = setInterval(pollSsh, 1500);
+addEventListener('unload', () => { clearTimeout(pollTimer); clearInterval(workersTimer); clearInterval(sshTimer); });
 
 sshApprove.onclick = async () => {
   if (!currentSshReq) return;
@@ -666,12 +681,21 @@ async function send(steer = false) {
       body: JSON.stringify({ text, steer, targetWorkerId: target })
     });
     if (r.status === 401) { location.reload(); return; }
-    const d = await r.json();
-    if (d.error) pending.textContent = 'Error: ' + d.error;
-    else if (d.html) { pending.innerHTML = d.html; if (window.chatRender) window.chatRender(pending); }
-    else pending.textContent = d.text || '(done)';
+    const d = await safeJson(r);
+    if (!d || d._nonJson || r.status === 502 || r.status === 503 || r.status === 504) {
+      pending.textContent = 'Swarm reloading — syncing reply…';
+      setTimeout(() => { syncHistory().catch(() => {}); }, 2000);
+    } else if (d.error) {
+      pending.textContent = 'Error: ' + d.error;
+    } else if (d.html) {
+      pending.innerHTML = d.html;
+      if (window.chatRender) window.chatRender(pending);
+    } else {
+      pending.textContent = d.text || '(done)';
+    }
   } catch (e) {
-    pending.textContent = 'Error: ' + (e.message || e);
+    pending.textContent = 'Swarm reconnecting — syncing reply…';
+    setTimeout(() => { syncHistory().catch(() => {}); }, 2000);
   } finally {
     busy = false;
     log.scrollTop = log.scrollHeight;

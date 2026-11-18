@@ -70,11 +70,13 @@ const OUTBOUND_SEND_RE =
 const READONLY_ROLES = new Set(["btw", "reviewer", "planner"]);
 
 export function extractAssistantText(entryOrMsg) {
-  const msg = entryOrMsg?.model?.[0] ?? entryOrMsg;
-  if (!msg || !Array.isArray(msg.content)) return "";
+  const msg = Array.isArray(entryOrMsg?.model) ? entryOrMsg.model[0] : entryOrMsg;
+  if (!msg) return "";
+  if (typeof msg.content === "string") return msg.content.trim();
+  if (!Array.isArray(msg.content)) return "";
   return msg.content
-    .filter((b) => b.type === "text")
-    .map((b) => b.text)
+    .filter((b) => b.type === "text" || typeof b === "string")
+    .map((b) => (typeof b === "string" ? b : b.text || ""))
     .join("\n")
     .trim();
 }
@@ -126,6 +128,7 @@ export async function openSwarmDaemon({
   roleModels = ROLE_MODELS,
   triageOpts = {},
   supervisor: supervisorOverride = {},
+  retry: retryOverride = { enabled: true, maxRetries: 2, baseDelayMs: 1000 },
 } = {}) {
   const supervisorOpts = { ...SUPERVISOR_DEFAULTS, ...supervisorOverride };
   if (!dataDir || !workspaceDir) throw new Error("openSwarmDaemon requires dataDir and workspaceDir");
@@ -645,21 +648,21 @@ export async function openSwarmDaemon({
       // Never resume over a live run: the scheduler would queue a second input behind it.
       const liveNow = await harness.snapshot(LiveDoc, worker.convId, BACKGROUND_CONTEXT);
       if (!conv || liveNow?.run) return false;
+      // A run that keeps asking for more tests must not be starved by its own maxTurns.
+      const grown = (worker.maxTurns || 40) + 20;
       await conv.commit(async (tx) => {
         const agent = await tx.doc(RoleMetaDoc, conv.id);
         agent.role = agent.role || worker.role;
+        await configure(tx, conv.id, { maxTurns: grown });
+        const s = await tx.doc(SwarmDoc);
+        const w = s.workers[worker.workerId];
+        if (w) w.maxTurns = grown;
       }, BACKGROUND_CONTEXT);
-      // A run that keeps asking for more tests must not be starved by its own maxTurns.
-      const grown = (worker.maxTurns || 50) + 20;
-      await conv.configure({ maxTurns: grown }, BACKGROUND_CONTEXT);
       const ctx = summary?.commit || summary?.tests?.length
         ? `${notice}\n\nAlready reached (authoritative, do not redo): ${summary.commit ? `commit ${summary.commit}; ` : ""}${summary.tests.join(" | ") || "no test output"}.`
         : notice;
       await conv.submit({ type: "input", content: ctx }, BACKGROUND_CONTEXT);
       harness.resume();
-      await patch(worker.workerId, (w) => {
-        w.maxTurns = grown;
-      });
       return true;
     },
     notifyLead: async (topic, body) => {
@@ -720,6 +723,11 @@ export async function openSwarmDaemon({
                 block: `Blocked destructive command (${cmd.slice(0, 80)}). Requires human smartcard SSH confirmation.`,
               };
             }
+            if (meta.role !== "lead" && /\b(swarm-ctl\s+(?:apply|reload|reload-web|pull|rollback)|git\s+push)\b/i.test(cmd)) {
+              return {
+                block: "Subagents must not run `swarm-ctl apply/reload` or `git push` directly; notify Lead via `bus_send` once tests pass.",
+              };
+            }
             if ((meta.role === "support" || meta.role === "social") && OUTBOUND_SEND_RE.test(cmd)) {
               return { block: `Role '${meta.role}' is draft-only; outbound sending is strictly prohibited.` };
             }
@@ -748,7 +756,7 @@ export async function openSwarmDaemon({
           }
 
           // Deterministic self-repo GitHub backup + reload gate on VPS (/opt/pi-durable-swarm)
-          if ((meta.role === "lead" || meta.role === "coder") && existsSync(join(SELF_REPO_DIR, ".git"))) {
+          if (meta.role === "lead" && existsSync(join(SELF_REPO_DIR, ".git"))) {
             try {
               const { stdout } = await execFileAsync("git", ["-C", SELF_REPO_DIR, "status", "--porcelain"], {
                 timeout: 5000,
@@ -791,7 +799,7 @@ export async function openSwarmDaemon({
       registry,
       settings: {
         toolExecution: "parallel",
-        retry: { enabled: true, maxRetries: 2, baseDelayMs: 1000 },
+        retry: retryOverride,
       },
       env: ({ cwd }) => new NodeExecutionEnv({ cwd: cwd || workspaceDir }),
     },
@@ -883,6 +891,47 @@ export async function openSwarmDaemon({
      * - Multi-task prompt gets tagged via System-1 Jev so Lead fans out parallel background workers without blocking!
      */
     async chat(text, { steer = false, targetWorkerId = "lead", wait = true } = {}) {
+      const trimmed = String(text || "").trim();
+      if (/^\/reinforce(?:\s|$)/i.test(trimmed) && targetWorkerId === "lead" && !steer) {
+        const arg = trimmed.replace(/^\/reinforce\s*/i, "").trim().toLowerCase();
+        const { runReinforceTournament, DEFAULT_CANDIDATES } = await import("./reinforce.mjs");
+        const selected =
+          arg === "quick"
+            ? DEFAULT_CANDIDATES.slice(0, 2)
+            : arg
+              ? DEFAULT_CANDIDATES.filter((c) => c.id.includes(arg) || c.leadModel.includes(arg) || c.coderModel.includes(arg))
+              : DEFAULT_CANDIDATES;
+        const cands = selected.length ? selected : DEFAULT_CANDIDATES.slice(0, 2);
+        const jobId = `reinforce-${Date.now().toString(36)}`;
+        runReinforceTournament({
+          repoDir: SELF_REPO_DIR,
+          envFile: join(SELF_REPO_DIR, ".env"),
+          optmemMirrorDir: memoryDir,
+          candidates: cands,
+        })
+          .then((res) => {
+            bus.send({
+              from: "reinforce",
+              to: "lead",
+              topic: "REINFORCE_DONE",
+              body: `[/reinforce ${jobId}] Winner: ${res.winner?.candidateId} (Judge ${res.winner?.judge?.meanScore}/100, Cost $${res.winner?.metrics?.costUsd}). Report written to docs/REINFORCE_BENCHMARK.md`,
+            });
+          })
+          .catch((err) => {
+            bus.send({
+              from: "reinforce",
+              to: "lead",
+              topic: "REINFORCE_ERROR",
+              body: `[/reinforce ${jobId}] Failed: ${err?.message || err}`,
+            });
+          });
+        return {
+          route: "reinforce",
+          conversationId: ROOT_CONVERSATION_ID,
+          status: "started",
+          text: `Started isolated Docker \`/reinforce\` replay (\`${jobId}\`) across ${cands.length} open-weights candidate(s): ${cands.map((c) => `\`${c.id}\``).join(", ")}.\nJudges: \`claude-fable-5-2\` + \`gpt-6.2-astra\` (3 personas, blinded). Results will land in \`docs/REINFORCE_BENCHMARK.md\` and notify Lead via \`REINFORCE_DONE\`.`,
+        };
+      }
       const routeInfo = await classifyUserPrompt(text, triageOpts);
       if (routeInfo.route === "side_chat_readonly" && targetWorkerId === "lead" && !steer) {
         const side = await getBtwConversation();
@@ -987,10 +1036,18 @@ export async function openSwarmDaemon({
       const w = snap.workers?.[workerId];
       if (!w) throw new Error(`Unknown worker: ${workerId}`);
       const conv = await harness.conversation(w.convId, BACKGROUND_CONTEXT);
-      await Promise.race([
-        conv.waitForIdle(BACKGROUND_CONTEXT),
-        new Promise((_, rej) => setTimeout(() => rej(new Error(`Timeout waiting for ${workerId}`)), timeoutMs)),
-      ]);
+      let timer;
+      try {
+        await Promise.race([
+          conv.waitForIdle(BACKGROUND_CONTEXT),
+          new Promise((_, rej) => {
+            timer = setTimeout(() => rej(new Error(`Timeout waiting for ${workerId}`)), timeoutMs);
+            timer.unref?.();
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
       return readConversationTranscript(w.convId, 30);
     },
 

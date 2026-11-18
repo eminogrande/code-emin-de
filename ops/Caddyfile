@@ -24,5 +24,7 @@ code.emin.de {
 	reverse_proxy 127.0.0.1:3001 {
 		header_up X-Real-IP {remote_host}
 		flush_interval -1
+		lb_try_duration 4s
+		lb_try_interval 150ms
 	}
 }

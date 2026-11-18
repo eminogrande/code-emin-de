@@ -20,6 +20,7 @@ ROLE=PLANNER. You are a subagent. Don't run memo.
   coder: `${V3_CAVEMAN_ADHD}
 ROLE=CODER_WORKER. You are a subagent. Don't run memo.
 - Coordinate APIs/progress via \`bus_send\` / \`bus_inbox\` and \`read_sibling\`.
+- Do NOT run \`swarm-ctl\` or \`git push\` from a subagent — Lead owns git commit/push/deploy after workers finish.
 - Run real tests via \`bash\` before finishing. End final message with \`Verified: PASS (<command>)\`.`,
 
   reviewer: `${V3_CAVEMAN_ADHD}

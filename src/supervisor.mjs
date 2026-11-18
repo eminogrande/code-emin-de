@@ -85,7 +85,11 @@ export function createSupervisor({
   notifyLead,
   transcript = async () => [],
   now = () => Date.now(),
-  setTimer = (fn, ms) => setTimeout(fn, ms),
+  setTimer = (fn, ms) => {
+    const t = setTimeout(fn, ms);
+    t.unref?.();
+    return t;
+  },
   clearTimer = (t) => clearTimeout(t),
   opts = SUPERVISOR_DEFAULTS,
 }) {
@@ -267,7 +271,7 @@ export function createSupervisor({
 export function resumeNotice(worker, failure, attempt, opts = SUPERVISOR_DEFAULTS) {
   return (
     `[SUPERVISOR AUTO-RESUME ${attempt}/${opts.maxAutoResumes ?? SUPERVISOR_DEFAULTS.maxAutoResumes}] ` +
-    `Previous run hit turn_limit (${failure?.detail || "max turns"}). Context is preserved.\n` +
+    `Previous run hit turn_limit (${failure?.detail || "max turns"}). Context is preserved. Continue the SAME goal to completion:\n` +
     `Do NOT re-plan or re-run the whole test suite from scratch: reuse what you already have, run only the focused tests you still need, ` +
     `commit, then finish with Verified: PASS (<command>). Auto-resume stops at ${opts.maxAutoResumes ?? SUPERVISOR_DEFAULTS.maxAutoResumes}, so reach your next input instead of looping.\n` +
     `Original goal: ${worker.goal || UNKNOWN_GOAL}`

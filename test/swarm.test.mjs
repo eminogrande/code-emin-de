@@ -145,7 +145,7 @@ test(
     assert.equal(clamp(15, 0, 10), 10);
     assert.ok(leadReply.text.length > 0);
   } finally {
-    srv.server.close();
+    await new Promise((r) => srv.server.close(r));
     await srv.daemon.close();
     await rm(rootDir, { recursive: true, force: true });
   }

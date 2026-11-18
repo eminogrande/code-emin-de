@@ -4,6 +4,7 @@ node_modules/
 workspace/
 !workspace/.gitkeep
 *.sqlite*
+*.db*
 .DS_Store
 dist/
 __pycache__/

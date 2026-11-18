@@ -148,6 +148,22 @@ if (isDirectMain) {
     const text = process.argv.slice(4).join(" ");
     const res = await unixRpc(DEFAULT_SOCK, "POST", "/chat", { text, steer: true, targetWorkerId, wait: false });
     console.log(JSON.stringify(res));
+  } else if (cmd === "reinforce") {
+    const { runReinforceTournament, DEFAULT_CANDIDATES } = await import("./reinforce.mjs");
+    const filter = (process.argv[3] || "").trim().toLowerCase();
+    const candidates =
+      filter === "quick"
+        ? DEFAULT_CANDIDATES.slice(0, 2)
+        : filter
+          ? DEFAULT_CANDIDATES.filter((c) => c.id.includes(filter) || c.leadModel.includes(filter) || c.coderModel.includes(filter))
+          : DEFAULT_CANDIDATES;
+    const out = await runReinforceTournament({
+      repoDir: process.env.SWARM_SELF_REPO || "/opt/pi-durable-swarm",
+      envFile: process.env.SWARM_ENV_FILE || "/opt/pi-durable-swarm/.env",
+      optmemMirrorDir: join(DEFAULT_DATA_DIR, "optmem"),
+      candidates: candidates.length ? candidates : DEFAULT_CANDIDATES,
+    });
+    console.log(out.markdown);
   } else {
     // Interactive SSH REPL over Unix socket: supports Lead chat, `/btw ...`, `/status`, `/steer <workerId> <msg>`
     const rl = createInterface({ input: process.stdin, output: process.stdout, prompt: "swarm> " });

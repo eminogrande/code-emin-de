@@ -10,6 +10,11 @@ const LLMGATEWAY_OPEN_MODELS = [
   { id: "deepseek-v4.1-flash-uncensored", name: "DeepSeek V4.1 Flash Uncensored (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text", "image"], cost: { input: 0.18, output: 0.65, cacheRead: 0.005, cacheWrite: 0 } },
   { id: "deepseek-v4.1-flash-1017", name: "DeepSeek V4.1 Flash 1017 (open-weights)", contextWindow: 1050000, maxTokens: 65536, reasoning: true, input: ["text", "image"], cost: { input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0 } },
   { id: "minimax-m3.1-flash", name: "MiniMax M3.1 Flash (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text", "image"], cost: { input: 0.15, output: 0.6, cacheRead: 0.015, cacheWrite: 0 } },
+  { id: "minimax-m3", name: "MiniMax M3 (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text", "image"], cost: { input: 0.3, output: 1.2, cacheRead: 0.03, cacheWrite: 0 } },
+  { id: "glm-5.3-prime", name: "GLM-5.3 Prime (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text"], cost: { input: 1.0, output: 3.2, cacheRead: 0.2, cacheWrite: 0 } },
+  { id: "qwen4-max", name: "Qwen4 Max (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text", "image"], cost: { input: 1.2, output: 4.8, cacheRead: 0.2, cacheWrite: 0 } },
+  { id: "qwen3.8-2.4t-a95b", name: "Qwen3.8 2.4T-A95B (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text", "image"], cost: { input: 0.9, output: 3.6, cacheRead: 0.15, cacheWrite: 0 } },
+  { id: "nemotron-3-ultra-550b", name: "Nemotron 3 Ultra 550B (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text"], cost: { input: 0.8, output: 2.8, cacheRead: 0.12, cacheWrite: 0 } },
   { id: "muse-spark-open", name: "Meta Muse Spark Open 816B/A42B (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text", "image"], cost: { input: 1.25, output: 4.25, cacheRead: 0.15, cacheWrite: 0 } },
 ];
 
