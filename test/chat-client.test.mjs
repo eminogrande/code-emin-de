@@ -73,3 +73,28 @@ test("poll backs off on fetch errors and pauses while hidden", async () => {
   assert.equal(calls.length, n);
   w.close();
 });
+
+test("no history fetch while a chat request is active", async () => {
+  const { w, calls } = boot([{ id: 1, role: "user", text: "q", html: "<p>q</p>" }]);
+  await flush();
+  const n = calls.filter((u) => String(u).startsWith("/api/history")).length;
+  w.eval("busy = true");
+  await w.eval("tick()");
+  assert.equal(calls.filter((u) => String(u).startsWith("/api/history")).length, n);
+  w.close();
+});
+
+test("reply placeholder survives until the assistant entry lands, then goes", async () => {
+  const history = [{ id: 1, role: "user", text: "q", html: "<p>q</p>" }];
+  const { w, log } = boot(history);
+  await flush();
+  w.eval("addHtml('a','','…')");
+  assert.equal(log.querySelectorAll(".pending").length, 1);
+  await w.eval("syncHistory()");
+  assert.equal(log.querySelectorAll(".pending").length, 1, "kept while last entry is the user turn");
+  history.push({ id: 2, role: "assistant", text: "done", html: "<p>done</p>" });
+  await w.eval("syncHistory()");
+  assert.equal(log.querySelectorAll(".pending").length, 0);
+  assert.equal(log.children.length, 2);
+  w.close();
+});

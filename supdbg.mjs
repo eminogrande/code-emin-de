@@ -2,7 +2,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
-import { openSwarmDaemon } from "/opt/pi-durable-swarm/src/daemon.mjs";
+import { openSwarmDaemon } from "./src/daemon.mjs";
 const root = await mkdtemp(join(tmpdir(), "dbg-"));
 const faux = fauxProvider({ provider: "faux", models: [{ id: "faux-1" }] });
 const models = createModels(); models.setProvider(faux.provider);
@@ -16,11 +16,8 @@ faux.appendResponses([
 ]);
 const d = await openSwarmDaemon({ dataDir: join(root,"data"), workspaceDir: join(root,"ws"), models, roleModels, supervisor: { maxAutoResumes: 1, backoffMs: 10, intervalMs: 50 } });
 d.harness.resume();
-await d.chat("spawn one worker", { wait: true });
-for (let i=0;i<40;i++){
-  const st = await d.status();
-  console.log(i, JSON.stringify(st.swarm.workers["w-t"]?.supervisor), "pending", faux.getPendingResponseCount());
-  if (st.swarm.workers["w-t"]?.supervisor?.status === "done") break;
-  await new Promise(r=>setTimeout(r,500));
-}
+const r = await d.chat("spawn one worker", { wait: true });
+console.log("CHAT", JSON.stringify(r).slice(0,600));
+console.log("W", JSON.stringify((await d.status()).swarm.workers).slice(0,600));
+for (let i=0;i<20;i++){ await new Promise(r=>setTimeout(r,300)); console.log(i, JSON.stringify((await d.status()).swarm.workers["w-t"]?.supervisor)); }
 await d.close(); process.exit(0);
