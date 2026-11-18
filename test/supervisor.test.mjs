@@ -15,6 +15,7 @@ function fakeWorld({ workers, liveByConv, transcriptByConv = {} }) {
   const live = structuredClone(liveByConv);
   const lead = [];
   const resumes = [];
+  const clock = { t: 10_000 };
   const sup = createSupervisor({
     workers: async () => state,
     live: async (convId) => live[convId],
@@ -25,11 +26,11 @@ function fakeWorld({ workers, liveByConv, transcriptByConv = {} }) {
       live[worker.convId] = { run: { turns: 1 } }; // resume starts a run
     },
     notifyLead: async (topic, body) => lead.push({ topic, body }),
-    now: () => 10_000,
+    now: () => clock.t,
     setTimer: () => 0,
     clearTimer: () => {},
   });
-  return { sup, state, live, lead, resumes };
+  return { sup, state, live, lead, resumes, clock };
 }
 
 const worker = (over = {}) => ({
@@ -47,6 +48,9 @@ test("1. turn_limit resumes with same goal + failure detail, context preserved (
     liveByConv: { 7: { runFailure: { reason: "turn_limit", detail: "40 turns" } } },
     transcriptByConv: { 7: [{ role: "assistant", text: "Verified: PASS (node --test)" }] },
   });
+  await w.sup.tick(); // start notice arms the backoff
+  assert.equal(w.resumes.length, 0);
+  w.clock.t += 2_000;
   await w.sup.tick();
   assert.equal(w.resumes.length, 1);
   assert.match(w.resumes[0].notice, /SAME goal/);
@@ -65,6 +69,7 @@ test("2. bounded: stops after maxAutoResumes and notifies exhaustion once", asyn
     liveByConv: { 7: { runFailure: { reason: "turn_limit", detail: "40 turns" } } },
   });
   await w.sup.tick();
+  w.clock.t += 5_000;
   await w.sup.tick();
   assert.equal(w.resumes.length, 0);
   assert.equal(w.state["w-1"].supervisor.status, "exhausted");
@@ -78,6 +83,8 @@ test("3. auth/billing/policy (model_error, no_model) never retried", async () =>
       workers: { "w-1": worker({ supervisor: { status: "supervising", autoResumes: 0, nextAt: 0, startedAnnounced: true } }) },
       liveByConv: { 7: { runFailure: { reason, detail: "401 invalid api key / billing" } } },
     });
+    await w.sup.tick();
+    w.clock.t += 5_000;
     await w.sup.tick();
     assert.equal(w.resumes.length, 0, reason);
     assert.equal(w.state["w-1"].supervisor.status, "terminal");

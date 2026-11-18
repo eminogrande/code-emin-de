@@ -42,6 +42,7 @@ test("history renders with stable entry ids and no duplicates on re-sync", async
   await w.eval("syncHistory()");
   assert.equal(log.children.length, 2);
   assert.equal(log.children[0], first);
+  w.eval("clearTimeout(pollTimer)");
   w.close();
 });
 
@@ -56,6 +57,7 @@ test("new background reply is appended in place while a draft is preserved", asy
   assert.equal(log.children.length, 2);
   assert.match(log.children[1].textContent, /late reply/);
   assert.equal(q.value, "unsent draft");
+  w.eval("clearTimeout(pollTimer)");
   w.close();
 });
 
@@ -64,14 +66,13 @@ test("poll backs off on fetch errors and pauses while hidden", async () => {
   await flush();
   const before = calls.length;
   w.fetch = async () => ({ ok: false, status: 500, json: async () => ({}) });
-  await w.eval("tick()");
-  assert.equal(w.backoff, 6000);
-  await w.eval("tick()");
-  assert.equal(w.backoff, 12000);
+  assert.equal(await w.eval("tick().then(function(){return backoff})"), 6000);
+  assert.equal(await w.eval("tick().then(function(){return backoff})"), 12000);
   // hidden: tick reschedules without fetching
   Object.defineProperty(w.document, "hidden", { value: true, configurable: true });
   const n = calls.length;
   await w.eval("tick()");
   assert.equal(calls.length, n);
+  w.eval("clearTimeout(pollTimer)");
   w.close();
 });
