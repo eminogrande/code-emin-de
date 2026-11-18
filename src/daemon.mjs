@@ -46,6 +46,10 @@ export const SwarmDoc = defineDoc({
   checkpointWhen: (_v, _ops, info) => info.deltasSinceBase >= 16,
 });
 
+// Durable auto-continue supervisor defaults: only `turn_limit` is retried, `auth`/`billing`/`policy` never.
+export const SUPERVISOR_DEFAULTS = { maxAutoResumes: 3, backoffMs: 2_000, intervalMs: 2_000 };
+const RETRYABLE_FAILURES = new Set(["turn_limit"]);
+
 export const RoleMetaDoc = defineDoc({
   kind: "swarm.role",
   version: 1,
@@ -120,7 +124,9 @@ export async function openSwarmDaemon({
   models = createOpenModels(),
   roleModels = ROLE_MODELS,
   triageOpts = {},
+  supervisor = {},
 } = {}) {
+  const supervisorOpts = { ...SUPERVISOR_DEFAULTS, ...supervisor };
   if (!dataDir || !workspaceDir) throw new Error("openSwarmDaemon requires dataDir and workspaceDir");
   await mkdir(dataDir, { recursive: true });
   await mkdir(workspaceDir, { recursive: true });
