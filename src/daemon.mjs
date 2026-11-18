@@ -650,13 +650,16 @@ export async function openSwarmDaemon({
         agent.role = agent.role || worker.role;
       }, BACKGROUND_CONTEXT);
       // A run that keeps asking for more tests must not be starved by its own maxTurns.
-      const grown = (worker.maxTurns || 40) + 20;
+      const grown = (worker.maxTurns || 50) + 20;
       await conv.configure({ maxTurns: grown }, BACKGROUND_CONTEXT);
       const ctx = summary?.commit || summary?.tests?.length
         ? `${notice}\n\nAlready reached (authoritative, do not redo): ${summary.commit ? `commit ${summary.commit}; ` : ""}${summary.tests.join(" | ") || "no test output"}.`
         : notice;
       await conv.submit({ type: "input", content: ctx }, BACKGROUND_CONTEXT);
       harness.resume();
+      await patch(worker.workerId, (w) => {
+        w.maxTurns = grown;
+      });
       return true;
     },
     notifyLead: async (topic, body) => {
@@ -732,8 +735,10 @@ export async function openSwarmDaemon({
           if (meta.requireVerified) {
             const txt = extractAssistantText(answer);
             const prevRetries = yieldRetries.get(api.conversationId) || 0;
+            const passed = /Verified:\s*PASS/i.test(txt);
+            if (passed) yieldRetries.delete(api.conversationId);
             // Exactly one verification retry: a second turn_limit must not expand into another test gate.
-            if (!/Verified:\s*PASS/i.test(txt) && prevRetries < 1) {
+            if (!passed && prevRetries < 1) {
               yieldRetries.set(api.conversationId, prevRetries + 1);
               return {
                 continue:

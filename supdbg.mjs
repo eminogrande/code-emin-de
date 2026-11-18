@@ -19,5 +19,6 @@ d.harness.resume();
 const r = await d.chat("spawn one worker", { wait: true });
 console.log("CHAT", JSON.stringify(r).slice(0,600));
 console.log("W", JSON.stringify((await d.status()).swarm.workers).slice(0,600));
+console.log("T", JSON.stringify(await d.readTranscript(1, 20)).slice(0,1500));
 for (let i=0;i<20;i++){ await new Promise(r=>setTimeout(r,300)); console.log(i, JSON.stringify((await d.status()).swarm.workers["w-t"]?.supervisor)); }
 await d.close(); process.exit(0);

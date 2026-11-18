@@ -407,7 +407,7 @@ async function syncHistory() {
   const entries = (d.entries || []).filter((e) => e.role === 'user' || e.role === 'assistant');
   const keep = atBottom();
   const prevTop = log.scrollTop;
-  const known = new Set(entries.map((e) => e.id));
+  const known = new Set(entries.map((e) => String(e.id)));
   for (const n of Array.from(log.children)) {
     if (n.dataset.id && !known.has(n.dataset.id)) { n.remove(); rendered.delete(n.dataset.id); }
   }
@@ -415,7 +415,7 @@ async function syncHistory() {
   let after = null;
   for (const e of entries) {
     const html = e.html || '';
-    let node = known.has(e.id) ? log.querySelector('[data-id="' + e.id + '"]') : null;
+    let node = known.has(String(e.id)) ? log.querySelector('[data-id="' + e.id + '"]') : null;
     if (!node) {
       node = addHtml(e.role === 'user' ? 'u' : 'a', html, e.text, e.id);
     } else if (html && rendered.get(e.id) !== html) {

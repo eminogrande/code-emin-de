@@ -10,7 +10,7 @@ const clientScript = [...src.matchAll(/<script>\n([\s\S]*?)\n<\/script>/g)].pop(
 
 function boot(history) {
   const dom = new JSDOM(
-    `<!doctype html><body><div id="log"></div><div id="sshBar"><span id="sshDesc"></span><button id="sshApprove"></button><button id="sshDeny"></button></div><form id="f"><textarea id="q"></textarea></form></body>`,
+    `<!doctype html><body><div id="topbar"><button id="tLeft"></button><button id="tRight"></button></div><div id="backdrop" hidden></div><aside id="leftCol"><div id="targets"></div></aside><main><div id="log"></div><div id="sshBar"><span id="sshDesc"></span><button id="sshApprove"></button><button id="sshDeny"></button></div><form id="f"><textarea id="q"></textarea></form></main><aside id="rightCol"><ul id="agents"></ul><p id="agentsEmpty"></p></aside></body>`,
     { runScripts: "outside-only", pretendToBeVisual: true },
   );
   const w = dom.window;
@@ -19,6 +19,7 @@ function boot(history) {
     calls.push(url);
     if (String(url).startsWith("/api/history")) return { ok: true, status: 200, json: async () => ({ entries: history.slice() }) };
     if (String(url).startsWith("/api/render")) return { ok: true, status: 200, json: async () => ({ html: "" }) };
+    if (String(url).startsWith("/api/workers")) return { ok: true, status: 200, json: async () => ({ workers: [] }) };
     return { ok: true, status: 200, json: async () => ({ pending: [] }) };
   };
   w.eval(clientScript);
