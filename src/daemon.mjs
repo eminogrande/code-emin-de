@@ -55,7 +55,7 @@ export const RoleMetaDoc = defineDoc({
 });
 
 const DESTRUCTIVE_BASH_RE =
-  /\b(rm\s+-rf\s+\/(?:\s|$)|git\s+push\s+--force|git\s+reset\s+--hard|mkfs\.|dd\s+if=.*of=\/dev\/|curl\b.*\|\s*(?:ba)?sh|authorized_keys|sshd_config|00-nuri-smartcard|ufw\s+disable)\b/i;
+  /\b(rm\s+-rf\s+\/(?:\s|$)|git\s+push\s+(?:--force|-f|--delete)\b|git\s+push\s+\S+\s+\+|git\s+reset\s+--hard|mkfs\.|dd\s+if=.*of=\/dev\/|curl\b.*\|\s*(?:ba)?sh|authorized_keys|sshd_config|00-nuri-smartcard|ufw\s+disable)\b/i;
 
 const OUTBOUND_SEND_RE =
   /\b(sendmail|postfix|smtp|api\.resend\.com|api\.sendgrid\.com|api\.twitter\.com\/2\/tweets|x\.com\/i\/api)\b/i;

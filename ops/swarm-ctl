@@ -73,8 +73,8 @@ case "${1:-}" in
     if health_wait; then
       echo "APPLIED_AND_BACKED_UP_OK ($NEW_SHA)"
     else
-      echo "HEALTHCHECK_FAILED — rolling back to $PREV_SHA" >&2
-      run_swarm "cd '$REPO' && git reset --hard '$PREV_SHA' && git push --force-with-lease origin main" || true
+      echo "HEALTHCHECK_FAILED — reverting to $PREV_SHA (forward-only, never force-push)" >&2
+      run_swarm "cd '$REPO' && git revert --no-edit HEAD && git push origin main" || true
       systemctl restart swarmd.service swarm-web.service
       exit 1
     fi
@@ -98,8 +98,16 @@ case "${1:-}" in
   status)
     systemctl --no-pager -l status swarmd.service swarm-web.service caddy.service | head -n 45
     ;;
+  rollback)
+    TARGET="${2:-HEAD~1}"
+    run_swarm "cd '$REPO' && git revert --no-edit '$TARGET' && git push origin main"
+    check_all
+    systemctl restart swarmd.service swarm-web.service
+    health_wait
+    echo "ROLLED_BACK_OK"
+    ;;
   *)
-    echo "Usage: swarm-ctl {check|apply [msg]|reload-web [msg]|pull|status}" >&2
+    echo "Usage: swarm-ctl {check|apply [msg]|reload-web [msg]|pull|rollback [commit]|status}" >&2
     exit 1
     ;;
 esac
