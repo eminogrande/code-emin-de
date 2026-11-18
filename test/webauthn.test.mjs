@@ -180,17 +180,18 @@ test("HTTP WebServer E2E: Passkey cookie -> /api/history + /api/chat over Unix s
   });
   await new Promise((r) => mockDaemon.listen(sockPath, r));
 
-  const web = await startWebServer({
-    port: 0,
-    host: "127.0.0.1",
-    sockPath,
-    authDbPath,
-    rpId: "localhost",
-    origin: "http://localhost",
-  });
-  const port = web.server.address().port;
-
+  let web = null;
   try {
+    web = await startWebServer({
+      port: 0,
+      host: "127.0.0.1",
+      sockPath,
+      authDbPath,
+      rpId: "localhost",
+      origin: "http://localhost",
+    });
+    const port = web.server.address().port;
+
     // 1. Unauthenticated /api/chat MUST return 401
     const rUnauth = await fetch(`http://127.0.0.1:${port}/api/chat`, {
       method: "POST",
@@ -260,9 +261,49 @@ test("HTTP WebServer E2E: Passkey cookie -> /api/history + /api/chat over Unix s
     const chatBody = await rChat.json();
     assert.equal(chatBody.status, "done");
     assert.equal(chatBody.text, "Hello Emin.");
+
+    // 5. Click-to-Sign SSH Bridge E2E: internal helper request blocks until browser resolves!
+    const signReqPromise = fetch(`http://127.0.0.1:${port}/internal/ssh-sign/request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Bridge-Secret": web.bridgeSecret },
+      body: JSON.stringify({
+        application: "ssh:",
+        dataHex: "deadbeef",
+        keyHandleHex: "cafebabe",
+        flags: 1,
+        sshCommand: "ssh nuri.com uptime",
+      }),
+    });
+
+    await new Promise((r) => setTimeout(r, 25));
+    const rPend = await fetch(`http://127.0.0.1:${port}/api/ssh-sign/pending`, { headers: { Cookie: cookie } });
+    const pendBody = await rPend.json();
+    assert.equal(pendBody.pending.length, 1);
+    assert.equal(pendBody.pending[0].sshCommand, "ssh nuri.com uptime");
+
+    const rRes = await fetch(`http://127.0.0.1:${port}/api/ssh-sign/resolve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({
+        id: pendBody.pending[0].id,
+        approve: true,
+        flags: "01",
+        counter: 42,
+        sigR: "1122",
+        sigS: "3344",
+      }),
+    });
+    assert.equal(rRes.status, 200);
+
+    const signOut = await (await signReqPromise).json();
+    assert.equal(signOut.ok, true);
+    assert.equal(signOut.counter, 42);
+    assert.equal(signOut.sigR, "1122");
   } finally {
-    web.server.close();
-    web.auth.close();
+    if (web) {
+      web.server.close();
+      web.auth.close();
+    }
     mockDaemon.close();
     rmSync(dir, { recursive: true, force: true });
   }

@@ -1,6 +1,7 @@
 #!/usr/bin/env -S node --no-warnings
-import { realpathSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { randomBytes, timingSafeEqual } from "node:crypto";
+import { realpathSync, writeFileSync } from "node:fs";
+import { mkdir, readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -11,6 +12,7 @@ import { openPasskeyStore } from "./webauthn.mjs";
 const DEFAULT_DATA_DIR = process.env.SWARM_DATA_DIR || join(homedir(), ".pi-durable");
 const DEFAULT_SOCK = process.env.SWARM_SOCK || join(DEFAULT_DATA_DIR, "swarm.sock");
 const DEFAULT_AUTH_DB = process.env.SWARM_AUTH_DB || join(DEFAULT_DATA_DIR, "webauthn.sqlite");
+const DEFAULT_BRIDGE_SECRET_FILE = process.env.SWARM_BRIDGE_SECRET_FILE || join(DEFAULT_DATA_DIR, "ssh-bridge.secret");
 const RP_ID = process.env.WEBAUTHN_RP_ID || "code.emin.de";
 const ORIGIN = process.env.WEBAUTHN_ORIGIN || `https://${RP_ID}`;
 const PORT = Number(process.env.SWARM_WEB_PORT || "3001");
@@ -48,7 +50,7 @@ const SECURITY_HEADERS = {
   "Referrer-Policy": "no-referrer",
   "Cache-Control": "no-store",
   "Content-Security-Policy":
-    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self' http://127.0.0.1:4199; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
 };
 
 function renderSolarizedGate({ enrollToken = "", enrollLabel = "" } = {}) {
@@ -64,24 +66,35 @@ function renderSolarizedGate({ enrollToken = "", enrollLabel = "" } = {}) {
 :root{--paper:#fdf6e3;--paper-2:#eee8d5;--rule:#ddd6c1;--heading:#002b36;--ink:#073642;--muted:#4f646b;--accent:#b58900}
 *{box-sizing:border-box}
 body{margin:0;min-height:100dvh;display:grid;place-items:center;background:var(--paper);color:var(--ink);font:1.125rem/1.6 ui-sans-serif,system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;padding:1.5rem}
-main{text-align:center;max-width:24rem}
-button{appearance:none;background:var(--paper-2);color:var(--heading);border:1px solid var(--rule);padding:.75rem 1.4rem;font:inherit;cursor:pointer;border-radius:3px}
+main{text-align:center;max-width:26rem;display:flex;flex-direction:column;gap:.65rem;align-items:center}
+.row{display:flex;gap:.6rem;flex-wrap:wrap;justify-content:center}
+button{appearance:none;background:var(--paper-2);color:var(--heading);border:1px solid var(--rule);padding:.72rem 1.25rem;font:inherit;cursor:pointer;border-radius:3px}
 button:hover{border-color:var(--accent)}
-p{margin:.9rem 0 0;color:var(--muted);font-size:.95rem;min-height:1.5em}
+p{margin:.4rem 0 0;color:var(--muted);font-size:.95rem;min-height:1.5em}
 </style>
 </head>
 <body>
 <main>
-  <button id="go" autofocus>${mode === "enroll" ? `Enroll passkey (${enrollLabel.replace(/[<>&"]/g, "")})` : "Unlock with passkey"}</button>
+  <div class="row">
+    <button id="go" autofocus>${mode === "enroll" ? `Enroll passkey (${enrollLabel.replace(/[<>&"]/g, "")})` : "Unlock with passkey"}</button>
+    <button id="cardBtn" style="display:none">${mode === "enroll" ? "Enroll Nuri Smartcard (ACR39U)" : "Unlock with Nuri Smartcard"}</button>
+  </div>
   <p id="msg"></p>
 </main>
 <script>
 const MODE = ${JSON.stringify(mode)};
 const ENROLL = ${JSON.stringify(enrollToken)};
+const BRIDGE = 'http://127.0.0.1:4199';
 const b64ToBuf = (s) => Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')), c => c.charCodeAt(0));
 const bufToB64 = (b) => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');
 const btn = document.getElementById('go');
+const cardBtn = document.getElementById('cardBtn');
 const msg = document.getElementById('msg');
+
+// Detect local Nuri PC/SC bridge on Mac (127.0.0.1:4199) so ACR39U contact card works in Safari!
+fetch(BRIDGE + '/healthz').then(r => r.ok ? r.json() : null).then(d => {
+  if (d && d.ok && d.readers && d.readers.length) cardBtn.style.display = '';
+}).catch(() => {});
 
 btn.onclick = async () => {
   btn.disabled = true;
@@ -144,6 +157,57 @@ btn.onclick = async () => {
     btn.disabled = false;
   }
 };
+
+cardBtn.onclick = async () => {
+  cardBtn.disabled = true;
+  msg.textContent = 'Reading Nuri Smartcard…';
+  try {
+    if (MODE === 'enroll') {
+      const r1 = await fetch('/auth/register/options', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ token: ENROLL })
+      });
+      const opt = await r1.json();
+      if (!r1.ok) throw new Error(opt.error || 'Denied');
+      const signed = await (await fetch(BRIDGE + '/webauthn-create', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ options: opt, reader: 'ACR39' })
+      })).json();
+      if (signed.error) throw new Error(signed.error);
+      const r2 = await fetch('/auth/register/verify', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(signed)
+      });
+      const v = await r2.json();
+      if (!r2.ok) throw new Error(v.error || 'Enroll failed');
+      location.replace('/');
+    } else {
+      const r1 = await fetch('/auth/login/options', { method: 'POST' });
+      const opt = await r1.json();
+      if (!r1.ok) throw new Error(opt.error || 'Locked');
+      const signed = await (await fetch(BRIDGE + '/webauthn-get', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ options: opt, reader: 'ACR39' })
+      })).json();
+      if (signed.error) throw new Error(signed.error);
+      const r2 = await fetch('/auth/login/verify', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(signed)
+      });
+      const v = await r2.json();
+      if (!r2.ok) throw new Error(v.error || 'Denied');
+      location.replace('/');
+    }
+  } catch (e) {
+    msg.textContent = e.message || String(e);
+    cardBtn.disabled = false;
+  }
+};
 </script>
 </body>
 </html>`;
@@ -169,6 +233,9 @@ body{display:flex;flex-direction:column;max-width:48rem;margin:0 auto;padding:0 
 pre,code{font:0.92em/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--paper-2)}
 code{padding:.1em .3em;border-radius:2px}
 pre{padding:.75rem .9rem;overflow-x:auto;border-left:2px solid var(--rule);margin:.5rem 0}
+#sshBar{display:none;padding:.65rem .85rem;background:var(--paper-2);border-top:1px solid var(--accent);font-size:.96rem;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap}
+#sshBar button{appearance:none;background:var(--paper);color:var(--heading);border:1px solid var(--rule);padding:.32rem .75rem;font:inherit;cursor:pointer;border-radius:3px}
+#sshBar button:hover{border-color:var(--accent)}
 form{padding:.75rem 0 1.25rem;border-top:1px solid var(--rule)}
 textarea{width:100%;border:0;outline:0;background:transparent;color:var(--heading);font:inherit;resize:none;max-height:12rem;padding:0;margin:0}
 textarea::placeholder{color:var(--muted);opacity:.65}
@@ -176,13 +243,26 @@ textarea::placeholder{color:var(--muted);opacity:.65}
 </head>
 <body>
 <div id="log" aria-live="polite"></div>
+<div id="sshBar">
+  <span id="sshDesc"></span>
+  <span>
+    <button type="button" id="sshApprove">Sign with Smartcard</button>
+    <button type="button" id="sshDeny">Deny</button>
+  </span>
+</div>
 <form id="f">
   <textarea id="q" rows="1" placeholder="Ask…" autofocus></textarea>
 </form>
 <script>
 const log = document.getElementById('log');
 const q = document.getElementById('q');
+const sshBar = document.getElementById('sshBar');
+const sshDesc = document.getElementById('sshDesc');
+const sshApprove = document.getElementById('sshApprove');
+const sshDeny = document.getElementById('sshDeny');
+const BRIDGE = 'http://127.0.0.1:4199';
 let busy = false;
+let currentSshReq = null;
 
 function add(cls, text) {
   if (!text) return null;
@@ -205,6 +285,64 @@ async function hydrate() {
     }
   } catch {}
 }
+
+// Poll pending Click-to-Sign SSH challenges when swarm is working or every 1.5s
+async function pollSsh() {
+  try {
+    const r = await fetch('/api/ssh-sign/pending');
+    if (r.ok) {
+      const d = await r.json();
+      const p = (d.pending || [])[0] || null;
+      currentSshReq = p;
+      if (p) {
+        sshDesc.textContent = 'SSH request: ' + p.sshCommand;
+        sshBar.style.display = 'flex';
+      } else {
+        sshBar.style.display = 'none';
+      }
+    }
+  } catch {}
+}
+setInterval(pollSsh, 1500);
+
+sshApprove.onclick = async () => {
+  if (!currentSshReq) return;
+  const req = currentSshReq;
+  sshApprove.disabled = true;
+  sshDesc.textContent = 'Signing on local Nuri Smartcard…';
+  try {
+    const sr = await fetch(BRIDGE + '/ssh-sign', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(req)
+    });
+    const sig = await sr.json();
+    if (!sr.ok || !sig.ok) throw new Error(sig.error || 'Local smartcard bridge failed');
+    await fetch('/api/ssh-sign/resolve', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ id: req.id, approve: true, ...sig })
+    });
+    sshBar.style.display = 'none';
+    currentSshReq = null;
+  } catch (e) {
+    sshDesc.textContent = 'Smartcard error: ' + (e.message || e);
+  } finally {
+    sshApprove.disabled = false;
+  }
+};
+
+sshDeny.onclick = async () => {
+  if (!currentSshReq) return;
+  const id = currentSshReq.id;
+  sshBar.style.display = 'none';
+  currentSshReq = null;
+  await fetch('/api/ssh-sign/resolve', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ id, approve: false, error: 'Denied by Emin in browser' })
+  });
+};
 
 function fit() {
   q.style.height = 'auto';
@@ -248,6 +386,7 @@ q.addEventListener('keydown', (ev) => {
 });
 
 hydrate();
+pollSsh();
 </script>
 </body>
 </html>`;
@@ -258,11 +397,27 @@ export async function startWebServer({
   host = "127.0.0.1",
   sockPath = DEFAULT_SOCK,
   authDbPath = DEFAULT_AUTH_DB,
+  bridgeSecretFile = join(dirname(authDbPath), "ssh-bridge.secret"),
   rpId = RP_ID,
   origin = ORIGIN,
 } = {}) {
   await mkdir(dirname(authDbPath), { recursive: true });
+  await mkdir(dirname(bridgeSecretFile), { recursive: true });
   const auth = openPasskeyStore(authDbPath, { rpId, rpName: rpId, expectedOrigin: origin });
+
+  // Local 0600 shared secret so ONLY local `swarm` user SSH helper can post `/internal/ssh-sign/request`
+  let bridgeSecret = "";
+  try {
+    bridgeSecret = (await readFile(bridgeSecretFile, "utf8")).trim();
+  } catch {}
+  if (!bridgeSecret) {
+    bridgeSecret = randomBytes(32).toString("base64url");
+    writeFileSync(bridgeSecretFile, bridgeSecret + "\n", { mode: 0o600 });
+  }
+  const bridgeSecretBuf = Buffer.from(bridgeSecret, "utf8");
+
+  // Pending Click-to-Sign SSH challenges (id -> { req, resolve, timer })
+  const pendingSsh = new Map();
 
   const server = createServer(async (req, res) => {
     const sendJson = (code, obj, extraHeaders = {}) => {
@@ -277,6 +432,38 @@ export async function startWebServer({
     try {
       const url = new URL(req.url || "/", origin);
       const ip = req.headers["x-real-ip"] || req.socket.remoteAddress || "unknown";
+
+      // Internal loopback-only endpoint called by vps-ssh-sk-helper.mjs when `ssh` runs on VPS
+      if (req.method === "POST" && url.pathname === "/internal/ssh-sign/request") {
+        const remote = req.socket.remoteAddress || "";
+        if (remote !== "127.0.0.1" && remote !== "::1" && remote !== "::ffff:127.0.0.1") {
+          return sendJson(403, { error: "Loopback only" });
+        }
+        const hdr = Buffer.from(String(req.headers["x-bridge-secret"] || ""), "utf8");
+        if (hdr.length !== bridgeSecretBuf.length || !timingSafeEqual(hdr, bridgeSecretBuf)) {
+          return sendJson(403, { error: "Forbidden" });
+        }
+        const body = await readJsonLimited(req, 16_384);
+        const id = randomBytes(12).toString("base64url");
+        const item = {
+          id,
+          application: String(body.application || "ssh:"),
+          dataHex: String(body.dataHex || ""),
+          keyHandleHex: String(body.keyHandleHex || ""),
+          flags: Number(body.flags || 1),
+          sshCommand: String(body.sshCommand || "ssh"),
+          createdAt: Date.now(),
+        };
+        const result = await new Promise((resolve) => {
+          const timer = setTimeout(() => {
+            pendingSsh.delete(id);
+            resolve({ ok: false, error: "Timed out waiting for browser smartcard approval" });
+          }, 90_000);
+          pendingSsh.set(id, { item, resolve, timer });
+        });
+        return sendJson(result.ok ? 200 : 403, result);
+      }
+
       const cookies = parseCookies(req.headers.cookie);
       const authed = auth.verifySession(cookies[COOKIE_NAME]);
 
@@ -284,7 +471,6 @@ export async function startWebServer({
         return sendJson(200, { ok: true });
       }
 
-      // SSH-bootstrapped one-time enrollment page (returns 404 unless token is valid & unused!)
       if (req.method === "GET" && url.pathname.startsWith("/enroll/")) {
         const rawTok = decodeURIComponent(url.pathname.slice("/enroll/".length));
         const valid = auth.checkEnrollToken(rawTok);
@@ -335,7 +521,6 @@ export async function startWebServer({
         }
       }
 
-      // Every route below requires a verified hardware passkey session
       if (!authed) {
         if (req.method === "GET" && url.pathname === "/") {
           return sendHtml(200, renderSolarizedGate());
@@ -345,6 +530,31 @@ export async function startWebServer({
 
       if (req.method === "GET" && url.pathname === "/") {
         return sendHtml(200, renderMinimalChat());
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/ssh-sign/pending") {
+        const pending = Array.from(pendingSsh.values()).map((p) => p.item);
+        return sendJson(200, { pending });
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/ssh-sign/resolve") {
+        const body = await readJsonLimited(req, 8192);
+        const entry = pendingSsh.get(String(body.id || ""));
+        if (!entry) return sendJson(404, { error: "No such pending SSH request" });
+        clearTimeout(entry.timer);
+        pendingSsh.delete(entry.item.id);
+        if (!body.approve) {
+          entry.resolve({ ok: false, error: String(body.error || "Denied") });
+          return sendJson(200, { ok: true });
+        }
+        entry.resolve({
+          ok: true,
+          flags: String(body.flags || "01"),
+          counter: Number(body.counter || 1),
+          sigR: String(body.sigR || ""),
+          sigS: String(body.sigS || ""),
+        });
+        return sendJson(200, { ok: true });
       }
 
       if (req.method === "GET" && url.pathname === "/api/history") {
@@ -389,7 +599,7 @@ export async function startWebServer({
   process.once("SIGTERM", shutdown);
   process.once("SIGINT", shutdown);
 
-  return { server, auth, port };
+  return { server, auth, port, bridgeSecret };
 }
 
 const isMain = (() => {
