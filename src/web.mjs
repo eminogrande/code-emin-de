@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { unixRpc } from "./cli.mjs";
+import { renderMarkdown } from "./markdown.mjs";
 import { openPasskeyStore } from "./webauthn.mjs";
 
 const DEFAULT_DATA_DIR = process.env.SWARM_DATA_DIR || join(homedir(), ".pi-durable");
@@ -50,7 +51,8 @@ const SECURITY_HEADERS = {
   "Referrer-Policy": "no-referrer",
   "Cache-Control": "no-store",
   "Content-Security-Policy":
-    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self' http://127.0.0.1:4199; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:4199; img-src 'self' https: http:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  "Cross-Origin-Opener-Policy": "same-origin",
 };
 
 function renderSolarizedGate({ enrollToken = "", enrollLabel = "" } = {}) {
@@ -227,9 +229,36 @@ function renderMinimalChat() {
 html,body{margin:0;height:100%;background:var(--paper);color:var(--ink);font:1.125rem/1.62 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
 body{display:flex;flex-direction:column;max-width:48rem;margin:0 auto;padding:0 1.25rem}
 #log{flex:1;overflow-y:auto;padding:2rem 0 1.25rem;display:flex;flex-direction:column;gap:1.35rem}
-.m{white-space:pre-wrap;word-break:break-word}
-.u{color:var(--muted)}
+.m{word-break:break-word}
+.m.u{white-space:pre-wrap}
 .a{color:var(--heading)}
+.a>:first-child{margin-top:0}
+.a p,.a ul,.a ol,.a blockquote,.a table,.a .cb,.a .mmd{margin:.55rem 0}
+.a h1,.a h2,.a h3,.a h4{line-height:1.3;margin:1rem 0 .4rem;color:var(--heading)}
+.a h1{font-size:1.4em}.a h2{font-size:1.22em}.a h3{font-size:1.08em}
+.a ul,.a ol{padding-left:1.4rem}
+.a li{margin:.2rem 0}
+.a blockquote{margin-left:0;padding:.15rem .9rem;border-left:3px solid var(--accent);color:var(--muted)}
+.a table{border-collapse:collapse;font-size:.95em;display:block;overflow-x:auto}
+.a th,.a td{border:1px solid var(--rule);padding:.35rem .6rem;text-align:left}
+.a th{background:var(--paper-2)}
+.a hr{border:0;border-top:1px solid var(--rule);margin:1rem 0}
+.a a{color:var(--accent)}
+.cb{position:relative}
+.cb .copy,.mmd-toggle{appearance:none;background:var(--paper);color:var(--muted);border:1px solid var(--rule);font:0.72em/1 ui-sans-serif,system-ui,sans-serif;padding:.28rem .5rem;border-radius:3px;cursor:pointer;opacity:.75}
+.cb .copy{position:absolute;top:.35rem;right:.4rem}
+.cb .copy:hover,.mmd-toggle:hover{opacity:1;border-color:var(--accent)}
+.mmd{position:relative;border:1px solid var(--rule);border-radius:3px;padding:.5rem}
+.mmd .mmd-toggle{margin:0 0 .35rem;display:inline-block}
+.mmd-out{overflow-x:auto}
+.mmd-out svg{max-width:100%;height:auto}
+.mmd-err{border-color:#cb4b16}
+.mmd-msg{color:#cb4b16;font-size:.9em;margin:.35rem 0 0}
+.hljs-comment,.hljs-quote{color:#93a1a1;font-style:italic}
+.hljs-keyword,.hljs-selector-tag,.hljs-literal{color:#859900}
+.hljs-string,.hljs-attr{color:#2aa198}
+.hljs-number,.hljs-built_in{color:#d33682}
+.hljs-title,.hljs-name{color:#268bd2}
 pre,code{font:0.92em/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--paper-2)}
 code{padding:.1em .3em;border-radius:2px}
 pre{padding:.75rem .9rem;overflow-x:auto;border-left:2px solid var(--rule);margin:.5rem 0}
@@ -253,6 +282,7 @@ textarea::placeholder{color:var(--muted);opacity:.65}
 <form id="f">
   <textarea id="q" rows="1" placeholder="Ask…" autofocus></textarea>
 </form>
+<script src="/chat-client.js" defer></script>
 <script>
 const log = document.getElementById('log');
 const q = document.getElementById('q');
@@ -264,6 +294,13 @@ const BRIDGE = 'http://127.0.0.1:4199';
 let busy = false;
 let currentSshReq = null;
 
+function renderMd(text) {
+  return fetch('/api/render', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => (d && d.html) || '')
+    .catch(() => '');
+}
+
 function add(cls, text) {
   if (!text) return null;
   const d = document.createElement('div');
@@ -274,14 +311,26 @@ function add(cls, text) {
   return d;
 }
 
+// \`html\` is server-rendered markdown: already sanitized by src/markdown.mjs
+function addHtml(cls, html, fallback) {
+  if (!html) return add(cls, fallback || '');
+  const d = document.createElement('div');
+  d.className = 'm ' + cls;
+  d.innerHTML = html;
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+  if (window.chatRender) window.chatRender(d);
+  return d;
+}
+
 async function hydrate() {
   try {
     const r = await fetch('/api/history');
     if (!r.ok) return;
     const d = await r.json();
     for (const e of (d.entries || [])) {
-      if (e.role === 'user' && e.text) add('u', e.text.replace(/^\\[ROUTER_HINT:[^\\]]+\\]\\n/, ''));
-      else if (e.role === 'assistant' && e.text) add('a', e.text);
+      if (e.role === 'user' && (e.html || e.text)) addHtml('u', e.html, (e.text || '').replace(/^\\[ROUTER_HINT:[^\\]]+\\]\\n/, ''));
+      else if (e.role === 'assistant' && (e.html || e.text)) addHtml('a', e.html, e.text);
     }
   } catch {}
 }
@@ -355,7 +404,7 @@ async function send(steer = false) {
   if (!text) return;
   q.value = '';
   fit();
-  add('u', text);
+  renderMd(text).then((h) => addHtml('u', h, text));
   const pending = add('a', '…');
   busy = true;
   try {
@@ -366,7 +415,9 @@ async function send(steer = false) {
     });
     if (r.status === 401) { location.reload(); return; }
     const d = await r.json();
-    pending.textContent = d.error ? ('Error: ' + d.error) : (d.text || '(done)');
+    if (d.error) pending.textContent = 'Error: ' + d.error;
+    else if (d.html) { pending.innerHTML = d.html; if (window.chatRender) window.chatRender(pending); }
+    else pending.textContent = d.text || '(done)';
   } catch (e) {
     pending.textContent = 'Error: ' + (e.message || e);
   } finally {
@@ -427,6 +478,17 @@ export async function startWebServer({
     const sendHtml = (code, html, extraHeaders = {}) => {
       res.writeHead(code, { "Content-Type": "text/html; charset=utf-8", ...SECURITY_HEADERS, ...extraHeaders });
       res.end(html);
+    };
+    const sendAsset = (code, body, type) => {
+      res.writeHead(code, { "Content-Type": type, ...SECURITY_HEADERS, "Cache-Control": "public, max-age=3600" });
+      res.end(body);
+    };
+    const assetFile = async (relPath, type) => {
+      try {
+        return sendAsset(200, await readFile(new URL(relPath, import.meta.url)), type);
+      } catch {
+        return sendJson(404, { error: "not_found" });
+      }
     };
 
     try {
@@ -530,6 +592,19 @@ export async function startWebServer({
 
       if (req.method === "GET" && url.pathname === "/") {
         return sendHtml(200, renderMinimalChat());
+      }
+
+      // Static chat assets (same-origin, cacheable; CSP script-src 'self')
+      if (req.method === "GET" && url.pathname === "/chat-client.js") {
+        return assetFile("./chat-client.js", "text/javascript; charset=utf-8");
+      }
+      if (req.method === "GET" && url.pathname === "/mermaid-vendor.js") {
+        return assetFile("../node_modules/mermaid/dist/mermaid.min.js", "text/javascript; charset=utf-8");
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/render") {
+        const body = await readJsonLimited(req, 65_536);
+        return sendJson(200, { html: renderMarkdown(String(body.text || "")) });
       }
 
       if (req.method === "GET" && url.pathname === "/api/ssh-sign/pending") {

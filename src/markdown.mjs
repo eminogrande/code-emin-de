@@ -1,83 +1,70 @@
+// Server-side Markdown renderer for the chat UI.
+// Raw model HTML is allowed through a mature sanitizer (DOMPurify on jsdom) with an
+// explicit tag/attr allowlist; URL policy is http(s)/mailto + relative only.
+import { JSDOM } from "jsdom";
+import createDOMPurify from "dompurify";
 import hljs from "highlight.js";
 import { marked, Renderer } from "marked";
+
+const dom = new JSDOM("<!doctype html><body>");
+const purify = createDOMPurify(dom.window);
 
 const esc = (s = "") =>
   String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
-const SAFE_URL = /^(?:https?:\/\/|mailto:|data:image\/(?:png|jpe?g|gif|webp);base64,|\/|#|\.{0,2}\/)/i;
-
-function safeUrl(raw) {
-  const u = String(raw || "").trim().replace(/[\u0000-\u001f\s]/g, "");
-  if (!u || /^[a-z][a-z0-9+.-]*:/i.test(u)) return SAFE_URL.test(u) ? u : "";
-  // scheme-less relative paths are fine
-  return u.startsWith("//") ? u : u;
+// Relative, "#frag", http(s): and mailto: only. Everything else (data:, javascript:, vbscript:) is dropped.
+export function safeUrl(raw) {
+  const u = String(raw || "").trim().replace(/[\u0000-\u0020]/g, "");
+  if (!u) return "";
+  if (/^[a-z][a-z0-9+.-]*:/i.test(u)) return /^(?:https?:|mailto:)/i.test(u) ? u : "";
+  return u; // relative path, /abs, ?query, #frag, //host
 }
 
-// --- sanitizer: allowlist only, by construction nothing else survives ---
-const TAGS = new Set([
-  "a","p","br","hr","strong","em","del","code","pre","span","div","button","img",
-  "ul","ol","li","blockquote","h1","h2","h3","h4","h5","h6","section",
-  "table","thead","tbody","tr","th","td",
-]);
-const ATTRS = {
-  a: ["href", "title", "target", "rel"],
-  img: ["src", "alt", "title", "width", "height"],
-  pre: ["class", "data-src"],
-  code: ["class"],
-  span: ["class"],
-  div: ["class"],
-  button: ["class", "type", "data-code"],
-  ul: ["start"],
-  ol: ["start"],
-  th: ["align", "colspan", "rowspan"],
-  td: ["align", "colspan", "rowspan"],
-  h1: ["id"], h2: ["id"], h3: ["id"], h4: ["id"], h5: ["id"], h6: ["id"],
-};
+const TAGS = [
+  "a", "p", "br", "hr", "strong", "em", "b", "i", "del", "code", "pre", "span", "div", "button", "img",
+  "ul", "ol", "li", "blockquote", "h1", "h2", "h3", "h4", "h5", "h6", "section",
+  "table", "thead", "tbody", "tr", "th", "td", "kbd", "sub", "sup",
+];
+const ATTRS = [
+  "href", "title", "target", "rel", "src", "alt", "width", "height", "class", "type",
+  "data-code", "start", "align", "colspan", "rowspan", "aria-expanded",
+];
 
-function sanitize(html) {
-  const out = html
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/<[!?][^>]*>/g, "")
-    // script/style bodies are not markup for us: show them as text, escaped
-    .replace(/<(script|style)\b[^>]*>([\s\S]*?)<\/\1>/gi, (_m, _t, body) => esc(body));
-  return out.replace(/<(\/?)([a-zA-Z0-9]+)((?:\s+[^<>]*?)?)(\/?)>/g, (m, slash, rawName, attrStr, selfClose) => {
-    const name = rawName.toLowerCase();
-    if (!TAGS.has(name)) return "";
-    if (slash) return `</${name}>`;
-    const allowed = ATTRS[name] || [];
-    let attrs = "";
-    const re = /([a-zA-Z0-9:_-]+)(?:\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
-    let a;
-    while ((a = re.exec(attrStr))) {
-      const key = a[1].toLowerCase();
-      if (!allowed.includes(key)) continue;
-      let val = a[3] ?? a[4] ?? a[5] ?? "";
-      val = val.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
-      if (key === "href" || key === "src") {
-        val = safeUrl(val);
-        if (!val) continue;
-      } else if (val.length > 20000) {
-        val = val.slice(0, 20000);
-      }
-      attrs += ` ${key}="${esc(val)}"`;
-    }
-    if (name === "a" && /\shref=/.test(attrs)) {
-      if (!/\srel=/.test(attrs)) attrs += ' rel="noopener noreferrer"';
-      if (!/\starget=/.test(attrs)) attrs += ' target="_blank"';
-    }
-    if (name === "img" && !/\ssrc=/.test(attrs)) return "";
-    return `<${name}${attrs}${selfClose}>`;
+export function sanitize(html = "") {
+  const clean = purify.sanitize(String(html), {
+    ALLOWED_TAGS: TAGS,
+    ALLOWED_ATTR: ATTRS,
+    ALLOW_DATA_ATTR: false,
+    KEEP_CONTENT: true,
   });
+  const root = dom.window.document.createElement("div");
+  root.innerHTML = clean;
+  for (const a of root.querySelectorAll("a")) {
+    const url = safeUrl(a.getAttribute("href"));
+    if (!url) {
+      a.replaceWith(...a.childNodes); // no usable target -> plain text
+      continue;
+    }
+    a.setAttribute("href", url);
+    a.setAttribute("rel", "noopener noreferrer");
+    a.setAttribute("target", "_blank");
+  }
+  for (const img of root.querySelectorAll("img")) {
+    const url = safeUrl(img.getAttribute("src"));
+    if (!url) img.remove(); // no src, or data: bloat
+    else img.setAttribute("src", url);
+  }
+  return root.innerHTML;
 }
 
 function makeRenderer() {
   const r = new Renderer();
-  // raw HTML from the model: escaped unless it is a simple allowed tag (sanitizer checks anyway)
   r.html = ({ text }) => sanitize(text);
   r.code = ({ text, lang }) => {
     const tag = String(lang || "").trim().split(/\s+/)[0].toLowerCase();
     if (tag === "mermaid") {
-      return `<div class="mmd"><pre class="mermaid" data-src="${esc(text)}">${esc(text)}</pre><div class="mmd-out" hidden></div></div>\n`;
+      // Source stays in the DOM (toggleable); src/mermaid-client.js upgrades it to SVG.
+      return `<div class="mmd"><button class="mmd-toggle" type="button" aria-expanded="false">source</button><pre class="mermaid">${esc(text)}</pre><div class="mmd-out" hidden></div></div>\n`;
     }
     let body = esc(text);
     let cls = "";
@@ -100,16 +87,18 @@ function makeRenderer() {
   return r;
 }
 
-let renderer = makeRenderer();
-marked.setOptions({ gfm: true, breaks: true, headerIds: false, mangle: false });
+const renderer = makeRenderer();
+marked.setOptions({ gfm: true, breaks: true, async: false });
 
 export function renderMarkdown(src) {
   if (!src) return "";
   let html;
   try {
-    html = marked.parse(String(src), { renderer, async: false });
+    html = marked.parse(String(src), { renderer });
   } catch {
     return `<p>${esc(src)}</p>`;
   }
+  // Renderer output already passed the sanitizer per fragment; run the whole doc once more
+  // so links coming from raw HTML get the same URL policy.
   return sanitize(html);
 }
