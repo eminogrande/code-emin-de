@@ -67,8 +67,8 @@ case "${1:-}" in
     NEW_SHA=$(run_swarm "cd '$REPO' && git rev-parse --short HEAD")
     systemctl restart swarm-web.service
     if echo "$CHANGED" | grep -qvE '^.. src/web(authn)?\.mjs$'; then
-      # Restart swarmd cleanly 1s after returning so active tool call can finish
-      nohup bash -c 'sleep 1 && systemctl restart swarmd.service' >/dev/null 2>&1 &
+      # Restart swarmd cleanly 3s after returning so active HTTP/socket reply finishes first
+      nohup bash -c 'sleep 3 && systemctl restart swarmd.service' >/dev/null 2>&1 &
     fi
     if health_wait; then
       echo "APPLIED_AND_BACKED_UP_OK ($NEW_SHA)"

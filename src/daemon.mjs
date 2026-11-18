@@ -1,5 +1,11 @@
+import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
+const SELF_REPO_DIR = process.env.SWARM_SELF_REPO || "/opt/pi-durable-swarm";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import {
   AssistantEntry,
@@ -634,15 +640,44 @@ export async function openSwarmDaemon({
             role: "lead",
             requireVerified: false,
           };
-          if (!meta.requireVerified) return;
-          const txt = extractAssistantText(answer);
-          const prevRetries = yieldRetries.get(api.conversationId) || 0;
-          if (!/Verified:\s*PASS/i.test(txt) && prevRetries < 2) {
-            yieldRetries.set(api.conversationId, prevRetries + 1);
-            return {
-              continue:
-                "VERIFICATION GATE: Run your verification test via `bash` and end your response with `Verified: PASS (<test command>)`.",
-            };
+          if (meta.requireVerified) {
+            const txt = extractAssistantText(answer);
+            const prevRetries = yieldRetries.get(api.conversationId) || 0;
+            if (!/Verified:\s*PASS/i.test(txt) && prevRetries < 2) {
+              yieldRetries.set(api.conversationId, prevRetries + 1);
+              return {
+                continue:
+                  "VERIFICATION GATE: Run your verification test via `bash` and end your response with `Verified: PASS (<test command>)`.",
+              };
+            }
+          }
+
+          // Deterministic self-repo GitHub backup + reload gate on VPS (/opt/pi-durable-swarm)
+          if ((meta.role === "lead" || meta.role === "coder") && existsSync(join(SELF_REPO_DIR, ".git"))) {
+            try {
+              const { stdout } = await execFileAsync("git", ["-C", SELF_REPO_DIR, "status", "--porcelain"], {
+                timeout: 5000,
+              });
+              if (stdout.trim()) {
+                const syncKey = `git:${api.conversationId}`;
+                const prevSync = yieldRetries.get(syncKey) || 0;
+                if (prevSync < 2) {
+                  yieldRetries.set(syncKey, prevSync + 1);
+                  try {
+                    await execFileAsync(
+                      "sudo",
+                      ["/usr/local/bin/swarm-ctl", "apply", `auto(${meta.workerId || meta.role}): verified self-update`],
+                      { timeout: 45_000 },
+                    );
+                  } catch (err) {
+                    const msg = String(err?.stderr || err?.stdout || err?.message || err).slice(0, 600);
+                    return {
+                      continue: `AUTO-BACKUP GATE FAILED (\`swarm-ctl apply\`): fix syntax/test error before finishing:\n${msg}`,
+                    };
+                  }
+                }
+              }
+            } catch {}
           }
         },
       }),
