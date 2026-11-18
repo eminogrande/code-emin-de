@@ -465,7 +465,125 @@ document.addEventListener('visibilitychange', () => {
 
 async function hydrate() {
   try { await syncHistory(); } catch {}
+  try { await pollWorkers(); } catch {}
 }
+
+// ---- sidebars: send target + live agents (textContent only, read-only API) ----
+let target = 'lead';
+const targetsBox = document.getElementById('targets');
+const agentsUl = document.getElementById('agents');
+const agentsEmpty = document.getElementById('agentsEmpty');
+
+function setTarget(id) {
+  target = id;
+  for (const b of document.querySelectorAll('[data-target]')) {
+    b.setAttribute('aria-current', String(b.dataset.target === id));
+  }
+}
+document.addEventListener('click', (ev) => {
+  const b = ev.target.closest?.('[data-target]');
+  if (b) { setTarget(b.dataset.target); closeDrawers(); }
+});
+
+const STATE_LABEL = { running: 'running', idle_done: 'idle', failed: 'failed', failed_turn_limit: 'failed (turn limit)' };
+function elapsed(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm ' + (s % 60) + 's';
+  return Math.floor(m / 60) + 'h ' + (m % 60) + 'm';
+}
+
+function renderAgents(list) {
+  const known = new Set(list.map((w) => w.id));
+  for (const n of Array.from(agentsUl.children)) if (!known.has(n.dataset.id)) n.remove();
+  const now = Date.now();
+  let after = null;
+  for (const w of list) {
+    let li = agentsUl.querySelector('[data-id="' + CSS.escape(w.id) + '"]');
+    if (!li) {
+      li = document.createElement('li');
+      li.dataset.id = w.id;
+      li.innerHTML = '<div class="wtop"><span class="dot"></span><span class="wrole"></span></div><span class="wsub"></span><span class="wsub werr"></span>';
+      li.querySelector('.wrole').textContent = w.role || w.id;
+    }
+    li.className = 'wk s-' + (w.state || 'idle');
+    li.querySelector('.wrole').textContent = (w.role || 'worker') + ' · ' + w.id;
+    li.querySelector('.wsub').textContent =
+      (STATE_LABEL[w.state] || w.state || 'idle') + (w.createdAt ? ' · ' + elapsed(now - w.createdAt) : '');
+    const err = li.querySelector('.werr');
+    err.textContent = w.lastError ? String(w.lastError).slice(0, 120) : '';
+    const want = after ? after.nextElementSibling : agentsUl.firstElementChild;
+    if (li !== want && want !== li.nextElementSibling) agentsUl.insertBefore(li, want);
+    after = li;
+  }
+  agentsEmpty.hidden = list.length > 0;
+}
+
+// Worker navigation in the left sidebar follows the same live list.
+function renderTargets(list) {
+  const ids = [];
+  for (const w of list) if (w.id && w.id !== 'lead' && !ids.includes(w.id)) ids.push(w.id);
+  for (const n of Array.from(targetsBox.children)) if (!ids.includes(n.dataset.target)) n.remove();
+  const now = Date.now();
+  for (const id of ids) {
+    let b = targetsBox.querySelector('[data-target="' + CSS.escape(id) + '"]');
+    if (!b) {
+      b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tgt';
+      b.dataset.target = id;
+      b.innerHTML = '<span class="tname"></span><span class="tmeta"></span>';
+      targetsBox.appendChild(b);
+    }
+    const w = list.find((x) => x.id === id);
+    b.querySelector('.tname').textContent = w.role || 'worker';
+    b.querySelector('.tmeta').textContent =
+      (STATE_LABEL[w.state] || w.state || 'idle') + (w.createdAt ? ' · ' + elapsed(now - w.createdAt) : '');
+    b.setAttribute('aria-current', String(target === id));
+  }
+  if (target !== 'lead' && !ids.includes(target)) setTarget('lead');
+}
+
+// Poll the read-only agent list on the shared backoff; paused while hidden.
+async function pollWorkers() {
+  if (document.hidden) return;
+  try {
+    const r = await fetch('/api/workers');
+    if (r.status === 401) { location.reload(); return; }
+    if (!r.ok) return;
+    const d = await r.json();
+    const list = (d.workers || []).filter((w) => w && w.id && w.id !== 'lead');
+    renderAgents(list);
+    renderTargets(list);
+  } catch {}
+}
+setInterval(pollWorkers, POLL_MS);
+
+// ---- responsive drawers ----
+const leftCol = document.getElementById('leftCol');
+const rightCol = document.getElementById('rightCol');
+const backdrop = document.getElementById('backdrop');
+const tLeft = document.getElementById('tLeft');
+const tRight = document.getElementById('tRight');
+function closeDrawers() {
+  for (const el of [leftCol, rightCol]) el.classList.remove('open');
+  tLeft.setAttribute('aria-expanded', 'false');
+  tRight.setAttribute('aria-expanded', 'false');
+  backdrop.hidden = true;
+}
+function toggleDrawer(el, btn) {
+  const open = !el.classList.contains('open');
+  closeDrawers();
+  if (!open) return;
+  el.classList.add('open');
+  btn.setAttribute('aria-expanded', 'true');
+  backdrop.hidden = false;
+}
+tLeft.onclick = () => toggleDrawer(leftCol, tLeft);
+tRight.onclick = () => toggleDrawer(rightCol, tRight);
+backdrop.onclick = closeDrawers;
+addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeDrawers(); });
 
 
 // Poll pending Click-to-Sign SSH challenges when swarm is working or every 1.5s
@@ -545,7 +663,7 @@ async function send(steer = false) {
     const r = await fetch('/api/chat', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ text, steer })
+      body: JSON.stringify({ text, steer, targetWorkerId: target })
     });
     if (r.status === 401) { location.reload(); return; }
     const d = await r.json();
@@ -573,6 +691,7 @@ q.addEventListener('keydown', (ev) => {
 
 hydrate();
 pollSsh();
+pollWorkers();
 schedulePoll(POLL_MS);
 </script>
 </body>

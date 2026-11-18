@@ -640,16 +640,24 @@ export async function openSwarmDaemon({
       }, BACKGROUND_CONTEXT);
     },
     transcript: readConversationTranscript,
-    resumeWorker: async (worker, { notice }) => {
+    resumeWorker: async (worker, { notice, summary }) => {
       const conv = await harness.conversation(worker.convId, BACKGROUND_CONTEXT);
-      if (!conv) return;
+      // Never resume over a live run: the scheduler would queue a second input behind it.
+      const liveNow = await harness.snapshot(LiveDoc, worker.convId, BACKGROUND_CONTEXT);
+      if (!conv || liveNow?.run) return false;
       await conv.commit(async (tx) => {
         const agent = await tx.doc(RoleMetaDoc, conv.id);
         agent.role = agent.role || worker.role;
       }, BACKGROUND_CONTEXT);
-      await conv.configure({ maxTurns: (worker.maxTurns || 40) + 20 }, BACKGROUND_CONTEXT);
-      await conv.submit({ type: "input", content: notice }, BACKGROUND_CONTEXT);
+      // A run that keeps asking for more tests must not be starved by its own maxTurns.
+      const grown = (worker.maxTurns || 40) + 20;
+      await conv.configure({ maxTurns: grown }, BACKGROUND_CONTEXT);
+      const ctx = summary?.commit || summary?.tests?.length
+        ? `${notice}\n\nAlready reached (authoritative, do not redo): ${summary.commit ? `commit ${summary.commit}; ` : ""}${summary.tests.join(" | ") || "no test output"}.`
+        : notice;
+      await conv.submit({ type: "input", content: ctx }, BACKGROUND_CONTEXT);
       harness.resume();
+      return true;
     },
     notifyLead: async (topic, body) => {
       bus.send({ from: "supervisor", to: "lead", topic, body });
@@ -724,7 +732,8 @@ export async function openSwarmDaemon({
           if (meta.requireVerified) {
             const txt = extractAssistantText(answer);
             const prevRetries = yieldRetries.get(api.conversationId) || 0;
-            if (!/Verified:\s*PASS/i.test(txt) && prevRetries < 2) {
+            // Exactly one verification retry: a second turn_limit must not expand into another test gate.
+            if (!/Verified:\s*PASS/i.test(txt) && prevRetries < 1) {
               yieldRetries.set(api.conversationId, prevRetries + 1);
               return {
                 continue:

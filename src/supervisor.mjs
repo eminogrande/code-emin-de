@@ -10,6 +10,9 @@ export const SUPERVISOR_DEFAULTS = { maxAutoResumes: 3, backoffMs: 2_000, interv
 
 export const RETRYABLE = new Set(["turn_limit"]);
 
+/** Shown when neither the worker record nor its transcript carries the task brief. Never a blank Goal. */
+export const UNKNOWN_GOAL = "Task unavailable";
+
 const COMMIT_RE = /^[0-9a-f]{7,40}\b.*/i;
 const TEST_RE = /\b(\d+ (?:tests?|passing|failing)|ok \d+|Verified:\s*PASS.*|not ok \d+.*)/i;
 const ERROR_RE = /\b(error|Error|ERR_|exception|failed|FAIL)\b/;
@@ -34,6 +37,16 @@ export function summarizeTranscript(entries = []) {
     }
   }
   return { commit, tests, errors };
+}
+
+/** First user message of a transcript = the real initial task brief, if the worker record lost its goal. */
+export function goalFromTranscript(entries = []) {
+  for (const e of entries) {
+    if (e?.role !== "user") continue;
+    const text = String(e.text || "").trim();
+    if (text) return text;
+  }
+  return "";
 }
 
 /**
@@ -82,7 +95,25 @@ export function createSupervisor({
 
   const lead = (topic, body) => notifyLead(topic, body).catch(() => {});
 
-  async function notifyStart(worker) {
+  /** One notification per (topic, key) per worker, however often the tick repeats. */
+  async function leadOnce(worker, topic, key, body) {
+    const notified = (worker.supervisor || {}).notified || {};
+    if (notified[topic] === key) return;
+    await patch(worker.workerId, (w) => {
+      w.supervisor = { ...(w.supervisor || {}), notified: { ...((w.supervisor || {}).notified || {}), [topic]: key } };
+    });
+    await lead(topic, body);
+  }
+
+  /** Never blank: worker goal -> initial task brief in the transcript -> `Task unavailable`. */
+  async function goalText(worker, entries) {
+    const own = String(worker.goal || "").trim();
+    if (own) return own.slice(0, 400);
+    const fromTranscript = goalFromTranscript(entries ?? (await transcript(worker.convId)));
+    return fromTranscript ? fromTranscript.slice(0, 400) : UNKNOWN_GOAL;
+  }
+
+  async function notifyStart(worker, entries) {
     const sup = worker.supervisor || {};
     if (sup.startedAnnounced) return;
     await patch(worker.workerId, (w) => {
@@ -90,13 +121,27 @@ export function createSupervisor({
     });
     await lead(
       "SUPERVISOR_START",
-      `[supervisor] supervising ${worker.workerId} (${worker.role}) — max ${o.maxAutoResumes} auto-resumes, ${o.backoffMs}ms backoff.\nGoal: ${(worker.goal || "").slice(0, 400)}`,
+      `[supervisor] supervising ${worker.workerId} (${worker.role}) — max ${o.maxAutoResumes} auto-resumes, ${o.backoffMs}ms backoff.\nGoal: ${await goalText(worker, entries)}`,
     );
   }
 
   async function doResume(worker, failure) {
     const sup = worker.supervisor || {};
     const attempt = (sup.autoResumes || 0) + 1;
+    const entries = await transcript(worker.convId);
+    const res = await resumeWorker(worker, {
+      attempt,
+      failure,
+      summary: summarizeTranscript(entries),
+      notice: resumeNotice({ ...worker, goal: await goalText(worker, entries) }, failure, attempt, o),
+    });
+    // A run that was still active when we looked owns the next turn: don't spend an attempt on it.
+    if (res === false) {
+      await patch(worker.workerId, (w) => {
+        w.supervisor = { ...(w.supervisor || {}), nextAt: now() + o.backoffMs };
+      });
+      return;
+    }
     await patch(worker.workerId, (w) => {
       w.supervisor = {
         ...(w.supervisor || {}),
@@ -106,15 +151,17 @@ export function createSupervisor({
         status: "resuming",
       };
     });
-    await lead(
+    await leadOnce(
+      worker,
       "SUPERVISOR_RESUME",
-      `[supervisor] auto-resume ${attempt}/${o.maxAutoResumes} for ${worker.workerId} after ${failure.reason} (${failure.detail || "no detail"}).\nGoal: ${(worker.goal || "").slice(0, 400)}`,
+      `${attempt}|${failureKey(failure)}`,
+      `[supervisor] auto-resume ${attempt}/${o.maxAutoResumes} for ${worker.workerId} after ${failure.reason} (${failure.detail || "no detail"}).\nGoal: ${await goalText(worker, entries)}`,
     );
-    await resumeWorker(worker, { attempt, failure, notice: resumeNotice(worker, failure, attempt, o) });
   }
 
   async function doExhausted(worker, failure) {
-    const summary = summarizeTranscript(await transcript(worker.convId));
+    const entries = await transcript(worker.convId);
+    const summary = summarizeTranscript(entries);
     await patch(worker.workerId, (w) => {
       w.supervisor = {
         ...(w.supervisor || {}),
@@ -122,15 +169,17 @@ export function createSupervisor({
         lastFailure: { reason: failure.reason, detail: failure.detail || "", at: now() },
       };
     });
-    await lead(
+    await leadOnce(
+      worker,
       "SUPERVISOR_EXHAUSTED",
-      `[supervisor] EXHAUSTED ${worker.workerId} after ${o.maxAutoResumes} auto-resumes (${failure.reason}: ${failure.detail || "no detail"}). Needs attention.\nGoal: ${(worker.goal || "").slice(0, 400)}${formatSummary(summary)}`,
+      failureKey(failure),
+      `[supervisor] EXHAUSTED ${worker.workerId} after ${o.maxAutoResumes} auto-resumes (${failure.reason}: ${failure.detail || "no detail"}). Needs attention.\nGoal: ${await goalText(worker, entries)}${formatSummary(summary)}`,
     );
   }
 
   async function doTerminal(worker, failure) {
-    if ((worker.supervisor || {}).status === "terminal") return;
-    const summary = summarizeTranscript(await transcript(worker.convId));
+    const entries = await transcript(worker.convId);
+    const summary = summarizeTranscript(entries);
     await patch(worker.workerId, (w) => {
       w.supervisor = {
         ...(w.supervisor || {}),
@@ -138,9 +187,11 @@ export function createSupervisor({
         lastFailure: { reason: failure.reason, detail: failure.detail || "", at: now() },
       };
     });
-    await lead(
+    await leadOnce(
+      worker,
       "SUPERVISOR_FAILED",
-      `[supervisor] FAILED ${worker.workerId} (${failure.reason}: ${failure.detail || "no detail"}; not retried).\nGoal: ${(worker.goal || "").slice(0, 400)}${formatSummary(summary)}`,
+      failureKey(failure),
+      `[supervisor] FAILED ${worker.workerId} (${failure.reason}: ${failure.detail || "no detail"}; not retried).\nGoal: ${await goalText(worker, entries)}${formatSummary(summary)}`,
     );
   }
 
@@ -148,13 +199,13 @@ export function createSupervisor({
   async function notifyDone(worker) {
     const sup = worker.supervisor || {};
     if (sup.status === "done" || sup.doneAnnounced) return;
-    const summary = summarizeTranscript(await transcript(worker.convId));
+    const entries = await transcript(worker.convId);
     await patch(worker.workerId, (w) => {
       w.supervisor = { ...(w.supervisor || {}), status: "done", doneAnnounced: true };
     });
     await lead(
       "WORKER_DONE",
-      `[supervisor] ${worker.workerId} (${worker.role}) finished after ${sup.autoResumes || 0} auto-resume(s).${formatSummary(summary)}`,
+      `[supervisor] ${worker.workerId} (${worker.role}) finished after ${sup.autoResumes || 0} auto-resume(s).${formatSummary(summarizeTranscript(entries))}`,
     );
   }
 
@@ -172,6 +223,8 @@ export function createSupervisor({
     try {
       for (const worker of Object.values(await workers())) {
         if (worker.role === "btw") continue;
+        // Workers predating the supervisor would all restart as `user` on deploy: only arm ones we initialized.
+        if (!worker.supervisor) continue;
         const l = await live(worker.convId);
         await notifyStart(worker);
         if (l?.run && !(worker.supervisor || {}).seenRun) {
@@ -212,5 +265,11 @@ export function createSupervisor({
 }
 
 export function resumeNotice(worker, failure, attempt, opts = SUPERVISOR_DEFAULTS) {
-  return `[SUPERVISOR AUTO-RESUME ${attempt}/${opts.maxAutoResumes ?? SUPERVISOR_DEFAULTS.maxAutoResumes}] Previous run hit turn_limit (${failure?.detail || "max turns"}). Context is preserved. Continue the SAME goal to completion, reuse what you already have, then finish with Verified: PASS. Original goal: ${worker.goal || "(see transcript)"}`;
+  return (
+    `[SUPERVISOR AUTO-RESUME ${attempt}/${opts.maxAutoResumes ?? SUPERVISOR_DEFAULTS.maxAutoResumes}] ` +
+    `Previous run hit turn_limit (${failure?.detail || "max turns"}). Context is preserved.\n` +
+    `Do NOT re-plan or re-run the whole test suite from scratch: reuse what you already have, run only the focused tests you still need, ` +
+    `commit, then finish with Verified: PASS (<command>). Auto-resume stops at ${opts.maxAutoResumes ?? SUPERVISOR_DEFAULTS.maxAutoResumes}, so reach your next input instead of looping.\n` +
+    `Original goal: ${worker.goal || UNKNOWN_GOAL}`
+  );
 }
