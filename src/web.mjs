@@ -633,8 +633,22 @@ export async function startWebServer({
       }
 
       if (req.method === "GET" && url.pathname === "/api/history") {
-        const out = await unixRpc(sockPath, "GET", "/transcript?convId=1&max=40");
-        return sendJson(out?.error ? 500 : 200, out);
+        const max = Math.min(Math.max(Number(url.searchParams.get("max") || 40) || 40, 1), 200);
+        const out = await unixRpc(sockPath, "GET", `/transcript?convId=1&max=${max}`);
+        if (out?.error) return sendJson(500, out);
+        // Entry ids let the client reconcile in place (no re-render wipe, no duplicates).
+        const entries = (out?.entries || []).map((e) => {
+          const text = String(e.text || "");
+          if (e.role === "user") {
+            const clean = text.replace(/^\[ROUTER_HINT:[^\]]+\]\n/, "");
+            return { id: e.id, role: "user", text: clean, html: renderMarkdown(clean) };
+          }
+          if (e.role === "assistant") {
+            return { id: e.id, role: "assistant", text, html: text ? renderMarkdown(text) : "" };
+          }
+          return { id: e.id, role: e.role || "other" };
+        });
+        return sendJson(200, { conversationId: out?.conversationId || 1, entries });
       }
 
       if (req.method === "POST" && url.pathname === "/api/chat") {
