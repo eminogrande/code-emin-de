@@ -64,7 +64,9 @@ export function sanitize(html = "") {
 
 function makeRenderer() {
   const r = new Renderer();
-  r.html = ({ text }) => sanitize(text);
+  // Raw HTML passes through untouched; the whole document is sanitized once at the end so
+  // balanced inline tags (<a>…</a>) survive instead of being split per fragment.
+  r.html = ({ text }) => text;
   r.code = ({ text, lang }) => {
     const tag = String(lang || "").trim().split(/\s+/)[0].toLowerCase();
     if (tag === "mermaid") {
@@ -103,7 +105,5 @@ export function renderMarkdown(src) {
   } catch {
     return `<p>${esc(src)}</p>`;
   }
-  // Renderer output already passed the sanitizer per fragment; run the whole doc once more
-  // so links coming from raw HTML get the same URL policy.
   return sanitize(html);
 }
