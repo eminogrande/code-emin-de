@@ -27,7 +27,7 @@ const TAGS = [
 ];
 const ATTRS = [
   "href", "title", "target", "rel", "src", "alt", "width", "height", "class", "type",
-  "data-code", "start", "align", "colspan", "rowspan", "aria-expanded",
+  "data-code", "start", "align", "colspan", "rowspan", "aria-expanded", "hidden",
 ];
 
 export function sanitize(html = "") {
