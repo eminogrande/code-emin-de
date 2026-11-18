@@ -312,28 +312,93 @@ function add(cls, text) {
 }
 
 // \`html\` is server-rendered markdown: already sanitized by src/markdown.mjs
-function addHtml(cls, html, fallback) {
-  if (!html) return add(cls, fallback || '');
+function atBottom() {
+  return log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+}
+
+function addHtml(cls, html, fallback, id) {
   const d = document.createElement('div');
   d.className = 'm ' + cls;
-  d.innerHTML = html;
+  if (id) d.dataset.id = id; else d.classList.add('pending');
+  if (html) d.innerHTML = html; else d.textContent = fallback || '';
   log.appendChild(d);
   log.scrollTop = log.scrollHeight;
   if (window.chatRender) window.chatRender(d);
   return d;
 }
 
-async function hydrate() {
-  try {
-    const r = await fetch('/api/history');
-    if (!r.ok) return;
-    const d = await r.json();
-    for (const e of (d.entries || [])) {
-      if (e.role === 'user' && (e.html || e.text)) addHtml('u', e.html, (e.text || '').replace(/^\\[ROUTER_HINT:[^\\]]+\\]\\n/, ''));
-      else if (e.role === 'assistant' && (e.html || e.text)) addHtml('a', e.html, e.text);
+// id -> html last applied, so a re-fetch never rebuilds unchanged entries
+const rendered = new Map();
+
+// Reconcile rendered log against transcript order: reuse by id, insert new, drop vanished.
+// An unsent-input draft, selection and scroll stay untouched unless the log was at the bottom.
+async function syncHistory() {
+  const r = await fetch('/api/history');
+  if (r.status === 401) { location.reload(); return; }
+  if (!r.ok) throw new Error('history ' + r.status);
+  const d = await r.json();
+  const entries = (d.entries || []).filter((e) => e.role === 'user' || e.role === 'assistant');
+  const keep = atBottom();
+  const known = new Set(entries.map((e) => e.id));
+  for (const n of Array.from(log.children)) {
+    if (n.dataset.id && !known.has(n.dataset.id)) { n.remove(); rendered.delete(n.dataset.id); }
+  }
+  // Walk transcript order, keeping each entry in its slot (never a full rebuild)
+  let after = null;
+  for (const e of entries) {
+    const html = e.html || '';
+    let node = known.has(e.id) ? log.querySelector('[data-id="' + e.id + '"]') : null;
+    if (!node) {
+      node = addHtml(e.role === 'user' ? 'u' : 'a', html, e.text, e.id);
+    } else if (html && rendered.get(e.id) !== html) {
+      node.innerHTML = html;
+      if (window.chatRender) window.chatRender(node);
     }
-  } catch {}
+    rendered.set(e.id, html);
+    const want = after ? after.nextElementSibling : log.firstElementChild;
+    if (node !== want && want !== node.nextElementSibling) log.insertBefore(node, want);
+    after = node;
+  }
+  // Optimistic nodes (no data-id) go as soon as their real counterpart landed. The reply
+  // placeholder survives until the last transcript entry is the assistant reply.
+  const lastRole = entries.length ? entries[entries.length - 1].role : '';
+  const userTexts = new Set(entries.filter((e) => e.role === 'user').map((e) => (e.text || '').trim()));
+  for (const p of Array.from(log.querySelectorAll('.pending'))) {
+    if (p.classList.contains('u') ? userTexts.has((p.dataset.raw || '').trim()) : lastRole === 'assistant') p.remove();
+  }
+  if (keep) log.scrollTop = log.scrollHeight;
 }
+
+// Poll history only while no chat request is active; back off on errors; pause when hidden.
+const POLL_MS = 3000;
+let pollTimer = null;
+let backoff = POLL_MS;
+
+function schedulePoll(ms) {
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(tick, ms);
+}
+
+async function tick() {
+  if (document.hidden || busy) return schedulePoll(POLL_MS);
+  try {
+    await syncHistory();
+    backoff = POLL_MS;
+  } catch {
+    backoff = Math.min(backoff * 2, 15000);
+  }
+  schedulePoll(backoff);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) clearTimeout(pollTimer);
+  else schedulePoll(0);
+});
+
+async function hydrate() {
+  try { await syncHistory(); } catch {}
+}
+
 
 // Poll pending Click-to-Sign SSH challenges when swarm is working or every 1.5s
 async function pollSsh() {
@@ -404,9 +469,10 @@ async function send(steer = false) {
   if (!text) return;
   q.value = '';
   fit();
-  renderMd(text).then((h) => addHtml('u', h, text));
-  const pending = add('a', '…');
+  renderMd(text).then((h) => { const n = addHtml('u', h, text); if (n) n.dataset.raw = text; });
+  const pending = addHtml('a', '', '…');
   busy = true;
+  clearTimeout(pollTimer);
   try {
     const r = await fetch('/api/chat', {
       method: 'POST',
@@ -423,6 +489,7 @@ async function send(steer = false) {
   } finally {
     busy = false;
     log.scrollTop = log.scrollHeight;
+    schedulePoll(POLL_MS);
   }
 }
 
@@ -438,6 +505,7 @@ q.addEventListener('keydown', (ev) => {
 
 hydrate();
 pollSsh();
+schedulePoll(POLL_MS);
 </script>
 </body>
 </html>`;
