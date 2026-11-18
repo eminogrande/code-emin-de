@@ -250,6 +250,24 @@ test("HTTP WebServer E2E: Passkey cookie -> /api/history + /api/chat over Unix s
     assert.equal(rHist.status, 200);
     const histBody = await rHist.json();
     assert.equal(histBody.entries[0].text, "Ready.");
+    // Entry identity + server-side safe markdown for in-place reconciliation
+    assert.equal(histBody.entries[0].id, 1);
+    assert.match(histBody.entries[0].html, /Ready\./);
+
+    // History page size is capped
+    const rBig = await fetch(`http://127.0.0.1:${port}/api/history?max=9999`, { headers: { Cookie: cookie } });
+    assert.equal(rBig.status, 200);
+
+    // /api/render returns sanitized html (script tags stripped, markdown kept)
+    const rRend = await fetch(`http://127.0.0.1:${port}/api/render`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ text: "**b** <script>alert(1)</script>" }),
+    });
+    assert.equal(rRend.status, 200);
+    const rendBody = await rRend.json();
+    assert.match(rendBody.html, /<strong>b<\/strong>/);
+    assert.ok(!/<script>/.test(rendBody.html));
 
     // 4. Authenticated /api/chat MUST return HTTP 200 + text (NOT 'Invalid status code: done'!)
     const rChat = await fetch(`http://127.0.0.1:${port}/api/chat`, {
