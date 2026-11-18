@@ -540,7 +540,8 @@ export async function runCandidateInDocker({
     // 2. Overlay our upgraded harness files (`daemon.mjs`, `supervisor.mjs`, `models.mjs`, `prompts.mjs`, `reinforce.mjs`, `worker-meta.mjs`)
     //    WITHOUT touching `src/web.mjs` or `test/` so the episode task starts from the exact pre-task UI state!
     for (const f of ["daemon.mjs", "supervisor.mjs", "models.mjs", "prompts.mjs", "reinforce.mjs", "worker-meta.mjs"]) {
-      await cp(join(repoDir, "src", f), join(wsDir, "src", f));
+      const srcFile = join(repoDir, "src", f);
+      await cp(srcFile, join(wsDir, "src", f)).catch(() => {});
     }
     // Commit harness base inside ephemeral sandbox repo so `git diff` measures ONLY the candidate's task solution!
     await execFileAsync("git", ["-c", "user.name=reinforce", "-c", "user.email=reinforce@local", "add", "-A"], { cwd: wsDir });
@@ -555,12 +556,18 @@ export async function runCandidateInDocker({
       await cp(optmemMirrorDir, join(dataDir, "optmem"), { recursive: true }).catch(() => {});
     }
 
-    // 4. Write runner bootstrap inside sandboxRoot & chown to container uid 1000 (`agent`)
+    // 4. Write runner bootstrap inside sandboxRoot & run container as matching host uid:gid so /workspace & /sandbox are natively writable
     const specPath = join(sandboxRoot, "spec.json");
     await writeFile(specPath, JSON.stringify({ episode, candidate, timeoutMs: (timeoutSec - 30) * 1000 }, null, 2));
-    await execFileAsync("chown", ["-R", "1000:1000", sandboxRoot]).catch(() => {});
+    const uid = typeof process.getuid === "function" ? process.getuid() : 1000;
+    const gid = typeof process.getgid === "function" ? process.getgid() : 1000;
+    const containerUser = uid === 0 ? "1000:1000" : `${uid}:${gid}`;
+    if (uid === 0) {
+      await execFileAsync("chown", ["-R", "1000:1000", sandboxRoot]).catch(() => {});
+    }
 
     const innerScript = [
+      `mkdir -p /tmp/agent-home`,
       `ln -s /opt/host_node_modules /workspace/node_modules`,
       `node --no-warnings -e '
         import { readFile, writeFile } from "node:fs/promises";
@@ -583,13 +590,13 @@ export async function runCandidateInDocker({
         "run",
         "--rm",
         "--user",
-        "1000:1000",
+        containerUser,
         "--env-file",
         envFile,
         "-e",
         "SWARM_SELF_REPO=/nonexistent-reinforce-sandbox",
         "-e",
-        "HOME=/home/agent",
+        "HOME=/tmp/agent-home",
         "-v",
         `${wsDir}:/workspace`,
         "-v",
@@ -719,14 +726,48 @@ export async function runReinforceTournament({
     while (queue.length > 0) {
       const cand = queue.shift();
       if (!cand) break;
-      const res = await runCandidateInDocker({
-        repoDir,
-        envFile,
-        episode,
-        candidate: cand,
-        optmemMirrorDir,
-      });
-      runs.push(res);
+      try {
+        const res = await runCandidateInDocker({
+          repoDir,
+          envFile,
+          episode,
+          candidate: cand,
+          optmemMirrorDir,
+        });
+        runs.push(res);
+      } catch (err) {
+        runs.push({
+          candidateId: cand.id,
+          episodeId: episode.id,
+          config: {
+            leadModel: cand.leadModel,
+            coderModel: cand.coderModel,
+            reviewerModel: cand.reviewerModel || "glm-5.3",
+            optmem: !!cand.optmem,
+            supervisor: cand.supervisor,
+          },
+          metrics: {
+            testPass: false,
+            userNudges: 0,
+            autoResumes: 0,
+            workerCount: 0,
+            totalTokens: 0,
+            inputTokens: 0,
+            cacheReadTokens: 0,
+            outputTokens: 0,
+            reasoningTokens: 0,
+            replyWords: 0,
+            codeLoc: 0,
+            codeAdded: 0,
+            codeDeleted: 0,
+            toolCalls: 0,
+            costUsd: 0,
+            wallClockSec: 0,
+          },
+          verifierOutput: `Sandbox execution error: ${String(err?.stderr || err?.message || err).slice(0, 600)}`,
+          patch: "",
+        });
+      }
     }
   });
   await Promise.all(workers);
