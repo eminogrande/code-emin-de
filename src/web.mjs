@@ -731,6 +731,7 @@ export async function startWebServer({
           targetWorkerId: body.targetWorkerId || "lead",
           wait: true,
         });
+        if (out && !out.error && out.text) out.html = renderMarkdown(out.text);
         return sendJson(out?.error ? 500 : 200, out);
       }
 
