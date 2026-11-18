@@ -16,7 +16,7 @@ for (const line of envRaw.split("\n")) {
   const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
   if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim();
 }
-const HAS_LIVE_LLM = Boolean(process.env.LLMGATEWAY_API_KEY);
+const HAS_LIVE_LLM = Boolean(process.env.LLMGATEWAY_API_KEY || process.env.ALLMODELS_API_KEY);
 
 test("1. V3 Caveman + ADHD prompt floor intact (exact 486-byte / 116-token anchor)", async () => {
   const appendDisk = await readFile(new URL("../config/APPEND_SYSTEM.md", import.meta.url), "utf8");

@@ -208,7 +208,20 @@ export function buildJudgeUserPrompt({ blindLabel, issue, verifierSummary, patch
   ].join("\n");
 }
 
-/** Call a single frontier judge (`claude-fable-5-2`, `gpt-6.2-astra`, etc.) on LLMGateway with tools disabled. */
+export const JUDGE_FALLBACK_ENDPOINTS = {
+  "claude-fable-5-2": {
+    url: "https://api.allmodels.io/oai",
+    envKey: "ALLMODELS_API_KEY",
+    model: "moonshotai/kimi-k3.1-pro-abliterated",
+  },
+  "gpt-6.2-astra": {
+    url: "https://api.allmodels.io/oai",
+    envKey: "ALLMODELS_API_KEY",
+    model: "z-ai/glm-5.3-abliterated",
+  },
+};
+
+/** Call a single frontier judge (`claude-fable-5-2`, `gpt-6.2-astra`, etc.) on LLMGateway with tools disabled (with AllModels fallback on HTTP 402 billing exhaustion). */
 export async function callFrontierJudge({
   judgeModel,
   personaName,
@@ -222,51 +235,77 @@ export async function callFrontierJudge({
   fetchImpl = globalThis.fetch,
   timeoutMs = 90_000,
 }) {
-  if (!apiKey) throw new Error("Missing LLMGATEWAY_API_KEY for frontier judge panel");
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  timer.unref?.();
-  try {
-    const res = await fetchImpl(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: judgeModel,
-        temperature: 0,
-        max_tokens: 4096,
-        messages: [
-          { role: "system", content: `${JUDGE_SYSTEM_PROMPT}\n\nPersona (${personaName}): ${personaPrompt}` },
-          { role: "user", content: buildJudgeUserPrompt({ blindLabel, issue, verifierSummary, patch }) },
-        ],
-      }),
-      signal: ctrl.signal,
-    });
-    if (!res.ok) {
-      const errTxt = (await res.text().catch(() => "")).slice(0, 240);
-      return { judgeModel, persona: personaName, valid: false, error: `HTTP ${res.status}: ${errTxt}` };
+  const messages = [
+    { role: "system", content: `${JUDGE_SYSTEM_PROMPT}\n\nPersona (${personaName}): ${personaPrompt}` },
+    { role: "user", content: buildJudgeUserPrompt({ blindLabel, issue, verifierSummary, patch }) },
+  ];
+
+  async function attemptJudgeCall(url, key, modelName, labelOverride = judgeModel) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    timer.unref?.();
+    try {
+      const res = await fetchImpl(`${url}/chat/completions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: modelName,
+          temperature: 0,
+          max_tokens: 4096,
+          messages,
+        }),
+        signal: ctrl.signal,
+      });
+      if (!res.ok) {
+        const errTxt = (await res.text().catch(() => "")).slice(0, 240);
+        return { judgeModel: labelOverride, status: res.status, valid: false, error: `HTTP ${res.status}: ${errTxt}` };
+      }
+      const data = await res.json();
+      const content = data?.choices?.[0]?.message?.content || "";
+      const parsed = parseJudgeVote(content);
+      if (!parsed) {
+        return { judgeModel: labelOverride, status: 200, valid: false, error: `Unparsable judge reply: ${String(content).slice(0, 160)}` };
+      }
+      return {
+        judgeModel: labelOverride,
+        actualJudgeModel: modelName,
+        persona: personaName,
+        valid: true,
+        score: parsed.score,
+        rationale: parsed.rationale,
+        judgeTokens: data?.usage?.total_tokens ?? 0,
+      };
+    } catch (err) {
+      return { judgeModel: labelOverride, persona: personaName, valid: false, error: err?.message || String(err) };
+    } finally {
+      clearTimeout(timer);
     }
-    const data = await res.json();
-    const content = data?.choices?.[0]?.message?.content || "";
-    const parsed = parseJudgeVote(content);
-    if (!parsed) {
-      return { judgeModel, persona: personaName, valid: false, error: `Unparsable judge reply: ${String(content).slice(0, 160)}` };
-    }
-    return {
-      judgeModel,
-      persona: personaName,
-      valid: true,
-      score: parsed.score,
-      rationale: parsed.rationale,
-      judgeTokens: data?.usage?.total_tokens ?? 0,
-    };
-  } catch (err) {
-    return { judgeModel, persona: personaName, valid: false, error: err?.message || String(err) };
-  } finally {
-    clearTimeout(timer);
   }
+
+  if (apiKey) {
+    const primary = await attemptJudgeCall(baseUrl, apiKey, judgeModel, judgeModel);
+    if (primary.valid) return primary;
+    if (!/402|billing_error|insufficient credits|No API key set|401/i.test(primary.error || "")) {
+      return { ...primary, persona: personaName };
+    }
+  }
+
+  // Fallback when LLMGateway org credits are depleted (HTTP 402) or LLMGATEWAY_API_KEY is unset
+  const fb = JUDGE_FALLBACK_ENDPOINTS[judgeModel];
+  const fbKey = fb ? process.env[fb.envKey] : null;
+  if (fb && fbKey && fetchImpl === globalThis.fetch) {
+    const secondary = await attemptJudgeCall(fb.url, fbKey, fb.model, judgeModel);
+    if (secondary.valid) {
+      return { ...secondary, rationale: `[fallback:${fb.model}] ${secondary.rationale}` };
+    }
+    return { ...secondary, persona: personaName };
+  }
+
+  if (!apiKey) throw new Error("Missing LLMGATEWAY_API_KEY for frontier judge panel");
+  return { judgeModel, persona: personaName, valid: false, error: "Judge call failed and no fallback key configured" };
 }
 
 /** Run the full 3-persona × N-frontier-models blinded ensemble on a candidate's patch + test output. */
@@ -801,7 +840,11 @@ export async function runReinforceTournament({
 
   if (reportDir) {
     await mkdir(reportDir, { recursive: true });
-    const receiptRuns = runs.map(({ patch, ...rest }) => ({ ...rest, patchBytes: Buffer.byteLength(patch || "", "utf8") }));
+    const receiptRuns = runs.map(({ patch, ...rest }) => ({
+      ...rest,
+      patchBytes: Buffer.byteLength(patch || "", "utf8"),
+      patchPreview: String(patch || "").slice(0, 40_000),
+    }));
     await writeFile(join(reportDir, "REINFORCE_BENCHMARK.md"), markdown + "\n");
     await writeFile(
       join(reportDir, "reinforce-ep1-receipt.json"),
