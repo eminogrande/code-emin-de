@@ -321,8 +321,9 @@ function addHtml(cls, html, fallback, id) {
   d.className = 'm ' + cls;
   if (id) d.dataset.id = id; else d.classList.add('pending');
   if (html) d.innerHTML = html; else d.textContent = fallback || '';
+  const stick = atBottom();
   log.appendChild(d);
-  log.scrollTop = log.scrollHeight;
+  if (stick) log.scrollTop = log.scrollHeight;
   if (window.chatRender) window.chatRender(d);
   return d;
 }
@@ -339,6 +340,7 @@ async function syncHistory() {
   const d = await r.json();
   const entries = (d.entries || []).filter((e) => e.role === 'user' || e.role === 'assistant');
   const keep = atBottom();
+  const prevTop = log.scrollTop;
   const known = new Set(entries.map((e) => e.id));
   for (const n of Array.from(log.children)) {
     if (n.dataset.id && !known.has(n.dataset.id)) { n.remove(); rendered.delete(n.dataset.id); }
@@ -366,7 +368,7 @@ async function syncHistory() {
   for (const p of Array.from(log.querySelectorAll('.pending'))) {
     if (p.classList.contains('u') ? userTexts.has((p.dataset.raw || '').trim()) : lastRole === 'assistant') p.remove();
   }
-  if (keep) log.scrollTop = log.scrollHeight;
+  if (keep) log.scrollTop = log.scrollHeight; else log.scrollTop = prevTop;
 }
 
 // Poll history only while no chat request is active; back off on errors; pause when hidden.
