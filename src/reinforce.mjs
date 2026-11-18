@@ -254,7 +254,7 @@ export async function callFrontierJudge({
         body: JSON.stringify({
           model: modelName,
           temperature: 0,
-          max_tokens: 4096,
+          max_tokens: 16384,
           messages,
         }),
         signal: ctrl.signal,
