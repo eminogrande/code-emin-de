@@ -2,11 +2,39 @@
 set -euo pipefail
 REPO="/opt/pi-durable-swarm"
 
+run_swarm() {
+  su -s /bin/bash swarm -c "$1"
+}
+
 check_all() {
   for f in "$REPO"/src/*.mjs; do
     node --no-warnings --check "$f"
   done
-  su -s /bin/bash swarm -c "cd '$REPO' && node --no-warnings --test test/webauthn.test.mjs"
+  run_swarm "cd '$REPO' && node --no-warnings --test test/webauthn.test.mjs"
+}
+
+# Guarantee zero secrets / SQLite / keys ever get staged
+guard_secrets() {
+  local bad
+  bad=$(run_swarm "cd '$REPO' && git status --porcelain | awk '{print \$2}' | grep -E '(^\\.env|\\.sqlite|\\.pem$|\\.key$|authorized_keys)' || true")
+  if [ -n "$bad" ]; then
+    echo "BLOCKED: refusing to stage sensitive file(s): $bad" >&2
+    exit 1
+  fi
+}
+
+backup_to_github() {
+  local msg="${1:-chore(vps): verified self-update on code.emin.de}"
+  guard_secrets
+  run_swarm "
+    set -euo pipefail
+    cd '$REPO'
+    if [ -n \"\$(git status --porcelain)\" ]; then
+      git add -A
+      git commit -m $(printf '%q' "$msg")
+    fi
+    git push origin main
+  "
 }
 
 health_wait() {
@@ -24,36 +52,54 @@ case "${1:-}" in
     check_all
     echo "CHECK_OK"
     ;;
-  reload)
+  apply|reload)
+    MSG="${2:-chore(vps): verified self-update on code.emin.de}"
     check_all
-    PREV_SHA=$(su -s /bin/bash swarm -c "cd '$REPO' && git rev-parse HEAD" 2>/dev/null || echo "")
-    systemctl restart swarmd.service swarm-web.service
+    PREV_SHA=$(run_swarm "cd '$REPO' && git rev-parse HEAD")
+    # Sync systemd/caddy ops files if edited inside repo
+    install -m 644 "$REPO/ops/swarmd.service" /etc/systemd/system/swarmd.service
+    install -m 644 "$REPO/ops/swarm-web.service" /etc/systemd/system/swarm-web.service
+    systemctl daemon-reload
+    # Restart ONLY swarm-web first when called from inside swarmd so agent turn isn't killed mid-push;
+    # schedule swarmd restart in background if daemon files changed!
+    CHANGED=$(run_swarm "cd '$REPO' && git status --porcelain src/ ops/" || true)
+    backup_to_github "$MSG"
+    NEW_SHA=$(run_swarm "cd '$REPO' && git rev-parse --short HEAD")
+    systemctl restart swarm-web.service
+    if echo "$CHANGED" | grep -qvE '^.. src/web(authn)?\.mjs$'; then
+      # Restart swarmd cleanly 1s after returning so active tool call can finish
+      nohup bash -c 'sleep 1 && systemctl restart swarmd.service' >/dev/null 2>&1 &
+    fi
     if health_wait; then
-      echo "RELOADED_OK (${PREV_SHA:0:7})"
+      echo "APPLIED_AND_BACKED_UP_OK ($NEW_SHA)"
     else
-      echo "HEALTHCHECK_FAILED — rolling back to previous commit" >&2
-      if [ -n "$PREV_SHA" ]; then
-        su -s /bin/bash swarm -c "cd '$REPO' && git reset --hard HEAD~1" || true
-        systemctl restart swarmd.service swarm-web.service
-      fi
+      echo "HEALTHCHECK_FAILED — rolling back to $PREV_SHA" >&2
+      run_swarm "cd '$REPO' && git reset --hard '$PREV_SHA' && git push --force-with-lease origin main" || true
+      systemctl restart swarmd.service swarm-web.service
       exit 1
     fi
     ;;
   reload-web)
+    MSG="${2:-chore(web): verified UI self-update on code.emin.de}"
     check_all
+    backup_to_github "$MSG"
+    NEW_SHA=$(run_swarm "cd '$REPO' && git rev-parse --short HEAD")
     systemctl restart swarm-web.service
     health_wait
-    echo "RELOADED_WEB_OK"
+    echo "WEB_APPLIED_AND_BACKED_UP_OK ($NEW_SHA)"
     ;;
   pull)
-    su -s /bin/bash swarm -c "cd '$REPO' && git pull --ff-only origin main && npm ci --omit=dev --ignore-scripts --no-audit --no-fund"
-    "$0" reload
+    run_swarm "cd '$REPO' && git pull --ff-only origin main && npm ci --omit=dev --ignore-scripts --no-audit --no-fund"
+    check_all
+    systemctl restart swarmd.service swarm-web.service
+    health_wait
+    echo "PULLED_OK"
     ;;
   status)
     systemctl --no-pager -l status swarmd.service swarm-web.service caddy.service | head -n 45
     ;;
   *)
-    echo "Usage: swarm-ctl {check|reload|reload-web|pull|status}" >&2
+    echo "Usage: swarm-ctl {check|apply [msg]|reload-web [msg]|pull|status}" >&2
     exit 1
     ;;
 esac
