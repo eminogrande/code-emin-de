@@ -18,8 +18,10 @@ import {
   GenerationTask,
   Harness,
   hook,
+  LiveDoc,
   ROOT_CONVERSATION_ID,
   ToolTask,
+  UsageDoc,
 } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
@@ -284,7 +286,7 @@ export async function openSwarmDaemon({
           model: mRef,
           thinkingLevel: "high",
           cwd: workspaceDir,
-          maxTurns: role === "coder" ? 16 : 8,
+          maxTurns: role === "coder" ? 40 : 16,
           tools: roleToolSet(role),
           instructions: ROLE_INSTRUCTIONS[role] || ROLE_INSTRUCTIONS.coder,
         });
@@ -392,19 +394,52 @@ export async function openSwarmDaemon({
       if (!targetId) {
         return { isError: true, output: [{ type: "text", text: `Unknown sibling worker: ${args.workerId || args.conversationId}` }] };
       }
-      const transcript = await readConversationTranscript(targetId, args.maxEntries || 30);
-      return { output: [{ type: "text", text: JSON.stringify({ conversationId: targetId, entries: transcript }) }] };
+      const [transcript, usageSnap, liveSnap] = await Promise.all([
+        readConversationTranscript(targetId, args.maxEntries || 30),
+        api.snapshot(UsageDoc, targetId, context),
+        api.snapshot(LiveDoc, targetId, context),
+      ]);
+      const state = liveSnap?.run ? "running" : liveSnap?.runFailure ? `failed:${liveSnap.runFailure.reason}` : "idle_done";
+      return {
+        output: [
+          {
+            type: "text",
+            text: JSON.stringify({ conversationId: targetId, state, runFailure: liveSnap?.runFailure ?? null, usage: usageSnap ?? null, entries: transcript }),
+          },
+        ],
+      };
     },
   });
 
   const listWorkersTool = defineTool({
     name: "list_workers",
-    description: "List all active/completed workers, cron jobs, alerts, and pending approvals.",
+    description: "List all workers with live run state (`running` / `idle_done` / `failed:turn_limit`), exact per-worker token/cost telemetry, cron jobs, and alerts.",
     replay: "safe",
     parameters: { type: "object", properties: {} },
     async execute(_args, api, context) {
       const s = (await api.snapshot(SwarmDoc, context)) ?? { workers: {}, cronJobs: {}, alerts: [], approvals: [] };
-      return { output: [{ type: "text", text: JSON.stringify(s) }] };
+      const enrichedWorkers = {};
+      for (const [wid, w] of Object.entries(s.workers || {})) {
+        const [uSnap, lSnap] = await Promise.all([
+          api.snapshot(UsageDoc, w.convId, context),
+          api.snapshot(LiveDoc, w.convId, context),
+        ]);
+        let tokens = 0;
+        let costUsd = 0;
+        for (const m of Object.values(uSnap?.models || {})) {
+          tokens += m.totalTokens ?? 0;
+          costUsd += m.cost?.total ?? 0;
+        }
+        enrichedWorkers[wid] = {
+          ...w,
+          liveState: lSnap?.run ? "running" : lSnap?.runFailure ? `stopped:${lSnap.runFailure.reason}` : "done",
+          turnsUsed: lSnap?.run?.turns ?? null,
+          runFailure: lSnap?.runFailure ?? null,
+          usage: { totalTokens: tokens, costUsd: +costUsd.toFixed(5), models: uSnap?.models ?? {} },
+        };
+      }
+      const leadUsage = await api.snapshot(UsageDoc, ROOT_CONVERSATION_ID, context);
+      return { output: [{ type: "text", text: JSON.stringify({ ...s, workers: enrichedWorkers, leadUsage }) }] };
     },
   });
 
