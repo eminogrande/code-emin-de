@@ -32,6 +32,7 @@ import { createOptMem } from "./optmem.mjs";
 import { ROLE_INSTRUCTIONS } from "./prompts.mjs";
 import { classifyUserPrompt, triageWatcherEvent } from "./triage.mjs";
 import { createSupervisor, SUPERVISOR_DEFAULTS } from "./supervisor.mjs";
+import { describeWorker, sortWorkers } from "./worker-meta.mjs";
 
 export const SwarmDoc = defineDoc({
   kind: "swarm.registry",
@@ -952,6 +953,19 @@ export async function openSwarmDaemon({
         pendingSubmissions: inspection.submissions.length,
         usage: { totalTokens, costUsd: +costUsd.toFixed(5), byModel: usage?.models ?? {} },
       };
+    },
+
+    /** Read-only sidebar list: authoritative swarm registry + live run state, running first. */
+    async listWorkers() {
+      const swarm = (await harness.snapshot(SwarmDoc, BACKGROUND_CONTEXT)) ?? { workers: {} };
+      const out = [];
+      for (const w of Object.values(swarm.workers || {})) {
+        if (!w) continue;
+        const convId = w.convId ?? w.conversationId;
+        const live = convId ? await harness.snapshot(LiveDoc, convId, BACKGROUND_CONTEXT) : null;
+        out.push(describeWorker(w, live));
+      }
+      return sortWorkers(out);
     },
 
     async waitForWorker(workerId, timeoutMs = 120_000) {

@@ -174,6 +174,12 @@ test("HTTP WebServer E2E: Passkey cookie -> /api/history + /api/chat over Unix s
       res.end(JSON.stringify({ conversationId: 1, entries: [{ id: 1, role: "assistant", text: "Ready." }] }));
     } else if (req.url === "/chat") {
       res.end(JSON.stringify({ route: "single_agent", conversationId: 1, status: "done", text: "Hello Emin." }));
+    } else if (req.url === "/workers") {
+      res.end(
+        JSON.stringify({
+          workers: [{ id: "w-x", role: "coder", conversationId: 7, state: "running", createdAt: 2, lastError: null }],
+        }),
+      );
     } else {
       res.end(JSON.stringify({ ok: true }));
     }
@@ -245,7 +251,17 @@ test("HTTP WebServer E2E: Passkey cookie -> /api/history + /api/chat over Unix s
     assert.equal(rVer.status, 200);
     const cookie = rVer.headers.get("set-cookie").split(";")[0];
 
-    // 3. Authenticated /api/history MUST return HTTP 200 + entries
+    // 3. /api/workers: auth required + stable public shape passed through from daemon
+    const rWUnauth = await fetch(`http://127.0.0.1:${port}/api/workers`);
+    assert.equal(rWUnauth.status, 401);
+    const rW = await fetch(`http://127.0.0.1:${port}/api/workers`, { headers: { Cookie: cookie } });
+    assert.equal(rW.status, 200);
+    const wBody = await rW.json();
+    assert.deepEqual(wBody.workers, [
+      { id: "w-x", role: "coder", conversationId: 7, state: "running", createdAt: 2, lastError: null },
+    ]);
+
+    // 3b. Authenticated /api/history MUST return HTTP 200 + entries
     const rHist = await fetch(`http://127.0.0.1:${port}/api/history`, { headers: { Cookie: cookie } });
     assert.equal(rHist.status, 200);
     const histBody = await rHist.json();

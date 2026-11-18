@@ -254,6 +254,47 @@ body{display:flex;flex-direction:column;max-width:48rem;margin:0 auto;padding:0 
 .mmd-out svg{max-width:100%;height:auto}
 .mmd-err{border-color:#cb4b16}
 .mmd-msg{color:#cb4b16;font-size:.9em;margin:.35rem 0 0}
+/* --- sidebars --- */
+body{display:grid;grid-template-columns:13.5rem minmax(0,1fr) 15.5rem;max-width:none;height:100dvh;padding:0}
+main{display:flex;flex-direction:column;min-width:0;max-width:48rem;margin:0 auto;padding:0 1.25rem;width:100%;height:100dvh}
+aside{overflow-y:auto;overscroll-behavior:contain;font-size:.86rem;padding:.85rem .7rem 1.5rem;background:#f7f0dc}
+#leftCol{border-right:1px solid var(--rule)}
+#rightCol{border-left:1px solid var(--rule)}
+aside h2{margin:0 0 .5rem;font-size:.7rem;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.sect{margin-bottom:1.1rem}
+.tgt{display:block;width:100%;text-align:left;appearance:none;background:transparent;color:var(--ink);border:1px solid transparent;border-radius:3px;padding:.35rem .45rem;font:inherit;cursor:pointer;margin-bottom:.15rem}
+.tgt:hover{border-color:var(--rule)}
+.tgt[aria-current="true"]{background:var(--paper);border-color:var(--accent);color:var(--heading)}
+.tgt .tname{display:block;font-weight:600}
+.tgt .tmeta{display:block;color:var(--muted);font-size:.78rem;word-break:break-all}
+#agents{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.4rem}
+.wk{border:1px solid var(--rule);border-radius:3px;padding:.4rem .5rem;background:var(--paper)}
+.wk .wtop{display:flex;align-items:center;gap:.35rem}
+.wk .wrole{font-weight:600;word-break:break-all}
+.wk .wsub{color:var(--muted);font-size:.76rem;display:block;word-break:break-all}
+.wk .werr{color:#cb4b16}
+.dot{width:.5rem;height:.5rem;border-radius:50%;flex:none;background:var(--muted)}
+.s-running .dot{background:#859900;animation:pulse 1.4s ease-in-out infinite}
+.s-failed .dot,.s-failed_turn_limit .dot{background:#cb4b16}
+.s-idle_done .dot{background:#93a1a1}
+.s-idle .dot{background:#93a1a1}
+@keyframes pulse{50%{opacity:.25}}
+.empty{color:var(--muted);font-size:.8rem;margin:.2rem 0}
+aside a{color:var(--accent)}
+#topbar{display:none;grid-column:1/-1;align-items:center;justify-content:space-between;gap:.5rem;padding:.45rem .7rem;border-bottom:1px solid var(--rule);background:var(--paper-2)}
+#topbar button{appearance:none;background:var(--paper);color:var(--heading);border:1px solid var(--rule);border-radius:3px;padding:.3rem .6rem;font:inherit;font-size:.85rem;cursor:pointer}
+#topbar .brand{font-size:.8rem;color:var(--muted)}
+#backdrop{background:#002b3655;z-index:8}
+@media (max-width:959px){
+  body{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}
+  main{grid-row:2;padding:0 1rem}
+  #topbar{display:flex}
+  aside{position:fixed;top:0;bottom:0;width:15rem;z-index:9;background:var(--paper);box-shadow:0 0 12px #002b3633;transition:transform .18s ease;padding-top:3rem}
+  #leftCol{left:0;transform:translateX(-102%);border-right:1px solid var(--rule)}
+  #rightCol{right:0;transform:translateX(102%);border-left:1px solid var(--rule)}
+  aside.open{transform:none}
+  #backdrop[hidden]{display:none}
+}
 .hljs-comment,.hljs-quote{color:#93a1a1;font-style:italic}
 .hljs-keyword,.hljs-selector-tag,.hljs-literal{color:#859900}
 .hljs-string,.hljs-attr{color:#2aa198}
@@ -271,17 +312,42 @@ textarea::placeholder{color:var(--muted);opacity:.65}
 </style>
 </head>
 <body>
-<div id="log" aria-live="polite"></div>
-<div id="sshBar">
-  <span id="sshDesc"></span>
-  <span>
-    <button type="button" id="sshApprove">Sign with Smartcard</button>
-    <button type="button" id="sshDeny">Deny</button>
-  </span>
+<div id="topbar">
+  <button type="button" id="tLeft" aria-controls="leftCol" aria-expanded="false">Chats</button>
+  <span class="brand">code.emin.de</span>
+  <button type="button" id="tRight" aria-controls="rightCol" aria-expanded="false">Agents</button>
 </div>
-<form id="f">
-  <textarea id="q" rows="1" placeholder="Ask…" autofocus></textarea>
-</form>
+<div id="backdrop" hidden></div>
+<aside id="leftCol">
+  <div class="sect">
+    <h2>Send to</h2>
+    <button type="button" class="tgt" data-target="lead" aria-current="true">
+      <span class="tname">Lead</span>
+      <span class="tmeta">main conversation</span>
+    </button>
+    <div id="targets"></div>
+  </div>
+</aside>
+<main>
+  <div id="log" aria-live="polite"></div>
+  <div id="sshBar">
+    <span id="sshDesc"></span>
+    <span>
+      <button type="button" id="sshApprove">Sign with Smartcard</button>
+      <button type="button" id="sshDeny">Deny</button>
+    </span>
+  </div>
+  <form id="f">
+    <textarea id="q" rows="1" placeholder="Ask…" autofocus></textarea>
+  </form>
+</main>
+<aside id="rightCol">
+  <div class="sect">
+    <h2>Agents</h2>
+    <ul id="agents"></ul>
+    <p class="empty" id="agentsEmpty">No background agents.</p>
+  </div>
+</aside>
 <script src="/chat-client.js" defer></script>
 <script>
 const log = document.getElementById('log');
@@ -539,6 +605,9 @@ export async function startWebServer({
 
   // Pending Click-to-Sign SSH challenges (id -> { req, resolve, timer })
   const pendingSsh = new Map();
+  // Tiny TTL cache for the sidebar worker list (avoids a socket round-trip per poll)
+  let workersCache = null;
+  const WORKERS_TTL_MS = 2000;
 
   const server = createServer(async (req, res) => {
     const sendJson = (code, obj, extraHeaders = {}) => {
@@ -700,6 +769,17 @@ export async function startWebServer({
           sigS: String(body.sigS || ""),
         });
         return sendJson(200, { ok: true });
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/workers") {
+        // Short cache: sidebar polls; daemon snapshot is authoritative, never guessed.
+        const now = Date.now();
+        if (!workersCache || now - workersCache.at > WORKERS_TTL_MS) {
+          const out = await unixRpc(sockPath, "GET", "/workers");
+          if (out?.error) return sendJson(500, out);
+          workersCache = { at: now, body: { workers: out?.workers || [] } };
+        }
+        return sendJson(200, workersCache.body, { "Cache-Control": "private, max-age=2" });
       }
 
       if (req.method === "GET" && url.pathname === "/api/history") {

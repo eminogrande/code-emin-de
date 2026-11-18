@@ -66,3 +66,33 @@ test("client upgrade draws SVG, keeps source toggle, and degrades on malformed i
   window.chatRender(window.document);
   assert.equal(bad.querySelectorAll(".mmd-msg").length, 1);
 });
+
+test("real vendored mermaid draws an SVG diagram from a fenced block (no scripts in output)", async () => {
+  const dom = new JSDOM(`<body><div id="log"></div></body>`, {
+    runScripts: "dangerously",
+    pretendToBeVisual: true,
+    url: "http://localhost/",
+  });
+  const { window } = dom;
+  window.SVGElement.prototype.getBBox = () => ({ x: 0, y: 0, width: 100, height: 40 });
+  window.SVGElement.prototype.getComputedTextLength = () => 50;
+  const vendor = window.document.createElement("script");
+  vendor.textContent = readFileSync(new URL("../node_modules/mermaid/dist/mermaid.min.js", import.meta.url), "utf8");
+  window.document.head.appendChild(vendor);
+  window.eval(CLIENT); // reuses window.mermaid already present, skips the network load
+
+  const log = window.document.getElementById("log");
+  log.innerHTML = renderMarkdown("```mermaid\ngraph TD\n  A --> B\n```");
+  window.chatRender(log);
+  for (let i = 0; i < 100 && log.querySelector(".mmd").dataset.mmdState !== "ok"; i++) {
+    await new Promise((r) => setTimeout(r, 20));
+  }
+
+  const div = log.querySelector(".mmd");
+  assert.equal(div.dataset.mmdState, "ok");
+  const svg = div.querySelector(".mmd-out svg");
+  assert.ok(svg, "diagram svg rendered");
+  assert.ok(svg.querySelector("text") || svg.textContent.trim().length, "diagram has content");
+  assert.equal(div.querySelector("pre.mermaid").hidden, true, "source hidden by default, still present");
+  assert.doesNotMatch(div.querySelector(".mmd-out").innerHTML, /<script/i);
+});

@@ -1,46 +1,83 @@
-import { test } from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
 import { renderMarkdown, safeUrl } from "../src/markdown.mjs";
 
-test("markdown: basic formatting renders", () => {
-  const html = renderMarkdown("# T\n\n**b** _i_ `c`");
-  assert.match(html, /<h1[^>]*>T<\/h1>/);
+test("renders headings, lists, quotes, tables, emphasis", () => {
+  const html = renderMarkdown("# H1\n\n- a\n- b\n\n> q\n\n| x | y |\n|---|---|\n| 1 | 2 |\n\n**b** *i*");
+  assert.match(html, /<h1>H1<\/h1>/);
+  assert.match(html, /<ul>\s*<li>a<\/li>/);
+  assert.match(html, /<blockquote>/);
+  assert.match(html, /<table>/);
   assert.match(html, /<strong>b<\/strong>/);
   assert.match(html, /<em>i<\/em>/);
-  assert.match(html, /<code>c<\/code>/);
 });
 
-test("markdown: raw html is sanitized, scripts and handlers dropped", () => {
-  const html = renderMarkdown('<p onclick="x()">hi</p><script>alert(1)</script><b>ok</b>');
-  assert.match(html, /hi/);
-  assert.match(html, /<b>ok<\/b>/);
-  assert.ok(!/<script>/.test(html));
-  assert.ok(!/onclick=/.test(html));
+test("code fences: highlighted, escaped, copy button", () => {
+  const html = renderMarkdown("```js\nlet a = 1 < 2\n```");
+  assert.match(html, /<div class="cb"><button class="copy" type="button" data-code="let a = 1 &lt; 2">Copy<\/button>/);
+  assert.match(html, /<code class="language-js">/);
+  assert.match(html, /hljs-keyword/);
+  assert.match(html, /&lt;/);
 });
 
-test("markdown: url policy keeps http(s)/mailto/relative only", () => {
-  assert.equal(safeUrl("https://a.b/c"), "https://a.b/c");
-  assert.equal(safeUrl("mailto:a@b"), "mailto:a@b");
-  assert.equal(safeUrl("/rel"), "/rel");
-  assert.equal(safeUrl("javascript:alert(1)"), "");
-  assert.equal(safeUrl("data:text/html,x"), "");
-  const html = renderMarkdown("[a](javascript:alert(1)) [b](https://x.y)");
-  assert.match(html, /<a href="https:\/\/x\.y"[^>]*rel="noopener noreferrer"/);
-  assert.ok(!/javascript:/.test(html));
-});
-
-test("markdown: fenced code escapes body and keeps a copy button", () => {
-  const html = renderMarkdown("```js\nconst a = 1 < 2;\n```");
-  assert.match(html, /class="copy"/);
-  assert.match(html, /language-js/);
-  assert.ok(html.includes("1</span> &lt; <span"));
-});
-
-test("markdown: mermaid fence keeps source plus hidden svg target for the toggle hook", () => {
+test("mermaid fence keeps readable source plus toggle", () => {
   const html = renderMarkdown("```mermaid\ngraph TD;A-->B\n```");
   assert.match(html, /<div class="mmd">/);
-  assert.match(html, /class="mmd-toggle"/);
-  assert.match(html, /<pre class="mermaid">/);
-  assert.match(html, /<div class="mmd-out" hidden/);
-  assert.ok(html.includes("A--&gt;B"));
+  assert.match(html, /<pre class="mermaid">graph TD;A--&gt;B<\/pre>/);
+  assert.match(html, /mmd-toggle/);
+});
+
+test("relative, http(s) and mailto links allowed; target=_blank hardened", () => {
+  for (const [src, href] of [
+    ["[r](/x)", "/x"],
+    ["[r](rel/a.md)", "rel/a.md"],
+    ["[r](https://e.de/p)", "https://e.de/p"],
+    ["[r](mailto:a@b.c)", "mailto:a@b.c"],
+  ]) {
+    const html = renderMarkdown(src);
+    assert.ok(html.includes(`href="${href}"`), `${src} -> ${html}`);
+    assert.match(html, /rel="noopener noreferrer"/);
+    assert.match(html, /target="_blank"/);
+  }
+});
+
+test("raw HTML link gets noopener/noreferrer and URL policy", () => {
+  const html = renderMarkdown('<a href="https://e.de">x</a>');
+  assert.match(html, /href="https:\/\/e\.de"/);
+  assert.match(html, /rel="noopener noreferrer"/);
+  assert.match(html, /target="_blank"/);
+  const js = renderMarkdown('<a href="javascript:alert(1)">j</a>');
+  assert.doesNotMatch(js, /href="javascript/);
+  assert.match(js, /j/);
+});
+
+test("javascript:/vbscript:/data: URLs are rejected", () => {
+  assert.equal(safeUrl("javascript:alert(1)"), "");
+  assert.equal(safeUrl("JAVASCRIPT:alert(1)"), "");
+  assert.equal(safeUrl("vbscript:x"), "");
+  assert.equal(safeUrl("data:text/html,<b>x</b>"), "");
+  assert.equal(safeUrl("data:image/png;base64,AAA"), "");
+  assert.equal(safeUrl(" https://e.de "), "https://e.de");
+});
+
+test("XSS payloads neutralised", () => {
+  const html = renderMarkdown(
+    '<img src=x onerror=alert(1)>\n\n<script>alert(2)</script>\n\n<div onclick="pwn()">d</div>\n\n<svg onload=alert(3)></svg>\n\n<iframe src="https://e.de"></iframe>',
+  );
+  assert.match(html, /<img src="x">/);
+  assert.doesNotMatch(html, /onerror|onclick|onload/);
+  assert.doesNotMatch(html, /<script/i);
+  assert.match(html, /alert\(2\)/); // body surfaced as text
+  assert.doesNotMatch(html, /<iframe/i);
+  assert.match(html, /<div>d<\/div>/);
+});
+
+test("data: image src dropped, no bloat", () => {
+  const html = renderMarkdown('<img src="data:image/png;base64,AAAAAAAA" alt="a">');
+  assert.doesNotMatch(html, /data:image/);
+});
+
+test("failure/empty inputs render safely", () => {
+  assert.equal(renderMarkdown(""), "");
+  assert.match(renderMarkdown("plain < text"), /plain &lt; text/);
 });
