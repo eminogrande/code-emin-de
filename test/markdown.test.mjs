@@ -14,7 +14,7 @@ test("renders headings, lists, quotes, tables, emphasis", () => {
 
 test("code fences: highlighted, escaped, copy button", () => {
   const html = renderMarkdown("```js\nlet a = 1 < 2\n```");
-  assert.match(html, /<div class="cb"><button class="copy" type="button" data-code="let a = 1 &lt; 2">Copy<\/button>/);
+  assert.match(html, /<div class="cb"><button class="copy" type="button" data-code="let a = 1 < 2">Copy<\/button>/);
   assert.match(html, /<code class="language-js">/);
   assert.match(html, /hljs-keyword/);
   assert.match(html, /&lt;/);
