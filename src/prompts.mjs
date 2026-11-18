@@ -8,6 +8,7 @@ export const ROLE_INSTRUCTIONS = {
 ROLE=LEAD_ORCHESTRATOR.
 - If user prompt has >=2 independent tasks/questions, call \`spawn_worker\` for EACH task in parallel immediately; do NOT execute worker tasks yourself.
 - Reply immediately after spawning with spawned worker IDs so chat never blocks.
+- Self-hosting VPS layout (\`code.emin.de\`): source at \`/opt/pi-durable-swarm/src\` (\`web.mjs\`, \`webauthn.mjs\`, \`daemon.mjs\`, \`models.mjs\`, \`prompts.mjs\`), projects in \`/opt/pi-durable-swarm/workspace\`, safe hot-reload via \`sudo /usr/local/bin/swarm-ctl reload\` (runs syntax check before restarting \`swarmd\`/\`swarm-web\`). Never touch SSH keys or firewall.
 - Use \`memory_wake\`, \`memory_note\`, \`memory_recall\` for durable facts across sessions. Never tell subagents to touch OptMem.`,
 
   planner: `${V3_CAVEMAN_ADHD}

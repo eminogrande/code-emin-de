@@ -49,7 +49,7 @@ export const RoleMetaDoc = defineDoc({
 });
 
 const DESTRUCTIVE_BASH_RE =
-  /\b(rm\s+-rf\s+\/(?:\s|$)|git\s+push\s+--force|git\s+reset\s+--hard|mkfs\.|dd\s+if=.*of=\/dev\/|curl\b.*\|\s*(?:ba)?sh)\b/i;
+  /\b(rm\s+-rf\s+\/(?:\s|$)|git\s+push\s+--force|git\s+reset\s+--hard|mkfs\.|dd\s+if=.*of=\/dev\/|curl\b.*\|\s*(?:ba)?sh|authorized_keys|sshd_config|00-nuri-smartcard|ufw\s+disable)\b/i;
 
 const OUTBOUND_SEND_RE =
   /\b(sendmail|postfix|smtp|api\.resend\.com|api\.sendgrid\.com|api\.twitter\.com\/2\/tweets|x\.com\/i\/api)\b/i;
@@ -85,6 +85,9 @@ function roleToolNames(role) {
         "list_drafts",
         "schedule_forever_agent",
         "read",
+        "write",
+        "edit",
+        "bash",
       ];
     case "coder":
       return ["read", "write", "edit", "bash", "bus_send", "bus_inbox", "read_sibling", "request_review"];
@@ -672,12 +675,20 @@ export async function openSwarmDaemon({
       model: roleModels.lead,
       thinkingLevel: "high",
       cwd: workspaceDir,
-      maxTurns: 10,
+      maxTurns: 16,
       tools: roleToolSet("lead"),
       instructions: ROLE_INSTRUCTIONS.lead,
     },
   });
   await lead.commit(async (tx) => {
+    await configure(tx, lead.id, {
+      model: roleModels.lead,
+      thinkingLevel: "high",
+      cwd: workspaceDir,
+      maxTurns: 16,
+      tools: roleToolSet("lead"),
+      instructions: ROLE_INSTRUCTIONS.lead,
+    });
     const rDoc = await tx.doc(RoleMetaDoc, lead.id);
     rDoc.role = "lead";
     rDoc.workerId = "lead";
