@@ -561,7 +561,7 @@ const MODEL_CHOICES = [
   ['llmgateway', 'glm-5.3'],
   ['allmodels', 'z-ai/glm-5.3-abliterated'],
 ];
-// Human labels for choices that read badly as `provider/modelId` (e.g. the free router plan).
+// Human labels for choices that read badly as provider/modelId (e.g. the free router plan).
 const MODEL_LABELS = {
   'paymentrequired k3.1-pro': 'Kimi K3.1 Pro (OAuth plan · free)',
 };

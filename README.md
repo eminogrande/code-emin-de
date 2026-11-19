@@ -274,7 +274,7 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for full details and diagrams
 ### Prerequisites
 
 - Node.js `>= 22.19.0` (uses built-in `node:sqlite` and `node:test`)
-- At least one open-weights API key (`LLMGATEWAY_API_KEY` and/or `ALLMODELS_API_KEY`), or a local OpenAI-compatible `llama-server` on `LOCAL_LLAMA_URL` (`http://127.0.0.1:8089/v1`)
+- At least one open-weights API key (`LLMGATEWAY_API_KEY` and/or `ALLMODELS_API_KEY`), a free router key (`ROUTER_PAYMENTREQUIRED_API_KEY`), or a local OpenAI-compatible `llama-server` on `LOCAL_LLAMA_URL` (`http://127.0.0.1:8089/v1`)
 
 ### Local / VPS Setup
 
@@ -282,6 +282,21 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for full details and diagrams
 cp .env.example .env              # set LLMGATEWAY_API_KEY / ALLMODELS_API_KEY (chmod 600 .env)
 npm install
 ```
+
+### Free Router Lead Model (`paymentrequired`)
+
+The free internal router is a built-in provider (`PaymentRequired Free`) at
+`https://router.paymentrequired.com/v1/internal` (OpenAI-compatible) with one catalog entry,
+`k3.1-pro` — the Lead dropdown shows it as `Kimi K3.1 Pro (OAuth plan · free)`.
+
+```sh
+ROUTER_PAYMENTREQUIRED_API_KEY=<key>   # in .env only, never committed
+```
+
+Catalog costs are declared `0` because the endpoint is free; the label says *OAuth plan · free*
+rather than *subscription* since no billing identity is guaranteed. `paymentrequired` requests
+deliberately skip cross-provider failover, so the router's real error (quota, outage) is shown
+instead of a silent downgrade. Note `gemini-*` IDs are not exposed by this router.
 
 ### Run the Full Deterministic Unit & Integration Test Suite (55 Tests, Zero Live API Keys Required)
 

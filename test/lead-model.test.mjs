@@ -19,6 +19,11 @@ test("1. allowlist: only known verified provider/model pairs resolve", () => {
     provider: "allmodels",
     modelId: "moonshotai/kimi-k3.1-pro-abliterated",
   });
+  assert.deepEqual(resolveLeadModelChoice("paymentrequired", "k3.1-pro"), {
+    provider: "paymentrequired",
+    modelId: "k3.1-pro",
+  });
+  assert.equal(resolveLeadModelChoice("paymentrequired", "gemini-3.7-flash-high"), null);
   // wrong provider for a known model id, unknown provider, unknown model, empty
   assert.equal(resolveLeadModelChoice("allmodels", "kimi-k3.1-pro"), null);
   assert.equal(resolveLeadModelChoice("openrouter", "kimi-k3.1-pro"), null);

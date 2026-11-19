@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createModels } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai/providers/faux";
-import { attachOpenWeightsFailover, isFailoverEligibleError, LLMGATEWAY_TO_ALLMODELS_MAP } from "../src/models.mjs";
+import { attachOpenWeightsFailover, createOpenModels, isFailoverEligibleError, LLMGATEWAY_TO_ALLMODELS_MAP } from "../src/models.mjs";
 
 test("1. isFailoverEligibleError matches HTTP 402 billing/credit errors and 5xx outages", () => {
   assert.equal(isFailoverEligibleError('HTTP 402: {"error":{"code":"billing_error","message":"organization has insufficient credits"}}'), true);
@@ -170,5 +170,54 @@ test("4. attachOpenWeightsFailover falls over to Tier-3 local-llama with explici
     else process.env.ALLMODELS_API_KEY = prevAll;
     if (prevLlm === undefined) delete process.env.LLMGATEWAY_API_KEY;
     else process.env.LLMGATEWAY_API_KEY = prevLlm;
+  }
+});
+
+test("paymentrequired: registered free provider, zero costs, no cross-provider fallback", async () => {
+  const prevRouter = process.env.ROUTER_PAYMENTREQUIRED_API_KEY;
+  const prevAll = process.env.ALLMODELS_API_KEY;
+  process.env.ROUTER_PAYMENTREQUIRED_API_KEY = "test-router-key";
+  try {
+    const models = createOpenModels({ enableFailover: false });
+    const m = models.getModel("paymentrequired", "k3.1-pro");
+    assert.ok(m, "model registered");
+    assert.equal(m.provider, "paymentrequired");
+    assert.equal(m.api, "openai-completions");
+    assert.equal(m.baseUrl, "https://router.paymentrequired.com/v1/internal");
+    assert.match(m.name, /free|OAuth/i);
+    assert.deepEqual(m.cost, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+    assert.equal(m.compat.maxTokensField, "max_tokens");
+
+    // Free endpoint errors must surface directly (no fallback hop even with allmodels key present).
+    process.env.ALLMODELS_API_KEY = "test-allmodels-key";
+    let routerCalls = 0;
+    const routerFaux = fauxProvider({ provider: "paymentrequired", models: [{ id: "k3.1-pro" }] });
+    routerFaux.setResponses([
+      () => {
+        routerCalls += 1;
+        return fauxAssistantMessage([], { stopReason: "error", errorMessage: "HTTP 429 quota exceeded" });
+      },
+    ]);
+    const allFaux = fauxProvider({ provider: "allmodels", models: [{ id: "moonshotai/kimi-k3.1-pro-abliterated" }] });
+    allFaux.setResponses([fauxAssistantMessage([fauxText("SHOULD_NOT_RUN")])]);
+
+    const wrapped = createModels();
+    wrapped.setProvider(routerFaux.provider);
+    wrapped.setProvider(allFaux.provider);
+    attachOpenWeightsFailover(wrapped);
+    const msg = await wrapped.completeSimple(
+      wrapped.getModel("paymentrequired", "k3.1-pro"),
+      { messages: [{ role: "user", content: "hi" }] },
+      {},
+    );
+    assert.equal(msg.stopReason, "error");
+    assert.match(String(msg.errorMessage), /quota/i);
+    assert.equal(routerCalls, 1);
+    assert.doesNotMatch(JSON.stringify(msg), /SHOULD_NOT_RUN/);
+  } finally {
+    if (prevRouter === undefined) delete process.env.ROUTER_PAYMENTREQUIRED_API_KEY;
+    else process.env.ROUTER_PAYMENTREQUIRED_API_KEY = prevRouter;
+    if (prevAll === undefined) delete process.env.ALLMODELS_API_KEY;
+    else process.env.ALLMODELS_API_KEY = prevAll;
   }
 });
