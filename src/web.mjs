@@ -316,8 +316,8 @@ pre{padding:.75rem .9rem;overflow-x:auto;border-left:2px solid var(--rule);margi
 #statusBar .sb-model{max-width:24rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--heading);font-weight:600}
 #statusBar select.sb-model{appearance:none;background:var(--paper);border:1px solid var(--rule);border-radius:2px;font:inherit;color:var(--heading);font-weight:600;padding:0 .2rem;max-width:24rem}
 #archived{margin-top:.6rem}
-#leftCol .credits{font-size:.7rem;margin-top:1rem}
-#leftCol .credits a{color:var(--muted)}
+.cb .copy{position:absolute;top:.35rem;right:.4rem;appearance:none;border:1px solid var(--rule);border-radius:3px;background:var(--paper);color:var(--muted);font:inherit;font-size:.72rem;padding:.2rem .45rem;cursor:pointer}
+.cb .copy:hover,.cb .copy:focus-visible{color:var(--heading);border-color:var(--accent)}
 .mini-form{display:flex;flex-direction:column;gap:.4rem;margin:.6rem 0}
 .mini-form input,.mini-form select,.mini-form textarea{box-sizing:border-box;width:100%;border:1px solid var(--rule);border-radius:3px;background:var(--paper);color:var(--ink);font:inherit;font-size:.8rem;padding:.35rem;resize:vertical}
 .mini-form button,.wk button,#toggle-worker-form{appearance:none;border:1px solid var(--rule);border-radius:3px;background:var(--paper);color:var(--heading);font:inherit;font-size:.78rem;padding:.3rem .45rem;cursor:pointer}
@@ -356,7 +356,6 @@ textarea::placeholder{color:var(--muted);opacity:.65}
 .himages{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.4rem}
 .himages img{max-width:9rem;max-height:7rem;border-radius:.35rem;border:1px solid var(--rule);display:block}
 </style>
-<link rel="stylesheet" href="/rare-button.css">
 </head>
 <body>
 <div id="topbar">
@@ -379,7 +378,6 @@ textarea::placeholder{color:var(--muted);opacity:.65}
     </form>
     <p id="orch-status" class="empty" aria-live="polite"></p>
   </div>
-  <div class="sect credits"><a href="https://rareui.com/" target="_blank" rel="noopener noreferrer" title="Rare UI component credits">About · Credits</a></div>
 </aside>
 <main>
   <div id="log" aria-live="polite"></div>
@@ -1278,9 +1276,6 @@ export async function startWebServer({
       // Static chat assets (same-origin, cacheable; CSP script-src 'self')
       if (req.method === "GET" && url.pathname === "/chat-client.js") {
         return assetFile("./chat-client.js", "text/javascript; charset=utf-8");
-      }
-      if (req.method === "GET" && url.pathname === "/rare-button.css") {
-        return assetFile("./rare-button.css", "text/css; charset=utf-8");
       }
       if (req.method === "GET" && url.pathname === "/mermaid-vendor.js") {
         return assetFile("../node_modules/mermaid/dist/mermaid.min.js", "text/javascript; charset=utf-8");

@@ -332,20 +332,13 @@ authenticated image endpoint. Non-vision models reject the turn and the composer
 Tests: `test/images.test.mjs` (sniff/caps/dimensions/store), `test/chat-images.test.mjs` (paste,
 passthrough, rejections, clear), `test/chat-images-api.test.mjs` (auth, caps, payload, traversal).
 
-### Rare UI Copy Button (`src/rare-button.css`)
+### Native Solarized UI & Copy Button
 
-The chat page keeps its **original native Solarized layout** (inline CSS in `src/web.mjs`, no
-whole-page theme layer). For the code-block copy affordance the actual Rare UI `CopyButton`
-component is **copied, not imitated**: markup and style values come from
-[`components/CopyButton.tsx`](https://raw.githubusercontent.com/swamimalode07/rare-ui/main/components/CopyButton.tsx)
-and are translated 1:1 from Tailwind/Motion to native DOM attributes + CSS in `src/rare-button.css`
-(blur/opacity swap, `data-copied` state, reduced-motion opt-out). No React, Tailwind or bundler.
-
-Rare UI is **MIT + Commons Clause License Condition v1.0 + Attribution** (© 2026 Swami Malode, see
-[LICENSE](https://raw.githubusercontent.com/swamimalode07/rare-ui/main/LICENSE)): the source URL,
-license and copyright stay in the CSS header; an unobtrusive `About · Credits` sidebar link credits the project without a chat-bottom banner.
-Images, models and the sidebar keep their existing behaviour and selectors. Browser clipboard screenshots are decoded and normalized to standard PNG (JPEG fallback when necessary); WebP/GIF do not leak provider-incompatible bytes. Tests: `test/ui-theme.test.mjs`,
-`test/markdown.test.mjs`.
+The chat uses only its native Solarized layout and controls. No external component library, theme,
+stylesheet, framework, or credit link is loaded. Code blocks have a small local **Copy / Copied**
+button implemented in `src/markdown.mjs`, `src/chat-client.js`, and inline CSS in `src/web.mjs`.
+Images, models, orchestrations, and workers keep their existing behavior and selectors.
+Tests: `test/ui-theme.test.mjs`, `test/markdown.test.mjs`, and browser E2E coverage.
 
 ### Run the Full Deterministic Unit & Integration Test Suite (84 Tests, Zero Live API Keys Required)
 
@@ -413,7 +406,7 @@ swarm steer w-auth "use timingSafeEqual"
 - `src/triage.mjs` — System-1 watcher & prompt router (`jev-latest` with deterministic offline fallback)
 - `src/web.mjs`, `src/webauthn.mjs`, `src/markdown.mjs`, `src/chat-client.js` — Solarized Light Passkey Web UI, XSS-safe Markdown/Mermaid rendering, copied Rare UI copy button, and Click-to-Sign SSH bridge UI
 - `src/chat-images.js` & `src/image-util.mjs` — Composer image paste/attach (client) and strict magic-byte validation, caps, content-addressed storage + authenticated `/api/image/:id` serving (server)
-- `src/image-util.mjs`, `src/chat-images.js`, `src/rare-button.css` — strict image sniff/decode/store for chat attachments, composer paste UI, and the adapted Rare UI copy button
+- `src/image-util.mjs`, `src/chat-images.js` — strict image sniff/decode/store and composer paste UI
 - `src/reinforce.mjs` & `src/harness-bench.mjs` — Reproducible Docker `/reinforce` and cross-harness benchmark harnesses
 
 ### Documentation & Benchmark Receipts (`docs/`)

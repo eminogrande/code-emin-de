@@ -9,6 +9,10 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ### Features
 
+- **Removed RareUI completely:** deleted the `About · Credits` link, stylesheet/route, copied component
+  markup, and attribution requirement. Replaced it with a local Solarized `Copy / Copied` button;
+  orchestration, image, model, and chat behavior is unchanged. Updated UI/Markdown regression tests.
+
 - **Durable multi-orchestration jobs:** named left-sidebar orchestrations now own independent Lead
   conversations, transcripts, and worker rosters. The approved Solarized visual design is unchanged.
 - **Persistent one-shot and recurring workers:** create workers from the right sidebar, run them manually,

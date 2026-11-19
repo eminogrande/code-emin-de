@@ -83,9 +83,11 @@
         var done = function () {
           if (btn.dataset.copied === "true") return;
           btn.dataset.copied = "true";
+          btn.textContent = "Copied";
           btn.setAttribute("aria-label", "Copied");
           setTimeout(function () {
             btn.dataset.copied = "false";
+            btn.textContent = "Copy";
             btn.setAttribute("aria-label", "Copy");
           }, 1500);
         };
