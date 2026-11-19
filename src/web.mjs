@@ -307,8 +307,15 @@ pre{padding:.75rem .9rem;overflow-x:auto;border-left:2px solid var(--rule);margi
 #sshBar button{appearance:none;background:var(--paper);color:var(--heading);border:1px solid var(--rule);padding:.32rem .75rem;font:inherit;cursor:pointer;border-radius:3px}
 #sshBar button:hover{border-color:var(--accent)}
 .m.err{color:#dc322f;font-size:.9rem}
-#statusBar{display:flex;flex-wrap:wrap;gap:.35rem .8rem;align-items:center;padding:.35rem 0;border-top:1px solid var(--rule);font-size:.78rem;color:var(--muted)}
-#statusBar b{color:var(--heading);font-weight:600}
+#statusBar{display:flex;flex-wrap:wrap;gap:.35rem .7rem;align-items:center;padding:.3rem 0;border-top:1px solid var(--rule);font-size:.75rem;color:var(--muted)}
+#statusBar[hidden]{display:none}
+#statusBar .sb-model{max-width:13rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--heading);font-weight:600}
+#statusBar .sb-num{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+#statusBar .warn{color:var(--accent)}
+#statusBar .bad{color:#dc322f}
+#statusBar .sb-workers{border:1px solid var(--rule);border-radius:2px;padding:0 .35rem}
+#statusBar .sb-workers.live{border-color:#2aa198;color:#2aa198}
+#statusBar .sb-workers.bad{border-color:#dc322f}
 form{padding:.75rem 0 1.25rem;border-top:1px solid var(--rule)}
 textarea{width:100%;border:0;outline:0;background:transparent;color:var(--heading);font:inherit;resize:none;max-height:12rem;padding:0;margin:0}
 textarea::placeholder{color:var(--muted);opacity:.65}
@@ -501,24 +508,76 @@ function fmtTok(n) {
   return String(n);
 }
 
+function truncId(id, max) {
+  const s = String(id || '');
+  const lim = max || 30;
+  return s.length > lim ? s.slice(0, lim - 1) + '\u2026' : s;
+}
+
+// % of the context window still free; null when unknown (hides the field).
+function ctxFreePct(used, win) {
+  const u = Number(used) || 0;
+  const w = Number(win) || 0;
+  if (!(w > 0)) return null;
+  return Math.max(0, Math.min(100, Math.round((1 - u / w) * 100)));
+}
+
+// Severity of the remaining budget: '' ok, 'warn' <25%, 'bad' <10%.
+function budgetLevel(free) {
+  if (free === null || free === undefined) return '';
+  return free < 10 ? 'bad' : free < 25 ? 'warn' : '';
+}
+
+function workerCountText(list) {
+  const l = list || [];
+  const running = l.filter((w) => w && w.state === 'running').length;
+  return running + ' running / ' + l.length + ' total';
+}
+
+// Badge level by worst worker state: 'bad' on failures, 'live' while something runs.
+function workerLevel(list) {
+  const l = list || [];
+  if (l.some((w) => w && /fail/i.test(String(w.state || '')))) return 'bad';
+  return l.some((w) => w && w.state === 'running') ? 'live' : '';
+}
+
+function sbField(cls) {
+  const s = document.createElement('span');
+  s.className = 'sb ' + cls;
+  s.hidden = true;
+  statusBar.appendChild(s);
+  return s;
+}
+const sbModel = statusBar ? sbField('sb-model') : null;
+const sbCtx = statusBar ? sbField('sb-ctx sb-num') : null;
+const sbWorkers = statusBar ? sbField('sb-workers') : null;
+
 function renderStatus(st, list) {
   if (!statusBar) return;
-  const parts = [];
-  if (st && st.lead) {
-    const m = st.lead.model || '?';
-    parts.push('model: ' + (st.lead.provider ? st.lead.provider + '/' : '') + m);
-    const used = st.lead.contextTokens || 0;
-    const win = st.lead.contextWindow || 1048576;
-    const pct = Math.min(100, Math.round((used / win) * 100));
-    parts.push('ctx: ' + fmtTok(used) + '/' + fmtTok(win) + ' (' + pct + '%, ' + (100 - pct) + '% free)');
+  const lead = (st && st.lead) || null;
+  const workers = list || [];
+  if (sbModel) {
+    const id = lead && lead.model ? String(lead.model) : '';
+    sbModel.hidden = !id;
+    sbModel.textContent = id ? truncId(id) : '';
+    if (id) sbModel.title = id;
   }
-  const running = (list || []).filter((w) => w.state === 'running').length;
-  const total = (list || []).length;
-  parts.push('workers: ' + running + ' running / ' + total + ' total');
-  if (st && st.usage && typeof st.usage.costUsd === 'number') {
-    parts.push('cost: $' + st.usage.costUsd.toFixed(4));
+  if (sbCtx) {
+    const used = lead ? Number(lead.contextTokens) || 0 : 0;
+    const win = lead ? Number(lead.contextWindow) || 0 : 0;
+    const free = lead ? ctxFreePct(used, win) : null;
+    sbCtx.hidden = free === null;
+    sbCtx.textContent = free === null ? '' : 'Kontext ' + free + '% frei \u00b7 ' + fmtTok(used) + '/' + fmtTok(win);
+    sbCtx.className = 'sb sb-ctx sb-num ' + budgetLevel(free);
+    sbCtx.title = free === null ? '' : free + '% context free';
   }
-  statusBar.textContent = parts.join('  ·  ');
+  if (sbWorkers) {
+    const has = workers.length > 0;
+    sbWorkers.hidden = !has;
+    sbWorkers.textContent = has ? workerCountText(workers) : '';
+    sbWorkers.className = 'sb sb-workers sb-num ' + workerLevel(workers);
+  }
+  statusBar.hidden = !lead && workers.length === 0;
 }
 
 function setTarget(id) {

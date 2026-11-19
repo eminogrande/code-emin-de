@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -138,6 +138,32 @@ test(
 
     // Wait for both background coder workers to finish with `Verified: PASS`
     await Promise.all([srv.daemon.waitForWorker("w-slug", 90_000), srv.daemon.waitForWorker("w-clamp", 90_000)]);
+
+    // Workers may report idle before their files hit disk: poll for real non-empty artifacts.
+    const wanted = ["slug.mjs", "clamp.mjs"];
+    const missing = [];
+    let lastStates = {};
+    const tFiles0 = Date.now();
+    for (;;) {
+      missing.length = 0;
+      for (const name of wanted) {
+        const size = await stat(join(workspaceDir, name)).then((s) => s.size, () => 0);
+        if (size === 0) missing.push(name);
+      }
+      if (missing.length === 0) break;
+      if (Date.now() - tFiles0 > 120_000) {
+        const status = await unixRpc(sockPath, "GET", "/status").catch(() => null);
+        lastStates = Object.fromEntries(
+          ["w-slug", "w-clamp"].map((id) => [id, status?.swarm?.workers?.[id]?.status ?? "unknown"]),
+        );
+        const present = await readdir(workspaceDir).catch(() => []);
+        assert.fail(
+          `Timed out after 120s waiting for worker output file(s): ${missing.join(", ")} ` +
+            `(workspace: ${present.join(", ") || "empty"}; last worker states: ${JSON.stringify(lastStates)})`,
+        );
+      }
+      await new Promise((r) => setTimeout(r, 1500));
+    }
 
     const { slugify } = await import(join(workspaceDir, "slug.mjs"));
     const { clamp } = await import(join(workspaceDir, "clamp.mjs"));
