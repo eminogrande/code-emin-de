@@ -76,6 +76,11 @@ export async function startUnixSocketServer({
         });
         return send(200, reply);
       }
+      if (req.method === "POST" && url.pathname === "/model") {
+        const body = await readJsonBody(req);
+        const out = await daemon.setLeadModel(body.provider, body.modelId);
+        return send(out?.statusCode === 400 ? 400 : 200, out);
+      }
       if (req.method === "POST" && url.pathname === "/cron") {
         const body = await readJsonBody(req);
         return send(200, await daemon.scheduleForever(body));

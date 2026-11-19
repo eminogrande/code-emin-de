@@ -28,6 +28,29 @@ const ALLMODELS_OPEN_MODELS = [
   { id: "qwen/qwen3.8-27b-abliterated", name: "Qwen3.8 27B Abliterated (open-weights)", contextWindow: 262144, maxTokens: 8192, reasoning: true, input: ["text"], cost: { input: 0.2, output: 0.6, cacheRead: 0.02, cacheWrite: 0 } },
 ];
 
+/**
+ * Safe, verified Lead model choices for the chat dropdown (`POST /api/model`).
+ * Allowlist = exactly these registry-known provider/model pairs, so no arbitrary IDs
+ * can be persisted. Every pair is provider-explicit (same model on both gateways),
+ * so failover keeps working when the primary hop is out of credits.
+ */
+export const LEAD_MODEL_CHOICES = Object.freeze([
+  { provider: "llmgateway", modelId: "kimi-k3.1-pro" },
+  { provider: "allmodels", modelId: "moonshotai/kimi-k3.1-pro-abliterated" },
+  { provider: "llmgateway", modelId: "deepseek-v4.1-flash-uncensored" },
+  { provider: "allmodels", modelId: "deepseek/deepseek-v4.1-flash-abliterated" },
+  { provider: "llmgateway", modelId: "glm-5.3" },
+  { provider: "allmodels", modelId: "z-ai/glm-5.3-abliterated" },
+]);
+
+/** Return the allowlisted `{provider, modelId}` entry for a pair, or `null` when unknown. */
+export function resolveLeadModelChoice(provider, modelId) {
+  const p = String(provider || "").trim();
+  const m = String(modelId || "").trim();
+  if (!p || !m) return null;
+  return LEAD_MODEL_CHOICES.find((c) => c.provider === p && c.modelId === m) ?? null;
+}
+
 export const DEFAULT_LOCAL_LLAMA_MODEL = process.env.LOCAL_LLAMA_MODEL || "local-failsafe";
 
 /**

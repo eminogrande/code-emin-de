@@ -22,6 +22,7 @@ export const DETERMINISTIC_COMMAND_NAMES = Object.freeze([
   "/workers",
   "/hooks",
   "/credits",
+  "/model",
 ]);
 
 export function parseSlashCommand(text) {
@@ -145,6 +146,7 @@ function formatHelp() {
     "- `/workers` — List all registered swarm workers with role, model, state, and turn counts",
     "- `/hooks` — Inspect active out-of-core guardrail & lifecycle hooks (`beforeTool`, `afterTool`, `onYield`, `onError`)",
     "- `/credits` — Zero-token reachability check across Tier 1 (`llmgateway`), Tier 2 (`allmodels`), and Tier 3 (`local-llama`)",
+    "- `/model [provider modelId]` — Show or switch the Lead model (allowlisted safe pairs, durable, applies to new turns)",
     "",
     "**LLM-Routed Commands:**",
     "- `/btw <question>` — Concurrent read-only side-chat (does not interrupt Lead)",
@@ -237,6 +239,7 @@ export async function handleDeterministicCommand(
     listWorkers,
     listHooks,
     probeCredits = probeProviderHealth,
+    setLeadModel,
     conversationId = 1,
   } = {},
 ) {
@@ -278,6 +281,25 @@ export async function handleDeterministicCommand(
       ]);
       replyText = formatCredits(probes, st?.usage);
       data = { probes, usage: st?.usage ?? null };
+      break;
+    }
+    case "/model": {
+      const [provider, ...rest] = parsed.args.split(/\s+/).filter(Boolean);
+      const modelId = rest.join("/");
+      if (!provider || !modelId) {
+        const st = getStatus ? await getStatus().catch(() => null) : null;
+        replyText = [
+          "**Lead Model** _(deterministic, 0 LLM tokens)_",
+          `- active: \`${st?.lead?.provider || "?"}/${st?.lead?.model || "?"}\``,
+          `- usage: \`/model <provider> <modelId>\``,
+        ].join("\n");
+        break;
+      }
+      const res = setLeadModel ? await setLeadModel(provider, modelId) : { error: "not wired" };
+      data = res;
+      replyText = res.error
+        ? `**Lead Model unchanged** — ${res.error}`
+        : `**Lead Model set** to \`${res.active.provider}/${res.active.modelId}\`${res.warning ? `\n\n⚠️ ${res.warning}` : ""}`;
       break;
     }
     default:

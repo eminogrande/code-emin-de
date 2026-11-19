@@ -309,7 +309,10 @@ pre{padding:.75rem .9rem;overflow-x:auto;border-left:2px solid var(--rule);margi
 .m.err{color:#dc322f;font-size:.9rem}
 #statusBar{display:flex;flex-wrap:wrap;gap:.35rem .7rem;align-items:center;padding:.3rem 0;border-top:1px solid var(--rule);font-size:.75rem;color:var(--muted)}
 #statusBar[hidden]{display:none}
-#statusBar .sb-model{max-width:13rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--heading);font-weight:600}
+#statusBar .sb-model{max-width:15rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--heading);font-weight:600}
+#statusBar select.sb-model{appearance:none;background:var(--paper);border:1px solid var(--rule);border-radius:2px;font:inherit;color:var(--heading);font-weight:600;padding:0 .2rem;max-width:15rem}
+#statusBar select.sb-model:disabled{opacity:.55}
+#statusBar .sb-err{color:#dc322f;max-width:20rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #statusBar .sb-num{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
 #statusBar .warn{color:var(--accent)}
 #statusBar .bad{color:#dc322f}
@@ -548,7 +551,73 @@ function sbField(cls) {
   statusBar.appendChild(s);
   return s;
 }
-const sbModel = statusBar ? sbField('sb-model') : null;
+// Allowlisted Lead model choices (provider/modelId); mirrors LEAD_MODEL_CHOICES in src/models.mjs.
+const MODEL_CHOICES = [
+  ['llmgateway', 'kimi-k3.1-pro'],
+  ['allmodels', 'moonshotai/kimi-k3.1-pro-abliterated'],
+  ['llmgateway', 'deepseek-v4.1-flash-uncensored'],
+  ['allmodels', 'deepseek/deepseek-v4.1-flash-abliterated'],
+  ['llmgateway', 'glm-5.3'],
+  ['allmodels', 'z-ai/glm-5.3-abliterated'],
+];
+const sbModel = statusBar ? document.createElement('select') : null;
+const sbErr = statusBar ? sbField('sb-err') : null;
+if (sbModel) {
+  sbModel.className = 'sb sb-model';
+  sbModel.hidden = true;
+  sbModel.setAttribute('aria-label', 'Lead model (applies to new turns globally)');
+  sbModel.title = 'Lead model for new turns (global)';
+  for (const [pv, md] of MODEL_CHOICES) {
+    const o = document.createElement('option');
+    o.value = pv + ' ' + md;
+    o.textContent = pv + '/' + md;
+    sbModel.appendChild(o);
+  }
+  statusBar.appendChild(sbModel);
+}
+let modelPending = false;
+
+function showModelError(msg) {
+  if (!sbErr) return;
+  sbErr.textContent = msg || '';
+  sbErr.hidden = !msg;
+  sbErr.title = msg || '';
+}
+
+if (sbModel) {
+  sbModel.onchange = async () => {
+    if (modelPending) return;
+    const chosen = sbModel.value.split(' ');
+    const provider = chosen[0];
+    const modelId = chosen.slice(1).join(' ');
+    const prev = sbModel.dataset.active || '';
+    modelPending = true;
+    sbModel.disabled = true;
+    showModelError('');
+    try {
+      const r = await fetch('/api/model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, modelId }),
+      });
+      const d = await safeJson(r);
+      if (!r.ok || !d || d._nonJson || d.error) {
+        throw new Error((d && d.error) || 'Switch failed');
+      }
+      if (d.active) {
+        sbModel.dataset.active = d.active.provider + ' ' + d.active.modelId;
+        sbModel.value = sbModel.dataset.active;
+      }
+      if (d.warning) showModelError(d.warning);
+    } catch (e) {
+      if (prev) sbModel.value = prev;
+      showModelError(String(e.message || e));
+    } finally {
+      modelPending = false;
+      sbModel.disabled = false;
+    }
+  };
+}
 const sbCtx = statusBar ? sbField('sb-ctx sb-num') : null;
 const sbWorkers = statusBar ? sbField('sb-workers') : null;
 
@@ -559,8 +628,15 @@ function renderStatus(st, list) {
   if (sbModel) {
     const id = lead && lead.model ? String(lead.model) : '';
     sbModel.hidden = !id;
-    sbModel.textContent = id ? truncId(id) : '';
-    if (id) sbModel.title = id;
+    if (id) {
+      const active = (lead.provider ? String(lead.provider) : '') + ' ' + id;
+      sbModel.dataset.active = active;
+      if (!modelPending && sbModel.value !== active && MODEL_CHOICES.some(([p, m]) => p + ' ' + m === active)) {
+        sbModel.value = active;
+      }
+      sbModel.disabled = Boolean(lead.busy) || modelPending;
+      sbModel.title = 'Lead model for new turns (global)' + (lead.busy ? ' — busy: runs keep model, next turn changes' : '');
+    }
   }
   if (sbCtx) {
     const used = lead ? Number(lead.contextTokens) || 0 : 0;
@@ -1080,6 +1156,16 @@ export async function startWebServer({
         });
         if (out && !out.error && out.text) out.html = renderMarkdown(out.text);
         return sendJson(out?.error ? 500 : 200, out);
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/model") {
+        const body = await readJsonLimited(req, 4096);
+        const out = await unixRpc(sockPath, "POST", "/model", {
+          provider: String(body.provider || ""),
+          modelId: String(body.modelId || ""),
+        });
+        workersCache = null; // next poll reflects the new Lead model immediately
+        return sendJson(out?.error ? 400 : 200, out);
       }
 
       if (req.method === "POST" && url.pathname === "/auth/logout") {

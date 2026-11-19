@@ -29,7 +29,7 @@ import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { openAgentBus } from "./bus.mjs";
 import { handleDeterministicCommand, probeProviderHealth } from "./commands.mjs";
 import { createBuiltinGuardHooks, HookRegistry } from "./hooks.mjs";
-import { createOpenModels, ROLE_MODELS } from "./models.mjs";
+import { createOpenModels, resolveLeadModelChoice, ROLE_MODELS } from "./models.mjs";
 import { createOptMem } from "./optmem.mjs";
 import { ROLE_INSTRUCTIONS } from "./prompts.mjs";
 import { classifyUserPrompt, triageWatcherEvent } from "./triage.mjs";
@@ -46,6 +46,7 @@ export const SwarmDoc = defineDoc({
     alerts: [],
     approvals: [],
     cronJobs: {},
+    leadModelOverride: null, // { provider, modelId } from the chat model dropdown (allowlisted only)
   }),
   checkpointWhen: (_v, _ops, info) => info.deltasSinceBase >= 16,
 });
@@ -851,6 +852,11 @@ export async function openSwarmDaemon({
     rDoc.role = "lead";
     rDoc.workerId = "lead";
     rDoc.requireVerified = false;
+    // Re-apply a durable dropdown override so it survives daemon restarts.
+    const sDoc = await tx.doc(SwarmDoc);
+    const ov = sDoc.leadModelOverride;
+    const chosen = ov ? resolveLeadModelChoice(ov.provider, ov.modelId) : null;
+    if (chosen) await configure(tx, lead.id, { model: chosen });
   }, BACKGROUND_CONTEXT);
 
   // Create/reuse dedicated `/btw` read-only Side-Chat conversation
@@ -893,6 +899,8 @@ export async function openSwarmDaemon({
     return btwConv;
   }
 
+
+
   async function getStatusSnapshot() {
     const [swarm, inspection, usage, leadCtx, leadLive] = await Promise.all([
       harness.snapshot(SwarmDoc, BACKGROUND_CONTEXT),
@@ -923,6 +931,13 @@ export async function openSwarmDaemon({
         }
       }
     }
+    // Durable dropdown override wins: it is what the NEXT turn will run (globally, not per session).
+    const override = resolveLeadModelChoice(swarm?.leadModelOverride?.provider, swarm?.leadModelOverride?.modelId);
+    const lastUsed = { provider: activeProvider, model: activeModel };
+    if (override) {
+      activeProvider = override.provider;
+      activeModel = override.modelId;
+    }
     const modelSpec = models.getModel(activeProvider, activeModel) || models.getModel(roleModels.lead.provider, roleModels.lead.modelId);
     const contextWindow = modelSpec?.contextWindow || 1_048_576;
     return {
@@ -932,6 +947,8 @@ export async function openSwarmDaemon({
       lead: {
         provider: activeProvider,
         model: activeModel,
+        overridden: Boolean(override),
+        lastUsed: override ? lastUsed : null,
         contextTokens,
         contextWindow,
         busy: Boolean(leadLive?.run),
@@ -990,6 +1007,7 @@ export async function openSwarmDaemon({
           listWorkers: listWorkersSnapshot,
           listHooks: () => hookRegistry.list(),
           probeCredits,
+          setLeadModel: (p2, m2) => setLeadModel(p2, m2),
           conversationId: ROOT_CONVERSATION_ID,
         });
         if (cmdRes) return cmdRes;
@@ -1110,6 +1128,59 @@ export async function openSwarmDaemon({
     },
 
     status: getStatusSnapshot,
+
+    /**
+     * Switch the Lead model (allowlisted pairs only, no arbitrary IDs/secrets).
+     * Durable in SwarmDoc so it survives reloads/restarts; applies to NEW turns globally.
+     * Refuses while Lead is busy (running turn keeps its model) and returns the stored pair.
+     */
+    async scheduleForever({ jobId, kind, sourcePath = "", everyMs = 60_000 }) {
+      let taskId;
+      await harness.commit(async (tx) => {
+        taskId = await tx.createTask(
+          ForeverWatchTask,
+          { jobId, kind, sourcePath, everyMs },
+          { ownership: { kind: "conversation" }, conversationId: ROOT_CONVERSATION_ID, background: true },
+        );
+        const sDoc = await tx.doc(SwarmDoc);
+        sDoc.cronJobs[jobId] = { jobId, kind, sourcePath, everyMs, taskId, createdAt: Date.now() };
+      }, BACKGROUND_CONTEXT);
+      harness.resume();
+      return { jobId, taskId };
+    },
+
+    status: getStatusSnapshot,
+
+    /**
+     * Switch the Lead model (allowlisted pairs only, no arbitrary IDs/secrets).
+     * Durable in SwarmDoc so it survives reloads/restarts; applies to NEW turns globally.
+     * Refuses while Lead is busy (running turn keeps its model) and returns the stored pair.
+     */
+    async setLeadModel(provider, modelId) {
+      const chosen = resolveLeadModelChoice(provider, modelId);
+      if (!chosen) {
+        return {
+          error: `Unknown model \`${String(provider || "")}/${String(modelId || "")}\` (not in allowlist)`,
+          statusCode: 400,
+        };
+      }
+      if (!models.getModel(chosen.provider, chosen.modelId)) {
+        return { error: `Model \`${chosen.provider}/${chosen.modelId}\` not registered`, statusCode: 400 };
+      }
+      const live = await harness.snapshot(LiveDoc, ROOT_CONVERSATION_ID, BACKGROUND_CONTEXT).catch(() => null);
+      const busy = Boolean(live?.run);
+      await harness.commit(async (tx) => {
+        const sDoc = await tx.doc(SwarmDoc);
+        sDoc.leadModelOverride = { provider: chosen.provider, modelId: chosen.modelId, updatedAt: Date.now() };
+        await configure(tx, lead.id, { model: chosen });
+      }, BACKGROUND_CONTEXT);
+      return {
+        ok: true,
+        busy,
+        active: { provider: chosen.provider, modelId: chosen.modelId },
+        warning: busy ? "Lead is busy: the running turn keeps its model, the next turn uses the new one." : undefined,
+      };
+    },
 
     /** Read-only sidebar list: authoritative swarm registry + live run state, running first. */
     listWorkers: listWorkersSnapshot,
