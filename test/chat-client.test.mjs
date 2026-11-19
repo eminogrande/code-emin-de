@@ -155,7 +155,7 @@ test("status bar marks low context amber/red and colours badge by worst worker s
   assert.equal(bar.querySelector(".sb-model").textContent.length, 40, "long model ids truncated");
   ctx.w.close();
 
-  ctx = boot([], [{ state: "failed_turn_limit" }, { state: "running" }], lead(500));
+  ctx = boot([], [{ id: "w-fail", state: "failed_turn_limit" }, { id: "w-run", state: "running" }], lead(800));
   await flush();
   bar = ctx.w.document.getElementById("statusBar");
   assert.ok(bar.querySelector(".sb-ctx").classList.contains("warn"));
