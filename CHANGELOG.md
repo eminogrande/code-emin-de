@@ -27,6 +27,23 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
   right lists only *running* agents, everything done/failed collapses into `<details>` `Archived workers`
   (no transcript deletion, real poll error text when nothing is visible). Registry states now match
   actual `failed:turn_limit` / `stopped:<reason>` values and cron jobs are filtered out.
+- **chat images (paste/attach)** — images first, no generic files: Ctrl/Cmd+V anywhere (page or
+  composer, plain text paste untouched) and an accessible `Attach` button + hidden
+  `input[type=file][multiple]` accept `image/png|jpeg|webp|gif`, max 3 × 4 MB. Immediate thumbnails
+  with alt filename and a per-image remove button in the composer deck; deck survives failures and
+  only clears on a successful send, rejections (type/size/count) report a specific status line.
+- server re-validates strictly (`src/image-util.mjs`): data-URL/base64 shape, magic-byte sniff (a
+  lying prefix cannot smuggle SVG/HTML), 4 MB decoded + 20 MB body cap, header-derived pixel caps
+  (16000 px side / 40 MP, no decompression), content-addressed store under `<dataDir>/images` and
+  authenticated, immutable-cache `GET /api/image/:id` (id regex = no traversal, no public URL).
+- images travel as real model content blocks (`[{type:"text"},{type:"image",mimeType,data}]` through
+  `POST /api/chat` → `POST /chat` → `harness.submit`), so vision providers see the actual bytes;
+  history replays ids only (never base64 bloat) and renders via the image endpoint. Models without
+  vision reject the turn and the composer shows "the current model may not accept images; switch to
+  a vision model" while keeping the attachments.
+  Tests: `test/images.test.mjs` (sniff/caps/dimensions/store), `test/chat-images.test.mjs` (paste,
+  text passthrough, rejections, remove/clear, history links), `test/chat-images-api.test.mjs`
+  (auth, body caps, daemon payload, error surfacing, traversal).
 - chat theme redesign (`src/chat-theme.css`, Rare UI *inspiration*, no framework swap): Solarized
   paper/navy kept, warm accent; 3-column rail 248/1fr/280px with hairline borders + faint warm grid
   instead of boxed cards, compact truncating lists, plain speech messages, bordered code with
