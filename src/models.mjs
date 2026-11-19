@@ -12,7 +12,8 @@ const LLMGATEWAY_OPEN_MODELS = [
   { id: "minimax-m3.1-flash", name: "MiniMax M3.1 Flash (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text", "image"], cost: { input: 0.15, output: 0.6, cacheRead: 0.015, cacheWrite: 0 } },
   { id: "minimax-m3", name: "MiniMax M3 (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text", "image"], cost: { input: 0.3, output: 1.2, cacheRead: 0.03, cacheWrite: 0 } },
   { id: "glm-5.3-prime", name: "GLM-5.3 Prime (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text"], cost: { input: 1.0, output: 3.2, cacheRead: 0.2, cacheWrite: 0 } },
-  { id: "qwen4-max", name: "Qwen4 Max (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text", "image"], cost: { input: 1.2, output: 4.8, cacheRead: 0.2, cacheWrite: 0 } },
+  { id: "mistral-large-4-0", name: "Mistral Large 4 1T/A52B (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text", "image"], cost: { input: 0.5, output: 1.5, cacheRead: 0.05, cacheWrite: 0 } },
+  { id: "qwen4-max", name: "Qwen4 Max (API-only ref)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text", "image"], cost: { input: 1.2, output: 4.8, cacheRead: 0.2, cacheWrite: 0 } },
   { id: "qwen3.8-2.4t-a95b", name: "Qwen3.8 2.4T-A95B (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text", "image"], cost: { input: 0.9, output: 3.6, cacheRead: 0.15, cacheWrite: 0 } },
   { id: "nemotron-3-ultra-550b", name: "Nemotron 3 Ultra 550B (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text"], cost: { input: 0.8, output: 2.8, cacheRead: 0.12, cacheWrite: 0 } },
   { id: "muse-spark-open", name: "Meta Muse Spark Open 816B/A42B (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text", "image"], cost: { input: 1.25, output: 4.25, cacheRead: 0.15, cacheWrite: 0 } },
@@ -44,16 +45,17 @@ export const LLMGATEWAY_TO_ALLMODELS_MAP = {
   "qwen3.8-2.4t-a95b": "qwen/qwen3.8-27b-abliterated",
   "nemotron-3-ultra-550b": "z-ai/glm-5.3-abliterated",
   "muse-spark-open": "moonshotai/kimi-k3.1-pro-abliterated",
+  "mistral-large-4-0": "moonshotai/kimi-k3.1-pro-abliterated",
 };
 
-// Empirically proven open-weights winners per role (Rounds 1, 2A, 2B)
+// Empirically proven open-weights winners per role (open-frontier-swe-bench R1-R3 + ep2/ep3)
 export const ROLE_MODELS = {
   lead: { provider: process.env.PROVIDER_LEAD || "llmgateway", modelId: process.env.MODEL_LEAD || "kimi-k3.1-pro" },
-  planner: { provider: process.env.PROVIDER_PLANNER || "llmgateway", modelId: process.env.MODEL_PLANNER || "glm-5.3" },
+  planner: { provider: process.env.PROVIDER_PLANNER || "llmgateway", modelId: process.env.MODEL_PLANNER || "kimi-k3.1-pro" },
   coder: { provider: process.env.PROVIDER_CODER || "llmgateway", modelId: process.env.MODEL_CODER || "deepseek-v4.1-flash-uncensored" },
   coderFast: { provider: process.env.PROVIDER_CODER_FAST || "llmgateway", modelId: process.env.MODEL_CODER_FAST || "deepseek-v4.1-flash-1017" },
-  reviewer: { provider: process.env.PROVIDER_REVIEWER || "llmgateway", modelId: process.env.MODEL_REVIEWER || "glm-5.3" },
-  reviewerDeep: { provider: process.env.PROVIDER_REVIEWER_DEEP || "llmgateway", modelId: process.env.MODEL_REVIEWER_DEEP || "deepseek-v4-pro" },
+  reviewer: { provider: process.env.PROVIDER_REVIEWER || "llmgateway", modelId: process.env.MODEL_REVIEWER || "kimi-k3.1-pro" },
+  reviewerDeep: { provider: process.env.PROVIDER_REVIEWER_DEEP || "llmgateway", modelId: process.env.MODEL_REVIEWER_DEEP || "kimi-k3.1-pro" },
   support: { provider: process.env.PROVIDER_SUPPORT || "llmgateway", modelId: process.env.MODEL_SUPPORT || "glm-5.3" },
   social: { provider: process.env.PROVIDER_SOCIAL || "llmgateway", modelId: process.env.MODEL_SOCIAL || "kimi-k3.1-pro" },
   watcher: { provider: process.env.PROVIDER_WATCHER || "llmgateway", modelId: process.env.MODEL_WATCHER || "glm-5.3" },
