@@ -259,7 +259,14 @@ export async function openSwarmDaemon({
       if (m.role === "assistant") {
         const texts = (m.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
         const calls = (m.content || []).filter((b) => b.type === "toolCall").map((b) => `${b.name}(${JSON.stringify(b.arguments)})`);
-        return { id: e.id, role: "assistant", text: texts, toolCalls: calls };
+        return {
+          id: e.id,
+          role: "assistant",
+          text: texts,
+          toolCalls: calls,
+          ...(m.stopReason ? { stopReason: m.stopReason } : {}),
+          ...(m.errorMessage ? { errorMessage: m.errorMessage } : {}),
+        };
       }
       if (m.role === "toolResult") {
         const text = (m.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
@@ -967,7 +974,14 @@ export async function openSwarmDaemon({
           settled.status === "done"
             ? await side.commit((tx) => tx.entry(AssistantEntry, settled.answer), BACKGROUND_CONTEXT)
             : null;
-        return { route: "btw", conversationId: side.id, status: settled.status, text: extractAssistantText(entry) };
+        const errMsg = settled.status !== "done" ? settled.detail || settled.reason || settled.status : undefined;
+        return {
+          route: "btw",
+          conversationId: side.id,
+          status: settled.status,
+          text: extractAssistantText(entry),
+          ...(errMsg ? { error: errMsg } : {}),
+        };
       }
 
       let targetConv = lead;
@@ -997,11 +1011,13 @@ export async function openSwarmDaemon({
         settled.status === "done"
           ? await targetConv.commit((tx) => tx.entry(AssistantEntry, settled.answer), BACKGROUND_CONTEXT)
           : null;
+      const errMsg = settled.status !== "done" ? settled.detail || settled.reason || settled.status : undefined;
       return {
         route: routeInfo.route,
         conversationId: targetConv.id,
         status: settled.status,
         text: extractAssistantText(entry),
+        ...(errMsg ? { error: errMsg } : {}),
       };
     },
 
@@ -1021,10 +1037,12 @@ export async function openSwarmDaemon({
     },
 
     async status() {
-      const [swarm, inspection, usage] = await Promise.all([
+      const [swarm, inspection, usage, leadCtx, leadLive] = await Promise.all([
         harness.snapshot(SwarmDoc, BACKGROUND_CONTEXT),
         harness.inspect(BACKGROUND_CONTEXT),
         harness.usage(BACKGROUND_CONTEXT),
+        lead.context(BACKGROUND_CONTEXT).catch(() => null),
+        harness.snapshot(LiveDoc, ROOT_CONVERSATION_ID, BACKGROUND_CONTEXT).catch(() => null),
       ]);
       let totalTokens = 0;
       let costUsd = 0;
@@ -1032,10 +1050,35 @@ export async function openSwarmDaemon({
         totalTokens += u.totalTokens ?? 0;
         costUsd += u.cost?.total ?? 0;
       }
+      let activeProvider = roleModels.lead.provider;
+      let activeModel = roleModels.lead.modelId;
+      let contextTokens = 0;
+      for (let i = (leadCtx?.entries?.length || 0) - 1; i >= 0; i--) {
+        const m = leadCtx.entries[i]?.model?.[0];
+        if (m?.role === "assistant") {
+          if (m.provider) activeProvider = m.provider;
+          if (m.model) activeModel = m.model;
+          const u = m.usage;
+          const ctxTok = (u?.input || 0) + (u?.cacheRead || 0) + (u?.cacheWrite || 0) + (u?.output || 0);
+          if (ctxTok > 0) {
+            contextTokens = ctxTok;
+            break;
+          }
+        }
+      }
+      const modelSpec = models.getModel(activeProvider, activeModel) || models.getModel(roleModels.lead.provider, roleModels.lead.modelId);
+      const contextWindow = modelSpec?.contextWindow || 1_048_576;
       return {
         swarm: swarm ?? { workers: {}, drafts: {}, alerts: [], cronJobs: {} },
         liveTasks: inspection.tasks.length,
         pendingSubmissions: inspection.submissions.length,
+        lead: {
+          provider: activeProvider,
+          model: activeModel,
+          contextTokens,
+          contextWindow,
+          busy: Boolean(leadLive?.run),
+        },
         usage: { totalTokens, costUsd: +costUsd.toFixed(5), byModel: usage?.models ?? {} },
       };
     },

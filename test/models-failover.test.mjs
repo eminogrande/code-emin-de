@@ -66,3 +66,42 @@ test("2. attachOpenWeightsFailover transparently retries on allmodels when llmga
     else process.env.LLMGATEWAY_API_KEY = prevLlm;
   }
 });
+
+test("3. attachOpenWeightsFailover downgrades to cheaper allmodels open-weights model on 402 insufficient_balance", async () => {
+  const prevAll = process.env.ALLMODELS_API_KEY;
+  const prevLlm = process.env.LLMGATEWAY_API_KEY;
+  process.env.ALLMODELS_API_KEY = "test-allmodels-key";
+  delete process.env.LLMGATEWAY_API_KEY;
+  try {
+    const mappedId = LLMGATEWAY_TO_ALLMODELS_MAP["kimi-k3.1-pro"];
+    const llmFaux = fauxProvider({ provider: "llmgateway", models: [{ id: "kimi-k3.1-pro" }] });
+    const allFaux = fauxProvider({
+      provider: "allmodels",
+      models: [{ id: mappedId }, { id: "z-ai/glm-5.3-abliterated" }],
+    });
+    allFaux.setResponses([
+      () =>
+        fauxAssistantMessage([], {
+          stopReason: "error",
+          errorMessage: '402: {"message":"The organization\'s balance cannot cover this request. Add credits, or lower max_tokens.","code":"insufficient_balance"}',
+        }),
+      fauxAssistantMessage([fauxText("GLM_DOWNGRADE_OK")]),
+    ]);
+    const models = createModels();
+    models.setProvider(llmFaux.provider);
+    models.setProvider(allFaux.provider);
+    attachOpenWeightsFailover(models);
+
+    const msg = await models.completeSimple(models.getModel("llmgateway", "kimi-k3.1-pro"), {
+      messages: [{ role: "user", content: "hi", timestamp: Date.now() }],
+    });
+    assert.equal(msg.stopReason, "stop");
+    assert.equal(msg.model, "z-ai/glm-5.3-abliterated");
+    assert.equal(msg.content[0].text, "GLM_DOWNGRADE_OK");
+  } finally {
+    if (prevAll === undefined) delete process.env.ALLMODELS_API_KEY;
+    else process.env.ALLMODELS_API_KEY = prevAll;
+    if (prevLlm === undefined) delete process.env.LLMGATEWAY_API_KEY;
+    else process.env.LLMGATEWAY_API_KEY = prevLlm;
+  }
+});

@@ -306,6 +306,9 @@ pre{padding:.75rem .9rem;overflow-x:auto;border-left:2px solid var(--rule);margi
 #sshBar{display:none;padding:.65rem .85rem;background:var(--paper-2);border-top:1px solid var(--accent);font-size:.96rem;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap}
 #sshBar button{appearance:none;background:var(--paper);color:var(--heading);border:1px solid var(--rule);padding:.32rem .75rem;font:inherit;cursor:pointer;border-radius:3px}
 #sshBar button:hover{border-color:var(--accent)}
+.m.err{color:#dc322f;font-size:.9rem}
+#statusBar{display:flex;flex-wrap:wrap;gap:.35rem .8rem;align-items:center;padding:.35rem 0;border-top:1px solid var(--rule);font-size:.78rem;color:var(--muted)}
+#statusBar b{color:var(--heading);font-weight:600}
 form{padding:.75rem 0 1.25rem;border-top:1px solid var(--rule)}
 textarea{width:100%;border:0;outline:0;background:transparent;color:var(--heading);font:inherit;resize:none;max-height:12rem;padding:0;margin:0}
 textarea::placeholder{color:var(--muted);opacity:.65}
@@ -337,6 +340,7 @@ textarea::placeholder{color:var(--muted);opacity:.65}
       <button type="button" id="sshDeny">Deny</button>
     </span>
   </div>
+  <div id="statusBar" aria-live="off"></div>
   <form id="f">
     <textarea id="q" rows="1" placeholder="Ask…" autofocus></textarea>
   </form>
@@ -415,7 +419,8 @@ async function syncHistory() {
   const r = await fetch('/api/history');
   if (r.status === 401) { location.reload(); return; }
   if (!r.ok) throw new Error('history ' + r.status);
-  const d = await r.json();
+  const d = await safeJson(r);
+  if (!d || d._nonJson) throw new Error('history non-json');
   const entries = (d.entries || []).filter((e) => e.role === 'user' || e.role === 'assistant');
   const keep = atBottom();
   const prevTop = log.scrollTop;
@@ -427,16 +432,18 @@ async function syncHistory() {
   let after = null;
   for (const e of entries) {
     const html = e.html || '';
+    const cls = e.role === 'user' ? 'u' : (e.isError ? 'a err' : 'a');
     let node = known.has(String(e.id)) ? log.querySelector('[data-id="' + e.id + '"]') : null;
     if (!node) {
-      node = addHtml(e.role === 'user' ? 'u' : 'a', html, e.text, e.id);
+      node = addHtml(cls, html, e.text, e.id);
     } else if (html && rendered.get(e.id) !== html) {
+      node.className = 'm ' + cls;
       node.innerHTML = html;
       if (window.chatRender) window.chatRender(node);
     }
     rendered.set(e.id, html);
     const want = after ? after.nextElementSibling : log.firstElementChild;
-    if (node !== want && want !== node.nextElementSibling) log.insertBefore(node, want);
+    if (node !== want) log.insertBefore(node, want);
     after = node;
   }
   // Optimistic nodes (no data-id) go as soon as their real counterpart landed. The reply
@@ -485,6 +492,34 @@ let target = 'lead';
 const targetsBox = document.getElementById('targets');
 const agentsUl = document.getElementById('agents');
 const agentsEmpty = document.getElementById('agentsEmpty');
+const statusBar = document.getElementById('statusBar');
+
+function fmtTok(n) {
+  if (!n) return '0';
+  if (n >= 1000000) return (n / 1000000).toFixed(2) + 'M';
+  if (n >= 1000) return Math.round(n / 1000) + 'k';
+  return String(n);
+}
+
+function renderStatus(st, list) {
+  if (!statusBar) return;
+  const parts = [];
+  if (st && st.lead) {
+    const m = st.lead.model || '?';
+    parts.push('model: ' + (st.lead.provider ? st.lead.provider + '/' : '') + m);
+    const used = st.lead.contextTokens || 0;
+    const win = st.lead.contextWindow || 1048576;
+    const pct = Math.min(100, Math.round((used / win) * 100));
+    parts.push('ctx: ' + fmtTok(used) + '/' + fmtTok(win) + ' (' + pct + '%, ' + (100 - pct) + '% free)');
+  }
+  const running = (list || []).filter((w) => w.state === 'running').length;
+  const total = (list || []).length;
+  parts.push('workers: ' + running + ' running / ' + total + ' total');
+  if (st && st.usage && typeof st.usage.costUsd === 'number') {
+    parts.push('cost: $' + st.usage.costUsd.toFixed(4));
+  }
+  statusBar.textContent = parts.join('  ·  ');
+}
 
 function setTarget(id) {
   target = id;
@@ -526,7 +561,7 @@ function renderAgents(list) {
     const err = li.querySelector('.werr');
     err.textContent = w.lastError ? String(w.lastError).slice(0, 120) : '';
     const want = after ? after.nextElementSibling : agentsUl.firstElementChild;
-    if (li !== want && want !== li.nextElementSibling) agentsUl.insertBefore(li, want);
+    if (li !== want) agentsUl.insertBefore(li, want);
     after = li;
   }
   agentsEmpty.hidden = list.length > 0;
@@ -569,6 +604,7 @@ async function pollWorkers() {
     const list = (d.workers || []).filter((w) => w && w.id && w.id !== 'lead');
     renderAgents(list);
     renderTargets(list);
+    renderStatus(d.status || null, list);
   } catch {}
 }
 workersTimer = setInterval(pollWorkers, POLL_MS);
@@ -686,6 +722,7 @@ async function send(steer = false) {
       pending.textContent = 'Swarm reloading — syncing reply…';
       setTimeout(() => { syncHistory().catch(() => {}); }, 2000);
     } else if (d.error) {
+      pending.classList.add('err');
       pending.textContent = 'Error: ' + d.error;
     } else if (d.html) {
       pending.innerHTML = d.html;
@@ -918,11 +955,28 @@ export async function startWebServer({
         // Short cache: sidebar polls; daemon snapshot is authoritative, never guessed.
         const now = Date.now();
         if (!workersCache || now - workersCache.at > WORKERS_TTL_MS) {
-          const out = await unixRpc(sockPath, "GET", "/workers");
+          const [out, st] = await Promise.all([
+            unixRpc(sockPath, "GET", "/workers"),
+            unixRpc(sockPath, "GET", "/status").catch(() => null),
+          ]);
           if (out?.error) return sendJson(500, out);
-          workersCache = { at: now, body: { workers: out?.workers || [] } };
+          const statusSummary = st && !st.error
+            ? { lead: st.lead || null, liveTasks: st.liveTasks || 0, usage: { totalTokens: st.usage?.totalTokens || 0, costUsd: st.usage?.costUsd || 0 } }
+            : null;
+          workersCache = { at: now, body: { workers: out?.workers || [], status: statusSummary } };
         }
         return sendJson(200, workersCache.body, { "Cache-Control": "private, max-age=2" });
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/status") {
+        const st = await unixRpc(sockPath, "GET", "/status");
+        if (st?.error) return sendJson(500, st);
+        return sendJson(200, {
+          lead: st.lead || null,
+          liveTasks: st.liveTasks || 0,
+          pendingSubmissions: st.pendingSubmissions || 0,
+          usage: st.usage || null,
+        });
       }
 
       if (req.method === "GET" && url.pathname === "/api/history") {
@@ -930,17 +984,21 @@ export async function startWebServer({
         const out = await unixRpc(sockPath, "GET", `/transcript?convId=1&max=${max}`);
         if (out?.error) return sendJson(500, out);
         // Entry ids let the client reconcile in place (no re-render wipe, no duplicates).
-        const entries = (out?.entries || []).map((e) => {
+        const entries = [];
+        for (const e of out?.entries || []) {
           const text = String(e.text || "");
           if (e.role === "user") {
             const clean = text.replace(/^\[ROUTER_HINT:[^\]]+\]\n/, "");
-            return { id: e.id, role: "user", text: clean, html: renderMarkdown(clean) };
+            entries.push({ id: e.id, role: "user", text: clean, html: renderMarkdown(clean) });
+          } else if (e.role === "assistant") {
+            if (text) {
+              entries.push({ id: e.id, role: "assistant", text, html: renderMarkdown(text) });
+            } else if (e.errorMessage) {
+              const errText = `Error: ${e.errorMessage}`;
+              entries.push({ id: e.id, role: "assistant", isError: true, text: errText, html: renderMarkdown(errText) });
+            }
           }
-          if (e.role === "assistant") {
-            return { id: e.id, role: "assistant", text, html: text ? renderMarkdown(text) : "" };
-          }
-          return { id: e.id, role: e.role || "other" };
-        });
+        }
         return sendJson(200, { conversationId: out?.conversationId || 1, entries });
       }
 

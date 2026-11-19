@@ -8,18 +8,19 @@ import { JSDOM } from "jsdom";
 const src = readFileSync(new URL("../src/web.mjs", import.meta.url), "utf8");
 const clientScript = [...src.matchAll(/<script>\n([\s\S]*?)\n<\/script>/g)].pop()[1];
 
-function boot(history) {
+function boot(history, workers = [], status = null) {
   const dom = new JSDOM(
-    `<!doctype html><body><div id="topbar"><button id="tLeft"></button><button id="tRight"></button></div><div id="backdrop" hidden></div><aside id="leftCol"><div id="targets"></div></aside><main><div id="log"></div><div id="sshBar"><span id="sshDesc"></span><button id="sshApprove"></button><button id="sshDeny"></button></div><form id="f"><textarea id="q"></textarea></form></main><aside id="rightCol"><ul id="agents"></ul><p id="agentsEmpty"></p></aside></body>`,
+    `<!doctype html><body><div id="topbar"><button id="tLeft"></button><button id="tRight"></button></div><div id="backdrop" hidden></div><aside id="leftCol"><div id="targets"></div></aside><main><div id="log"></div><div id="sshBar"><span id="sshDesc"></span><button id="sshApprove"></button><button id="sshDeny"></button></div><div id="statusBar"></div><form id="f"><textarea id="q"></textarea></form></main><aside id="rightCol"><ul id="agents"></ul><p id="agentsEmpty"></p></aside></body>`,
     { runScripts: "outside-only", pretendToBeVisual: true },
   );
   const w = dom.window;
+  if (!w.CSS) w.CSS = { escape: (s) => String(s).replace(/([^a-zA-Z0-9_-])/g, "\\$1") };
   const calls = [];
   w.fetch = async (url) => {
     calls.push(url);
     if (String(url).startsWith("/api/history")) return { ok: true, status: 200, json: async () => ({ entries: history.slice() }) };
     if (String(url).startsWith("/api/render")) return { ok: true, status: 200, json: async () => ({ html: "" }) };
-    if (String(url).startsWith("/api/workers")) return { ok: true, status: 200, json: async () => ({ workers: [] }) };
+    if (String(url).startsWith("/api/workers")) return { ok: true, status: 200, json: async () => ({ workers: workers.slice(), status }) };
     return { ok: true, status: 200, json: async () => ({ pending: [] }) };
   };
   w.eval(clientScript);
@@ -97,5 +98,27 @@ test("reply placeholder survives until the assistant entry lands, then goes", as
   await w.eval("syncHistory()");
   assert.equal(log.querySelectorAll(".pending").length, 0);
   assert.equal(log.children.length, 2);
+  w.close();
+});
+
+test("right AGENTS sidebar renders newly attached workers and statusBar shows model/context/workers", async () => {
+  const workers = [
+    { id: "w-coder", role: "coder", state: "running", createdAt: Date.now() - 5000, lastError: null },
+    { id: "btw-sidechat", role: "btw", state: "idle_done", createdAt: Date.now() - 120000, lastError: null },
+  ];
+  const status = {
+    lead: { provider: "allmodels", model: "moonshotai/kimi-k3.1-pro-abliterated", contextTokens: 42000, contextWindow: 1048576 },
+    usage: { costUsd: 0.0412 },
+  };
+  const { w } = boot([], workers, status);
+  await flush();
+  const agentsUl = w.document.getElementById("agents");
+  assert.equal(agentsUl.children.length, 2, "newly created worker <li> nodes must be inserted into #agents");
+  assert.match(agentsUl.children[0].textContent, /coder · w-coder/);
+  assert.equal(w.document.getElementById("agentsEmpty").hidden, true);
+  const bar = w.document.getElementById("statusBar").textContent;
+  assert.match(bar, /kimi-k3\.1-pro-abliterated/);
+  assert.match(bar, /42k\/1\.05M/);
+  assert.match(bar, /1 running \/ 2 total/);
   w.close();
 });

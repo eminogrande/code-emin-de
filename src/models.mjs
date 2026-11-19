@@ -19,12 +19,12 @@ const LLMGATEWAY_OPEN_MODELS = [
 ];
 
 const ALLMODELS_OPEN_MODELS = [
-  { id: "deepseek/deepseek-v4.1-flash-abliterated", name: "DeepSeek V4.1 Flash Abliterated (open-weights)", contextWindow: 1048576, maxTokens: 126976, reasoning: true, input: ["text", "image"], cost: { input: 0.3, output: 1.2, cacheRead: 0.03, cacheWrite: 0 } },
-  { id: "deepseek/deepseek-v4.1-flash-ultrafast", name: "DeepSeek V4.1 Flash Ultrafast (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text", "image"], cost: { input: 0.18, output: 0.65, cacheRead: 0.01, cacheWrite: 0 } },
-  { id: "moonshotai/kimi-k3.1-pro-abliterated", name: "Kimi K3.1 Pro Abliterated (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text", "image"], cost: { input: 2.0, output: 10.0, cacheRead: 0.2, cacheWrite: 0 } },
-  { id: "z-ai/glm-5.3-abliterated", name: "GLM-5.3 Abliterated (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text"], cost: { input: 0.77, output: 2.42, cacheRead: 0.143, cacheWrite: 0 } },
-  { id: "z-ai/glm-5.3-flash-abliterated", name: "GLM-5.3 Flash Abliterated (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text"], cost: { input: 0.2, output: 0.7, cacheRead: 0.02, cacheWrite: 0 } },
-  { id: "qwen/qwen3.8-27b-abliterated", name: "Qwen3.8 27B Abliterated (open-weights)", contextWindow: 262144, maxTokens: 65536, reasoning: true, input: ["text"], cost: { input: 0.2, output: 0.6, cacheRead: 0.02, cacheWrite: 0 } },
+  { id: "deepseek/deepseek-v4.1-flash-abliterated", name: "DeepSeek V4.1 Flash Abliterated (open-weights)", contextWindow: 1048576, maxTokens: 8192, reasoning: true, input: ["text", "image"], cost: { input: 0.3, output: 1.2, cacheRead: 0.03, cacheWrite: 0 } },
+  { id: "deepseek/deepseek-v4.1-flash-ultrafast", name: "DeepSeek V4.1 Flash Ultrafast (open-weights)", contextWindow: 1048576, maxTokens: 8192, reasoning: true, input: ["text", "image"], cost: { input: 0.18, output: 0.65, cacheRead: 0.01, cacheWrite: 0 } },
+  { id: "moonshotai/kimi-k3.1-pro-abliterated", name: "Kimi K3.1 Pro Abliterated (open-weights)", contextWindow: 1048576, maxTokens: 8192, reasoning: true, input: ["text", "image"], cost: { input: 2.0, output: 10.0, cacheRead: 0.2, cacheWrite: 0 } },
+  { id: "z-ai/glm-5.3-abliterated", name: "GLM-5.3 Abliterated (open-weights)", contextWindow: 1048576, maxTokens: 8192, reasoning: true, input: ["text"], cost: { input: 0.77, output: 2.42, cacheRead: 0.143, cacheWrite: 0 } },
+  { id: "z-ai/glm-5.3-flash-abliterated", name: "GLM-5.3 Flash Abliterated (open-weights)", contextWindow: 1048576, maxTokens: 8192, reasoning: true, input: ["text"], cost: { input: 0.2, output: 0.7, cacheRead: 0.02, cacheWrite: 0 } },
+  { id: "qwen/qwen3.8-27b-abliterated", name: "Qwen3.8 27B Abliterated (open-weights)", contextWindow: 262144, maxTokens: 8192, reasoning: true, input: ["text"], cost: { input: 0.2, output: 0.6, cacheRead: 0.02, cacheWrite: 0 } },
 ];
 
 /**
@@ -62,7 +62,7 @@ export const ROLE_MODELS = {
 
 export function isFailoverEligibleError(errorMessage = "") {
   const s = String(errorMessage || "");
-  return /402|billing_error|insufficient credits|Insufficient Balance|No API key set|Provider is not configured|401|502|503|504|fetch failed|ECONNRESET|ETIMEDOUT/i.test(s);
+  return /402|billing_error|insufficient_balance|insufficient_quota|insufficient credits|Insufficient Balance|lower max_tokens|No API key set|Provider is not configured|401|502|503|504|fetch failed|ECONNRESET|ETIMEDOUT/i.test(s);
 }
 
 function wrapApiWithPayload(payloadPatch) {
@@ -91,72 +91,99 @@ export function attachOpenWeightsFailover(models, { cooldownMs = 5 * 60_000 } = 
   const origStreamSimple = models.streamSimple.bind(models);
   let llmgatewayTrippedUntil = 0;
 
-  function resolveAllModelsFallback(model) {
-    if (!model || model.provider !== "llmgateway") return null;
-    if (!process.env.ALLMODELS_API_KEY) return null;
-    const mappedId = LLMGATEWAY_TO_ALLMODELS_MAP[model.id] || "deepseek/deepseek-v4.1-flash-abliterated";
-    return models.getModel("allmodels", mappedId) || null;
+  function buildFailoverChain(model) {
+    const chain = [];
+    const seen = new Set();
+    const push = (m) => {
+      if (!m) return;
+      const key = `${m.provider}:${m.id}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        chain.push(m);
+      }
+    };
+    const skipPrimary =
+      model?.provider === "llmgateway" &&
+      Boolean(process.env.ALLMODELS_API_KEY) &&
+      (!process.env.LLMGATEWAY_API_KEY || Date.now() < llmgatewayTrippedUntil);
+    if (!skipPrimary) push(model);
+    if (process.env.ALLMODELS_API_KEY) {
+      if (model?.provider === "llmgateway") {
+        const mappedId = LLMGATEWAY_TO_ALLMODELS_MAP[model.id] || "deepseek/deepseek-v4.1-flash-abliterated";
+        push(models.getModel("allmodels", mappedId));
+      }
+      if (model?.provider === "llmgateway" || model?.provider === "allmodels") {
+        push(models.getModel("allmodels", "z-ai/glm-5.3-abliterated"));
+        push(models.getModel("allmodels", "deepseek/deepseek-v4.1-flash-abliterated"));
+      }
+    }
+    return chain;
   }
 
   models.streamSimple = function streamSimpleWithFailover(model, context, options) {
-    const fallbackModel = resolveAllModelsFallback(model);
-    if (!fallbackModel) {
-      return origStreamSimple(model, context, options);
-    }
-    if ( !process.env.LLMGATEWAY_API_KEY || Date.now() < llmgatewayTrippedUntil) {
-      return origStreamSimple(fallbackModel, context, options);
+    const chain = buildFailoverChain(model);
+    if (chain.length <= 1) {
+      return origStreamSimple(chain[0] || model, context, options);
     }
 
     const outer = new AssistantMessageEventStream();
     (async () => {
-      const primary = origStreamSimple(model, context, options);
-      const buffered = [];
-      let emittedContent = false;
-      let terminalError = null;
-      let doneMessage = null;
+      let lastError = null;
+      for (let idx = 0; idx < chain.length; idx++) {
+        const candidate = chain[idx];
+        const hasNext = idx < chain.length - 1;
+        const stream = origStreamSimple(candidate, context, options);
+        const buffered = [];
+        let emittedContent = false;
+        let terminalError = null;
+        let doneMessage = null;
 
-      for await (const ev of primary) {
-        if (ev.type === "error") {
-          terminalError = ev.error;
-          break;
+        for await (const ev of stream) {
+          if (ev.type === "error") {
+            terminalError = ev.error;
+            break;
+          }
+          if (ev.type === "done") {
+            doneMessage = ev.message;
+            buffered.push(ev);
+            break;
+          }
+          if (ev.partial?.content?.length > 0) {
+            emittedContent = true;
+            while (buffered.length > 0) outer.push(buffered.shift());
+            outer.push(ev);
+          } else {
+            buffered.push(ev);
+          }
         }
-        if (ev.type === "done") {
-          doneMessage = ev.message;
-          buffered.push(ev);
-          break;
+
+        if (!emittedContent && terminalError && hasNext && isFailoverEligibleError(terminalError.errorMessage) && !options?.signal?.aborted) {
+          if (
+            candidate.provider === "llmgateway" &&
+            /402|billing_error|insufficient_balance|insufficient_quota|insufficient credits|Insufficient Balance|No API key set/i.test(
+              terminalError.errorMessage || "",
+            )
+          ) {
+            llmgatewayTrippedUntil = Date.now() + cooldownMs;
+          }
+          lastError = terminalError;
+          continue;
         }
-        if (ev.partial?.content?.length > 0) {
-          emittedContent = true;
-          while (buffered.length > 0) outer.push(buffered.shift());
-          outer.push(ev);
+
+        while (buffered.length > 0) outer.push(buffered.shift());
+        if (terminalError) {
+          outer.push({ type: "error", reason: options?.signal?.aborted ? "aborted" : "error", error: terminalError });
+          outer.end(terminalError);
         } else {
-          buffered.push(ev);
+          const res = doneMessage ?? (typeof stream.result === "function" ? await stream.result() : undefined);
+          outer.end(res);
         }
-      }
-
-      if (!emittedContent && terminalError && isFailoverEligibleError(terminalError.errorMessage) && !options?.signal?.aborted) {
-        if (/402|billing_error|insufficient credits|Insufficient Balance|No API key set/i.test(terminalError.errorMessage || "")) {
-          llmgatewayTrippedUntil = Date.now() + cooldownMs;
-        }
-        const secondary = origStreamSimple(fallbackModel, context, options);
-        let finalMsg;
-        for await (const ev2 of secondary) {
-          outer.push(ev2);
-          if (ev2.type === "done") finalMsg = ev2.message;
-          else if (ev2.type === "error") finalMsg = ev2.error;
-        }
-        if (!finalMsg && typeof secondary.result === "function") finalMsg = await secondary.result();
-        outer.end(finalMsg);
         return;
       }
 
-      while (buffered.length > 0) outer.push(buffered.shift());
-      if (terminalError) {
-        outer.push({ type: "error", reason: options?.signal?.aborted ? "aborted" : "error", error: terminalError });
-        outer.end(terminalError);
-      } else {
-        const res = doneMessage ?? (typeof primary.result === "function" ? await primary.result() : undefined);
-        outer.end(res);
+      if (lastError) {
+        outer.push({ type: "error", reason: "error", error: lastError });
+        outer.end(lastError);
       }
     })().catch((err) => {
       const msg = {
@@ -240,13 +267,16 @@ export function createOpenModels({ enableFailover = true } = {}) {
         },
       })),
       api: wrapApiWithPayload((payload, model) => {
-        if (payload && typeof payload === "object" && model.id === "deepseek/deepseek-v4.1-flash-abliterated") {
-          return {
-            ...payload,
-            provider: { order: ["lyber", "hopper", "abliteration"], allow_fallbacks: true },
-          };
+        if (!payload || typeof payload !== "object") return payload;
+        const cap = model.maxTokens || 8192;
+        const next = {
+          ...payload,
+          max_tokens: payload.max_tokens ? Math.min(Number(payload.max_tokens), cap) : cap,
+        };
+        if (model.id === "deepseek/deepseek-v4.1-flash-abliterated") {
+          next.provider = { order: ["lyber", "hopper", "abliteration"], allow_fallbacks: true };
         }
-        return payload;
+        return next;
       }),
     }),
   );
