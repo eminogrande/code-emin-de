@@ -379,8 +379,12 @@ export function createOpenModels({ enableFailover = true } = {}) {
         baseUrl: localBaseUrl,
         auth: {
           apiKey: {
-            description: "Local llama-server key (optional)",
-            resolve: async () => process.env.LOCAL_LLAMA_API_KEY || "local-failsafe",
+            name: "Local llama-server key (optional)",
+            login: async () => ({ type: "api_key", key: process.env.LOCAL_LLAMA_API_KEY || "local-failsafe" }),
+            resolve: async () => ({
+              auth: { apiKey: process.env.LOCAL_LLAMA_API_KEY || "local-failsafe" },
+              source: "LOCAL_LLAMA_URL",
+            }),
           },
         },
         models: [
