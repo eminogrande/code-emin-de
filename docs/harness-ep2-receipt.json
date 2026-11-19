@@ -1,0 +1,260 @@
+{
+  "timestamp": "2026-11-19T02:33:41.599Z",
+  "protocol": "human-like-retrospective-v2",
+  "episodeId": "ep2-supervisor-chatclient-bugfix",
+  "winner": "harness-pi-durable-swarm-k31",
+  "runs": [
+    {
+      "candidateId": "harness-pi-durable-swarm-k31",
+      "episodeId": "ep2-supervisor-chatclient-bugfix",
+      "config": {
+        "harness": "pi-durable-swarm",
+        "label": "pi-durable Swarm Harness (our upgraded Lead+Coder)",
+        "leadModel": "k3.1-pro",
+        "coderModel": "k3.1-pro",
+        "optmem": false
+      },
+      "metrics": {
+        "testPass": true,
+        "userNudges": 0,
+        "autoResumes": 0,
+        "totalTokens": 1467678,
+        "inputTokens": 92534,
+        "cacheReadTokens": 1362115,
+        "outputTokens": 13029,
+        "reasoningTokens": 4074,
+        "replyWords": 0,
+        "codeLoc": 82,
+        "codeAdded": 64,
+        "codeDeleted": 18,
+        "toolCalls": 78,
+        "costUsd": 0.58778,
+        "wallClockSec": 410.06
+      },
+      "verifierOutput": "ed\nok 21 - 3. auth/billing/policy (model_error, no_model) never retried\n  ---\n  duration_ms: 0.257166\n  type: 'test'\n  ...\n# Subtest: 4. backoff waits before resuming\nok 22 - 4. backoff waits before resuming\n  ---\n  duration_ms: 0.052959\n  type: 'test'\n  ...\n# Subtest: 5. no duplicate resume while running, none before first run, none when settled\nok 23 - 5. no duplicate resume while running, none before first run, none when settled\n  ---\n  duration_ms: 0.112583\n  type: 'test'\n  ...\n# Subtest: 6. completed worker notifies lead once with commit/tests, never twice\nok 24 - 6. completed worker notifies lead once with commit/tests, never twice\n  ---\n  duration_ms: 0.292208\n  type: 'test'\n  ...\n# Subtest: 7. final failure message carries errors; summary + failureKey helpers\nok 25 - 7. final failure message carries errors; summary + failureKey helpers\n  ---\n  duration_ms: 0.184625\n  type: 'test'\n  ...\n# (node:70190) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n# (Use `node --trace-warnings ...` to show where the warning was created)\n# Subtest: WebAuthn Passkey store: one-time enrollment, ES256 verify, replay & unauth rejection\nok 26 - WebAuthn Passkey store: one-time enrollment, ES256 verify, replay & unauth rejection\n  ---\n  duration_ms: 6.715291\n  type: 'test'\n  ...\n# Subtest: HTTP WebServer E2E: Passkey cookie -> /api/history + /api/chat over Unix socket\nok 27 - HTTP WebServer E2E: Passkey cookie -> /api/history + /api/chat over Unix socket\n  ---\n  duration_ms: 93.133417\n  type: 'test'\n  ...\n# Subtest: worker-meta: state derives only from live run/runFailure\nok 28 - worker-meta: state derives only from live run/runFailure\n  ---\n  duration_ms: 0.812875\n  type: 'test'\n  ...\n# Subtest: worker-meta: lastError is concise, single-line and truncated\nok 29 - worker-meta: lastError is concise, single-line and truncated\n  ---\n  duration_ms: 0.198917\n  type: 'test'\n  ...\n# Subtest: worker-meta: record exposes only public fields\nok 30 - worker-meta: record exposes only public fields\n  ---\n  duration_ms: 0.789667\n  type: 'test'\n  ...\n# Subtest: worker-meta: sorting puts running first then newest, stable by id\nok 31 - worker-meta: sorting puts running first then newest, stable by id\n  ---\n  duration_ms: 0.395167\n  type: 'test'\n  ...\n1..31\n# tests 31\n# suites 0\n# pass 31\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 7371.521625",
+      "finalReplyPreview": "",
+      "judge": {
+        "protocol": "human-like-retrospective-v2",
+        "blindLabel": "Candidate-D",
+        "meanScore": 34.67,
+        "validVoteCount": 3,
+        "totalVoteCount": 3,
+        "votes": [
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "correctness",
+            "valid": true,
+            "score": 38,
+            "rationale": "The patch makes tests pass but is not minimal or robust because it adds an unrequested debug test, leaves debug logging, masks all resume errors with catch(() => true), and uses brittle response routing that can conceal real integration failures."
+          },
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "readability",
+            "valid": true,
+            "score": 38,
+            "rationale": "Although tests pass, the patch is not clean or minimal because it adds a debug test and logging, uses unnecessary var globals, relies on brittle message-string routing, and swallows resume errors with catch(() => true)."
+          },
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "maintainability",
+            "valid": true,
+            "score": 28,
+            "rationale": "Although the targeted tests pass, the patch is not maintainable or minimal because it adds a committed debug test and logging, uses brittle message inspection, weakens error handling by swallowing resume failures, and introduces unnecessary var-based timer changes."
+          }
+        ]
+      },
+      "compositeRank": 1060.05,
+      "patchBytes": 8618,
+      "patchPreview": "diff --git a/src/daemon.mjs b/src/daemon.mjs\nindex 750df8a..9cfc74a 100644\n--- a/src/daemon.mjs\n+++ b/src/daemon.mjs\n@@ -624,6 +624,14 @@ export async function openSwarmDaemon({\n     },\n   });\n \n+  const patch = async (workerId, mutate) => {\n+    await harness.commit(async (tx) => {\n+      const s = await tx.doc(SwarmDoc);\n+      const w = s.workers[workerId];\n+      if (w) mutate(w);\n+    }, BACKGROUND_CONTEXT);\n+  };\n+\n   // Durable auto-continue supervisor: bounded turn_limit recovery + lead notifications\n   const supervisor = createSupervisor({\n     opts: supervisorOpts,\n@@ -632,13 +640,7 @@ export async function openSwarmDaemon({\n       return s.workers || {};\n     },\n     live: (convId) => harness.snapshot(LiveDoc, convId, BACKGROUND_CONTEXT),\n-    patch: async (workerId, mutate) => {\n-      await harness.commit(async (tx) => {\n-        const s = await tx.doc(SwarmDoc);\n-        const w = s.workers[workerId];\n-        if (w) mutate(w);\n-      }, BACKGROUND_CONTEXT);\n-    },\n+    patch,\n     transcript: readConversationTranscript,\n     resumeWorker: async (worker, { notice, summary }) => {\n       const conv = await harness.conversation(worker.convId, BACKGROUND_CONTEXT);\ndiff --git a/src/supervisor.mjs b/src/supervisor.mjs\nindex 95f63fc..691a4ff 100644\n--- a/src/supervisor.mjs\n+++ b/src/supervisor.mjs\n@@ -129,12 +129,13 @@ export function createSupervisor({\n     const sup = worker.supervisor || {};\n     const attempt = (sup.autoResumes || 0) + 1;\n     const entries = await transcript(worker.convId);\n+    // Submission may succeed before an adapter fails; count ambiguous outcomes to avoid duplicate resumes.\n     const res = await resumeWorker(worker, {\n       attempt,\n       failure,\n       summary: summarizeTranscript(entries),\n       notice: resumeNotice({ ...worker, goal: await goalText(worker, entries) }, failure, attempt, o),\n-    });\n+    }).catch(() => true);\n     // A run that was still active when we looked owns the next turn: don't spend an attempt on it.\n     if (res === false) {\n       await patch(worker.workerId, (w) => {\n@@ -270,6 +271,6 @@ export function resumeNotice(worker, failure, attempt, opts = SUPERVISOR_DEFAULT\n     `Previous run hit turn_limit (${failure?.detail || \"max turns\"}). Context is preserved.\\n` +\n     `Do NOT re-plan or re-run the whole test suite from scratch: reuse what you already have, run only the focused tests you still need, ` +\n     `commit, then finish with Verified: PASS (<command>). Auto-resume stops at ${opts.maxAutoResumes ?? SUPERVISOR_DEFAULTS.maxAutoResumes}, so reach your next input instead of looping.\\n` +\n-    `Original goal: ${worker.goal || UNKNOWN_GOAL}`\n+    `Original goal (SAME goal): ${worker.goal || UNKNOWN_GOAL}`\n   );\n }\ndiff --git a/src/web.mjs b/src/web.mjs\nindex e475611..8567469 100755\n--- a/src/web.mjs\n+++ b/src/web.mjs\n@@ -357,8 +357,8 @@ const sshDesc = document.getElementById('sshDesc');\n const sshApprove = document.getElementById('sshApprove');\n const sshDeny = document.getElementById('sshDeny');\n const BRIDGE = 'http://127.0.0.1:4199';\n-let busy = false;\n-let currentSshReq = null;\n+var busy = false;\n+var currentSshReq = null;\n \n function renderMd(text) {\n   return fetch('/api/render', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) })\n@@ -558,7 +558,7 @@ async function pollWorkers() {\n     renderTargets(list);\n   } catch {}\n }\n-setInterval(pollWorkers, POLL_MS);\n+var workersTimer = setInterval(pollWorkers, POLL_MS);\n \n // ---- responsive drawers ----\n const leftCol = document.getElementById('leftCol');\n@@ -603,7 +603,7 @@ async function pollSsh() {\n     }\n   } catch {}\n }\n-setInterval(pollSsh, 1500);\n+var sshTimer = setInterval(pollSsh, 1500);\n \n sshApprove.onclick = async () => {\n   if (!currentSshReq) return;\n@@ -693,6 +693,11 @@ hydrate();\n pollSsh();\n pollWorkers();\n schedulePoll(POLL_MS);\n+addEventListener('pagehide', () => {\n+  clearTimeout(pollTimer);\n+  clearInterval(workersTimer);\n+  clearInterval(sshTimer);\n+});\n </script>\n </body>\n </html>`;\ndiff --git a/test/debug.test.mjs b/test/debug.test.mjs\nnew file mode 100644\nindex 0000000..de24087\n--- /dev/null\n+++ b/test/debug.test.mjs\n@@ -0,0 +1,31 @@\n+// Client-side reconcile/poll behaviour of the chat page, run in jsdom against the real\n+// embedded script (extracted from src/web.mjs) with a stubbed fetch.\n+import { test } from \"node:test\";\n+import assert from \"node:assert/strict\";\n+import { readFileSync } from \"node:fs\";\n+import { JSDOM } from \"jsdom\";\n+\n+const src = readFileSync(new URL(\"../src/web.mjs\", import.meta.url), \"utf8\");\n+const clientScript = [...src.matchAll(/<script>\\n([\\s\\S]*?)\\n<\\/script>/g)].pop()[1];\n+\n+function boot(history) {\n+  const dom = new JSDOM(\n+    `<!doctype html><body><div id=\"topbar\"><button id=\"tLeft\"></button><button id=\"tRight\"></button></div><div id=\"backdrop\" hidden></div><aside id=\"leftCol\"><div id=\"targets\"></div></aside><main><div id=\"log\"></div><div id=\"sshBar\"><span id=\"sshDesc\"></span><button id=\"sshApprove\"></button><button id=\"sshDeny\"></button></div><form id=\"f\"><textarea id=\"q\"></textarea></form></main><aside id=\"rightCol\"><ul id=\"agents\"></ul><p id=\"agentsEmpty\"></p></aside></body>`,\n+    { runScripts: \"outside-only\", pretendToBeVisual: true },\n+  );\n+  const w = dom.window;\n+  const calls = [];\n+  w.fetch = async (url) => {\n+    calls.push(url);\n+    if (String(url).startsWith(\"/api/history\")) return { ok: true, status: 200, json: async () => ({ entries: history.slice() }) };\n+    if (String(url).startsWith(\"/api/render\")) return { ok: true, status: 200, json: async () => ({ html: \"\" }) };\n+    if (String(url).startsWith(\"/api/workers\")) return { ok: true, status: 200, json: async () => ({ workers: [] }) };\n+    return { ok: true, status: 200, json: async () => ({ pending: [] }) };\n+  };\n+  w.eval(clientScript);\n+  return { w, calls, log: w.document.getElementById(\"log\") };\n+}\n+\n+const flush = () => new Promise((r) => setTimeout(r, 30));\n+\n+test(\"debug\", async()=>{const {w,calls}=boot([{id:1,role:\"user\",text:\"q\",html:\"<p>q</p>\"}]); await flush(); console.log(\"before\",calls,w.eval(\"busy\"),w.eval(\"POLL_MS\")); w.eval(\"busy = true\"); console.log(\"set\",w.eval(\"busy\")); await w.eval(\"tick()\"); console.log(\"after\",calls,w.eval(\"busy\")); w.close();});\n\\ No newline at end of file\ndiff --git a/test/supervisor.integration.test.mjs b/test/supervisor.integration.test.mjs\nindex b897833..0f9d427 100644\n--- a/test/supervisor.integration.test.mjs\n+++ b/test/supervisor.integration.test.mjs\n@@ -25,13 +25,19 @@ test(\"integration: real harness auto-continues a turn_limit worker, then notifie\n   const ref = { provider: faux.models[0].provider, modelId: faux.models[0].id };\n   const roleModels = { lead: ref, coder: ref, reviewer: ref, btw: ref };\n \n-  // lead: spawn worker, then answer. worker: 40 tool rounds (= maxTurns) -> turn_limit, then finish.\n-  faux.appendResponses([\n-    fauxAssistantMessage(fauxToolCall(\"spawn_worker\", { workerId: \"w-t\", role: \"coder\", brief: \"GOAL-ALPHA build thing\" })),\n+  // Route responses per conversation: supervisor notifications also wake the lead.\n+  const leadResponses = [\n+    fauxAssistantMessage(fauxToolCall(\"spawn_worker\", { workerId: \"w-t\", role: \"coder\", brief: \"GOAL-ALPHA build thing\" }), { stopReason: \"toolUse\" }),\n     fauxAssistantMessage(\"spawned w-t\"),\n-    ...Array.from({ length: 40 }, () => fauxAssistantMessage(fauxToolCall(\"bash\", { command: \"true\" }))),\n+  ];\n+  const workerResponses = [\n+    ...Array.from({ length: 40 }, () => fauxAssistantMessage(fauxToolCall(\"bash\", { command: \"true\" }), { stopReason: \"toolUse\" })),\n     fauxAssistantMessage(\"resumed and done. Verified: PASS (true)\"),\n-  ]);\n+  ];\n+  faux.setResponses(Array.from({ length: 50 }, () => (context) => {\n+    const isWorker = JSON.stringify(context.messages).includes(\"WORKER_ID=w-t\");\n+    return (isWorker ? workerResponses : leadResponses).shift() || fauxAssistantMessage(\"acknowledged\");\n+  }));\n \n   const daemon = await openSwarmDaemon({\n     dataDir: join(root, \"data\"),\n@@ -50,6 +56,7 @@ test(\"integration: real harness auto-continues a turn_limit worker, then notifie\n     });\n     assert.ok(ok, \"worker must recover via auto-resume and finish\");\n \n+    console.log(\"DEBUG\", JSON.stringify({ workers: await daemon.listWorkers(), w: (await daemon.status()).swarm.workers[\"w-t\"], bus: daemon.bus.inbox(\"lead\"), calls: faux.state.callCount, left: workerResponses.length }, null, 2));\n     const w = (await daemon.status()).swarm.workers[\"w-t\"];\n     assert.equal(w.supervisor.autoResumes, 1);\n     assert.equal(w.goal, \"GOAL-ALPHA build thing\");\n"
+    },
+    {
+      "candidateId": "harness-pi-cli-k31",
+      "episodeId": "ep2-supervisor-chatclient-bugfix",
+      "config": {
+        "harness": "pi-cli",
+        "label": "Pi Coding Agent CLI v1.5.2",
+        "leadModel": "k3.1-pro",
+        "coderModel": "k3.1-pro",
+        "optmem": false
+      },
+      "metrics": {
+        "testPass": false,
+        "userNudges": 0,
+        "autoResumes": 0,
+        "totalTokens": 582312,
+        "inputTokens": 65865,
+        "cacheReadTokens": 511232,
+        "outputTokens": 5215,
+        "reasoningTokens": 1508,
+        "replyWords": 30,
+        "codeLoc": 8,
+        "codeAdded": 4,
+        "codeDeleted": 4,
+        "toolCalls": 43,
+        "costUsd": 0.28613,
+        "wallClockSec": 240.03
+      },
+      "verifierOutput": "TEST SUITE FAIL (code=1, timedOut=false)\ned\nok 21 - 3. auth/billing/policy (model_error, no_model) never retried\n  ---\n  duration_ms: 0.633958\n  type: 'test'\n  ...\n# Subtest: 4. backoff waits before resuming\nok 22 - 4. backoff waits before resuming\n  ---\n  duration_ms: 0.129458\n  type: 'test'\n  ...\n# Subtest: 5. no duplicate resume while running, none before first run, none when settled\nok 23 - 5. no duplicate resume while running, none before first run, none when settled\n  ---\n  duration_ms: 0.26575\n  type: 'test'\n  ...\n# Subtest: 6. completed worker notifies lead once with commit/tests, never twice\nok 24 - 6. completed worker notifies lead once with commit/tests, never twice\n  ---\n  duration_ms: 2.090208\n  type: 'test'\n  ...\n# Subtest: 7. final failure message carries errors; summary + failureKey helpers\nok 25 - 7. final failure message carries errors; summary + failureKey helpers\n  ---\n  duration_ms: 1.662708\n  type: 'test'\n  ...\n# (node:66481) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n# (Use `node --trace-warnings ...` to show where the warning was created)\n# Subtest: WebAuthn Passkey store: one-time enrollment, ES256 verify, replay & unauth rejection\nok 26 - WebAuthn Passkey store: one-time enrollment, ES256 verify, replay & unauth rejection\n  ---\n  duration_ms: 9.439292\n  type: 'test'\n  ...\n# Subtest: HTTP WebServer E2E: Passkey cookie -> /api/history + /api/chat over Unix socket\nok 27 - HTTP WebServer E2E: Passkey cookie -> /api/history + /api/chat over Unix socket\n  ---\n  duration_ms: 116.108917\n  type: 'test'\n  ...\n# Subtest: worker-meta: state derives only from live run/runFailure\nok 28 - worker-meta: state derives only from live run/runFailure\n  ---\n  duration_ms: 1.146208\n  type: 'test'\n  ...\n# Subtest: worker-meta: lastError is concise, single-line and truncated\nok 29 - worker-meta: lastError is concise, single-line and truncated\n  ---\n  duration_ms: 0.499958\n  type: 'test'\n  ...\n# Subtest: worker-meta: record exposes only public fields\nok 30 - worker-meta: record exposes only public fields\n  ---\n  duration_ms: 7.407375\n  type: 'test'\n  ...\n# Subtest: worker-meta: sorting puts running first then newest, stable by id\nok 31 - worker-meta: sorting puts running first then newest, stable by id\n  ---\n  duration_ms: 0.271875\n  type: 'test'\n  ...\n1..31\n# tests 31\n# suites 0\n# pass 30\n# fail 1\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 1521.531291",
+      "finalReplyPreview": "[TIMEOUT] Reproduced three issues: `busy` is invisible across jsdom evals, the resume notice regressed, and the integration run finishes before its spawned worker commits. I’m isolating the harness race now.",
+      "judge": {
+        "protocol": "human-like-retrospective-v2",
+        "blindLabel": "Candidate-A",
+        "meanScore": 25.33,
+        "validVoteCount": 3,
+        "totalVoteCount": 3,
+        "votes": [
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "correctness",
+            "valid": true,
+            "score": 24,
+            "rationale": "The patch is small and plausibly addresses specific harness issues, but the required suite still fails one test, so it does not resolve the issue and its correctness remains unproven."
+          },
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "readability",
+            "valid": true,
+            "score": 28,
+            "rationale": "The solution is not high quality because the required test suite still fails, and replacing let with var is an unclear, non-idiomatic workaround that does not demonstrate a clean root-cause fix."
+          },
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "maintainability",
+            "valid": true,
+            "score": 24,
+            "rationale": "The patch is incomplete because one test still fails, changes let a shared variable declaration mask a likely issue, and modifies integration fixtures without addressing the broader requested root causes."
+          }
+        ]
+      },
+      "compositeRank": 45.8,
+      "patchBytes": 2514,
+      "patchPreview": "diff --git a/src/supervisor.mjs b/src/supervisor.mjs\nindex 95f63fc..40ef4e0 100644\n--- a/src/supervisor.mjs\n+++ b/src/supervisor.mjs\n@@ -267,7 +267,7 @@ export function createSupervisor({\n export function resumeNotice(worker, failure, attempt, opts = SUPERVISOR_DEFAULTS) {\n   return (\n     `[SUPERVISOR AUTO-RESUME ${attempt}/${opts.maxAutoResumes ?? SUPERVISOR_DEFAULTS.maxAutoResumes}] ` +\n-    `Previous run hit turn_limit (${failure?.detail || \"max turns\"}). Context is preserved.\\n` +\n+    `Previous run hit turn_limit (${failure?.detail || \"max turns\"}). Context is preserved. Continue the SAME goal to completion.\\n` +\n     `Do NOT re-plan or re-run the whole test suite from scratch: reuse what you already have, run only the focused tests you still need, ` +\n     `commit, then finish with Verified: PASS (<command>). Auto-resume stops at ${opts.maxAutoResumes ?? SUPERVISOR_DEFAULTS.maxAutoResumes}, so reach your next input instead of looping.\\n` +\n     `Original goal: ${worker.goal || UNKNOWN_GOAL}`\ndiff --git a/src/web.mjs b/src/web.mjs\nindex e475611..988684d 100755\n--- a/src/web.mjs\n+++ b/src/web.mjs\n@@ -357,7 +357,7 @@ const sshDesc = document.getElementById('sshDesc');\n const sshApprove = document.getElementById('sshApprove');\n const sshDeny = document.getElementById('sshDeny');\n const BRIDGE = 'http://127.0.0.1:4199';\n-let busy = false;\n+var busy = false;\n let currentSshReq = null;\n \n function renderMd(text) {\ndiff --git a/test/supervisor.integration.test.mjs b/test/supervisor.integration.test.mjs\nindex b897833..54aa512 100644\n--- a/test/supervisor.integration.test.mjs\n+++ b/test/supervisor.integration.test.mjs\n@@ -27,9 +27,9 @@ test(\"integration: real harness auto-continues a turn_limit worker, then notifie\n \n   // lead: spawn worker, then answer. worker: 40 tool rounds (= maxTurns) -> turn_limit, then finish.\n   faux.appendResponses([\n-    fauxAssistantMessage(fauxToolCall(\"spawn_worker\", { workerId: \"w-t\", role: \"coder\", brief: \"GOAL-ALPHA build thing\" })),\n+    fauxAssistantMessage(fauxToolCall(\"spawn_worker\", { workerId: \"w-t\", role: \"coder\", brief: \"GOAL-ALPHA build thing\" }), { stopReason: \"toolUse\" }),\n     fauxAssistantMessage(\"spawned w-t\"),\n-    ...Array.from({ length: 40 }, () => fauxAssistantMessage(fauxToolCall(\"bash\", { command: \"true\" }))),\n+    ...Array.from({ length: 40 }, () => fauxAssistantMessage(fauxToolCall(\"bash\", { command: \"true\" }), { stopReason: \"toolUse\" })),\n     fauxAssistantMessage(\"resumed and done. Verified: PASS (true)\"),\n   ]);\n \n"
+    },
+    {
+      "candidateId": "harness-kimi-code-k31",
+      "episodeId": "ep2-supervisor-chatclient-bugfix",
+      "config": {
+        "harness": "kimi-code",
+        "label": "Kimi Code CLI v2.5.2 (native)",
+        "leadModel": "kimi-code/k3.1-pro",
+        "coderModel": "kimi-code/k3.1-pro",
+        "optmem": false
+      },
+      "metrics": {
+        "testPass": false,
+        "userNudges": 0,
+        "autoResumes": 0,
+        "totalTokens": 0,
+        "inputTokens": 0,
+        "cacheReadTokens": 0,
+        "outputTokens": 0,
+        "reasoningTokens": 0,
+        "replyWords": 9,
+        "codeLoc": 3,
+        "codeAdded": 2,
+        "codeDeleted": 1,
+        "toolCalls": 24,
+        "costUsd": 0,
+        "wallClockSec": 240.91
+      },
+      "verifierOutput": "TEST SUITE FAIL (code=1, timedOut=false)\ner retried\nok 21 - 3. auth/billing/policy (model_error, no_model) never retried\n  ---\n  duration_ms: 0.267334\n  type: 'test'\n  ...\n# Subtest: 4. backoff waits before resuming\nok 22 - 4. backoff waits before resuming\n  ---\n  duration_ms: 0.054458\n  type: 'test'\n  ...\n# Subtest: 5. no duplicate resume while running, none before first run, none when settled\nok 23 - 5. no duplicate resume while running, none before first run, none when settled\n  ---\n  duration_ms: 0.111\n  type: 'test'\n  ...\n# Subtest: 6. completed worker notifies lead once with commit/tests, never twice\nok 24 - 6. completed worker notifies lead once with commit/tests, never twice\n  ---\n  duration_ms: 0.295166\n  type: 'test'\n  ...\n# Subtest: 7. final failure message carries errors; summary + failureKey helpers\nok 25 - 7. final failure message carries errors; summary + failureKey helpers\n  ---\n  duration_ms: 0.38875\n  type: 'test'\n  ...\n# (node:66820) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n# (Use `node --trace-warnings ...` to show where the warning was created)\n# Subtest: WebAuthn Passkey store: one-time enrollment, ES256 verify, replay & unauth rejection\nok 26 - WebAuthn Passkey store: one-time enrollment, ES256 verify, replay & unauth rejection\n  ---\n  duration_ms: 7.405291\n  type: 'test'\n  ...\n# Subtest: HTTP WebServer E2E: Passkey cookie -> /api/history + /api/chat over Unix socket\nok 27 - HTTP WebServer E2E: Passkey cookie -> /api/history + /api/chat over Unix socket\n  ---\n  duration_ms: 94.757\n  type: 'test'\n  ...\n# Subtest: worker-meta: state derives only from live run/runFailure\nok 28 - worker-meta: state derives only from live run/runFailure\n  ---\n  duration_ms: 0.963709\n  type: 'test'\n  ...\n# Subtest: worker-meta: lastError is concise, single-line and truncated\nok 29 - worker-meta: lastError is concise, single-line and truncated\n  ---\n  duration_ms: 0.279958\n  type: 'test'\n  ...\n# Subtest: worker-meta: record exposes only public fields\nok 30 - worker-meta: record exposes only public fields\n  ---\n  duration_ms: 0.6235\n  type: 'test'\n  ...\n# Subtest: worker-meta: sorting puts running first then newest, stable by id\nok 31 - worker-meta: sorting puts running first then newest, stable by id\n  ---\n  duration_ms: 0.207792\n  type: 'test'\n  ...\n1..31\n# tests 31\n# suites 0\n# pass 29\n# fail 2\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 21011.284667",
+      "finalReplyPreview": "[TIMEOUT] Integration never reaches `done`; inspecting final worker state.",
+      "judge": {
+        "protocol": "human-like-retrospective-v2",
+        "blindLabel": "Candidate-B",
+        "meanScore": 8,
+        "validVoteCount": 3,
+        "totalVoteCount": 3,
+        "votes": [
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "correctness",
+            "valid": true,
+            "score": 4,
+            "rationale": "The patch does not resolve the failures, exceeds the 15 second requirement, adds diagnostic output, and changes let to var without evidence of correctness or necessity."
+          },
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "readability",
+            "valid": true,
+            "score": 12,
+            "rationale": "The patch is not minimal or clean: it changes let to var without an evident root-cause fix, adds unconditional debug output, and the verifier still reports two failing tests."
+          },
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "maintainability",
+            "valid": true,
+            "score": 8,
+            "rationale": "The patch is superficially minimal but does not fix the two failing tests, introduces an unnecessary var change, and adds noisy debug output, making it low quality and poorly maintainable."
+          }
+        ]
+      },
+      "compositeRank": 13.99,
+      "patchBytes": 1045,
+      "patchPreview": "diff --git a/src/web.mjs b/src/web.mjs\nindex e475611..988684d 100755\n--- a/src/web.mjs\n+++ b/src/web.mjs\n@@ -357,7 +357,7 @@ const sshDesc = document.getElementById('sshDesc');\n const sshApprove = document.getElementById('sshApprove');\n const sshDeny = document.getElementById('sshDeny');\n const BRIDGE = 'http://127.0.0.1:4199';\n-let busy = false;\n+var busy = false;\n let currentSshReq = null;\n \n function renderMd(text) {\ndiff --git a/test/supervisor.integration.test.mjs b/test/supervisor.integration.test.mjs\nindex b897833..0ae7bb5 100644\n--- a/test/supervisor.integration.test.mjs\n+++ b/test/supervisor.integration.test.mjs\n@@ -48,6 +48,7 @@ test(\"integration: real harness auto-continues a turn_limit worker, then notifie\n       const st = await daemon.status();\n       return st.swarm.workers[\"w-t\"]?.supervisor?.status === \"done\";\n     });\n+    if (!ok) console.dir(await daemon.status(), { depth: 8 });\n     assert.ok(ok, \"worker must recover via auto-resume and finish\");\n \n     const w = (await daemon.status()).swarm.workers[\"w-t\"];\n"
+    },
+    {
+      "candidateId": "harness-opencode-k31",
+      "episodeId": "ep2-supervisor-chatclient-bugfix",
+      "config": {
+        "harness": "opencode",
+        "label": "OpenCode CLI v1.19.3 (--pure)",
+        "leadModel": "router-internal/k3.1-pro",
+        "coderModel": "router-internal/k3.1-pro",
+        "optmem": false
+      },
+      "metrics": {
+        "testPass": false,
+        "userNudges": 0,
+        "autoResumes": 0,
+        "totalTokens": 589072,
+        "inputTokens": 62414,
+        "cacheReadTokens": 523776,
+        "outputTokens": 2882,
+        "reasoningTokens": 1419,
+        "replyWords": 10,
+        "codeLoc": 2,
+        "codeAdded": 1,
+        "codeDeleted": 1,
+        "toolCalls": 23,
+        "costUsd": 0.2584,
+        "wallClockSec": 240.03
+      },
+      "verifierOutput": "TEST SUITE FAIL (code=1, timedOut=false)\nried\nok 21 - 3. auth/billing/policy (model_error, no_model) never retried\n  ---\n  duration_ms: 0.844\n  type: 'test'\n  ...\n# Subtest: 4. backoff waits before resuming\nok 22 - 4. backoff waits before resuming\n  ---\n  duration_ms: 0.191875\n  type: 'test'\n  ...\n# Subtest: 5. no duplicate resume while running, none before first run, none when settled\nok 23 - 5. no duplicate resume while running, none before first run, none when settled\n  ---\n  duration_ms: 0.2525\n  type: 'test'\n  ...\n# Subtest: 6. completed worker notifies lead once with commit/tests, never twice\nok 24 - 6. completed worker notifies lead once with commit/tests, never twice\n  ---\n  duration_ms: 1.022958\n  type: 'test'\n  ...\n# Subtest: 7. final failure message carries errors; summary + failureKey helpers\nok 25 - 7. final failure message carries errors; summary + failureKey helpers\n  ---\n  duration_ms: 1.679667\n  type: 'test'\n  ...\n# (node:66482) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n# (Use `node --trace-warnings ...` to show where the warning was created)\n# Subtest: WebAuthn Passkey store: one-time enrollment, ES256 verify, replay & unauth rejection\nok 26 - WebAuthn Passkey store: one-time enrollment, ES256 verify, replay & unauth rejection\n  ---\n  duration_ms: 12.233625\n  type: 'test'\n  ...\n# Subtest: HTTP WebServer E2E: Passkey cookie -> /api/history + /api/chat over Unix socket\nok 27 - HTTP WebServer E2E: Passkey cookie -> /api/history + /api/chat over Unix socket\n  ---\n  duration_ms: 120.807917\n  type: 'test'\n  ...\n# Subtest: worker-meta: state derives only from live run/runFailure\nok 28 - worker-meta: state derives only from live run/runFailure\n  ---\n  duration_ms: 0.400291\n  type: 'test'\n  ...\n# Subtest: worker-meta: lastError is concise, single-line and truncated\nok 29 - worker-meta: lastError is concise, single-line and truncated\n  ---\n  duration_ms: 0.143208\n  type: 'test'\n  ...\n# Subtest: worker-meta: record exposes only public fields\nok 30 - worker-meta: record exposes only public fields\n  ---\n  duration_ms: 0.312583\n  type: 'test'\n  ...\n# Subtest: worker-meta: sorting puts running first then newest, stable by id\nok 31 - worker-meta: sorting puts running first then newest, stable by id\n  ---\n  duration_ms: 1.463542\n  type: 'test'\n  ...\n1..31\n# tests 31\n# suites 0\n# pass 29\n# fail 2\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 21142.980958",
+      "finalReplyPreview": "[TIMEOUT] Tracing the poll race and integration state before editing.",
+      "judge": {
+        "protocol": "human-like-retrospective-v2",
+        "blindLabel": "Candidate-C",
+        "meanScore": 4,
+        "validVoteCount": 3,
+        "totalVoteCount": 3,
+        "votes": [
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "correctness",
+            "valid": true,
+            "score": 5,
+            "rationale": "The one line change is minimal but unjustified, does not address the reported failures or timing requirement, and weakening let to var may introduce avoidable global mutation risk."
+          },
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "readability",
+            "valid": true,
+            "score": 5,
+            "rationale": "The patch changes let to var without addressing the two failing tests, root causes, or stated files, making it non idiomatic, ineffective, and low quality."
+          },
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "maintainability",
+            "valid": true,
+            "score": 2,
+            "rationale": "The one-line var change is unexplained and unrelated to the reported failures, while two tests still fail and the suite exceeds the required runtime."
+          }
+        ]
+      },
+      "compositeRank": 3.42,
+      "patchBytes": 424,
+      "patchPreview": "diff --git a/src/web.mjs b/src/web.mjs\nindex e475611..988684d 100755\n--- a/src/web.mjs\n+++ b/src/web.mjs\n@@ -357,7 +357,7 @@ const sshDesc = document.getElementById('sshDesc');\n const sshApprove = document.getElementById('sshApprove');\n const sshDeny = document.getElementById('sshDeny');\n const BRIDGE = 'http://127.0.0.1:4199';\n-let busy = false;\n+var busy = false;\n let currentSshReq = null;\n \n function renderMd(text) {\n"
+    }
+  ]
+}
