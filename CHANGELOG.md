@@ -27,6 +27,7 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
   right lists only *running* agents, everything done/failed collapses into `<details>` `Archived workers`
   (no transcript deletion, real poll error text when nothing is visible). Registry states now match
   actual `failed:turn_limit` / `stopped:<reason>` values and cron jobs are filtered out.
+- images (provider compatibility): browser decodes pasted bytes and normalizes WebP/GIF/screenshot inputs to PNG, then JPEG if PNG >4MB; MIME and magic bytes now agree instead of provider `prepare image failed`. Invalid decodes show a local error.
 - **chat images (paste/attach)** — images first, no generic files: Ctrl/Cmd+V anywhere (page or
   composer, plain text paste untouched) and an accessible `Attach` button + hidden
   `input[type=file][multiple]` accept `image/png|jpeg|webp|gif`, max 3 × 4 MB. Immediate thumbnails

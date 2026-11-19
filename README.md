@@ -332,7 +332,7 @@ and are translated 1:1 from Tailwind/Motion to native DOM attributes + CSS in `s
 Rare UI is **MIT + Commons Clause License Condition v1.0 + Attribution** (© 2026 Swami Malode, see
 [LICENSE](https://raw.githubusercontent.com/swamimalode07/rare-ui/main/LICENSE)): the source URL,
 license and copyright stay in the CSS header; an unobtrusive `About · Credits` sidebar link credits the project without a chat-bottom banner.
-Images, models and the sidebar keep their existing behaviour and selectors. Tests: `test/ui-theme.test.mjs`,
+Images, models and the sidebar keep their existing behaviour and selectors. Browser clipboard screenshots are decoded and normalized to standard PNG (JPEG fallback when necessary); WebP/GIF do not leak provider-incompatible bytes. Tests: `test/ui-theme.test.mjs`,
 `test/markdown.test.mjs`.
 
 ### Run the Full Deterministic Unit & Integration Test Suite (84 Tests, Zero Live API Keys Required)
