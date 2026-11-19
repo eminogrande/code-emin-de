@@ -27,6 +27,8 @@ import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { openAgentBus } from "./bus.mjs";
+import { handleDeterministicCommand, probeProviderHealth } from "./commands.mjs";
+import { createBuiltinGuardHooks, HookRegistry } from "./hooks.mjs";
 import { createOpenModels, ROLE_MODELS } from "./models.mjs";
 import { createOptMem } from "./optmem.mjs";
 import { ROLE_INSTRUCTIONS } from "./prompts.mjs";
@@ -60,14 +62,6 @@ export const RoleMetaDoc = defineDoc({
   initial: () => ({ role: "lead", workerId: "lead", requireVerified: false }),
   checkpointWhen: () => true,
 });
-
-const DESTRUCTIVE_BASH_RE =
-  /\b(rm\s+-rf\s+\/(?:\s|$)|git\s+push\s+(?:--force|-f|--delete)\b|git\s+push\s+\S+\s+\+|git\s+reset\s+--hard|mkfs\.|dd\s+if=.*of=\/dev\/|curl\b.*\|\s*(?:ba)?sh|authorized_keys|sshd_config|00-nuri-smartcard|ufw\s+disable)\b/i;
-
-const OUTBOUND_SEND_RE =
-  /\b(sendmail|postfix|smtp|api\.resend\.com|api\.sendgrid\.com|api\.twitter\.com\/2\/tweets|x\.com\/i\/api)\b/i;
-
-const READONLY_ROLES = new Set(["btw", "reviewer", "planner"]);
 
 export function extractAssistantText(entryOrMsg) {
   const msg = Array.isArray(entryOrMsg?.model) ? entryOrMsg.model[0] : entryOrMsg;
@@ -129,6 +123,8 @@ export async function openSwarmDaemon({
   triageOpts = {},
   supervisor: supervisorOverride = {},
   retry: retryOverride = { enabled: true, maxRetries: 2, baseDelayMs: 1000 },
+  hooks: customHooks = [],
+  probeCredits = probeProviderHealth,
 } = {}) {
   const supervisorOpts = { ...SUPERVISOR_DEFAULTS, ...supervisorOverride };
   if (!dataDir || !workspaceDir) throw new Error("openSwarmDaemon requires dataDir and workspaceDir");
@@ -682,7 +678,84 @@ export async function openSwarmDaemon({
     },
   });
 
-  // Deterministic Rule Gates (`beforeTool` + `onYield`)
+  // Out-of-Core Guardrail & Lifecycle Hook Registry (`src/hooks.mjs`)
+  const hookRegistry = new HookRegistry(
+    createBuiltinGuardHooks({
+      onYieldHardTestGate: async (answer, { meta, api }) => {
+        if (!meta?.requireVerified) return;
+        const txt = extractAssistantText(answer);
+        const prevRetries = yieldRetries.get(api.conversationId) || 0;
+        const passed = /Verified:\s*PASS/i.test(txt);
+        if (!passed && prevRetries < 1) {
+          yieldRetries.set(api.conversationId, prevRetries + 1);
+          return {
+            continue:
+              "VERIFICATION GATE: Run ALL syntax checks (`for f in src/*.mjs; do node --check \"$f\"; done`) AND ALL unit test files (`test/*.test.mjs` except `test/swarm.test.mjs`) via `bash`, fix any failing assertion, and end with `Verified: PASS (<test command>)`.",
+          };
+        }
+        if (passed && meta.role === "coder") {
+          const gateKey = `hardtest:${api.conversationId}`;
+          const prevHard = yieldRetries.get(gateKey) || 0;
+          if (prevHard < 2) {
+            try {
+              await execFileAsync(
+                "bash",
+                [
+                  "-lc",
+                  'shopt -s nullglob; ran=0; srcs=0; ' +
+                    'for f in src/*.mjs src/*.js src/*.cjs *.mjs *.js *.cjs; do [ -f "$f" ] || continue; srcs=$((srcs+1)); node --no-warnings --check "$f" || exit 1; done; ' +
+                    'for t in test/*.test.mjs test/*.test.js test/*.test.cjs src/*.test.mjs src/*.test.js src/*.test.cjs *.test.mjs *.test.js *.test.cjs; do ' +
+                    '[ "$t" = "test/swarm.test.mjs" ] && continue; ran=$((ran+1)); node --no-warnings --test "$t" || exit 1; done; ' +
+                    'if [ "$ran" -eq 0 ]; then ' +
+                    'if [ -f go.mod ]; then go test ./... || exit 1; ran=1; ' +
+                    'elif [ -f pyproject.toml ] || [ -f pytest.ini ]; then pytest -q || exit 1; ran=1; fi; fi; ' +
+                    'if [ "$ran" -eq 0 ] && [ "$srcs" -gt 0 ]; then echo "HARD GATE: zero test files found/executed for $srcs source file(s)" >&2; exit 1; fi',
+                ],
+                { cwd: workspaceDir, timeout: 45_000 },
+              );
+              yieldRetries.delete(gateKey);
+              yieldRetries.delete(api.conversationId);
+            } catch (err) {
+              yieldRetries.set(gateKey, prevHard + 1);
+              const out = `${err?.stdout || ""}\n${err?.stderr || err?.message || err}`.trim().slice(-1200);
+              return {
+                continue: `HARD TEST GATE FAILED — you claimed \`Verified: PASS\`, but automated syntax/unit tests failed in \`${workspaceDir}\`. Fix every failure and re-verify before finishing:\n${out}`,
+              };
+            }
+          }
+        }
+      },
+      onYieldAutoBackupGate: async (_answer, { meta, api }) => {
+        if (meta?.role !== "lead" || !existsSync(join(SELF_REPO_DIR, ".git"))) return;
+        try {
+          const { stdout } = await execFileAsync("git", ["-C", SELF_REPO_DIR, "status", "--porcelain"], {
+            timeout: 5000,
+          });
+          if (stdout.trim()) {
+            const syncKey = `git:${api.conversationId}`;
+            const prevSync = yieldRetries.get(syncKey) || 0;
+            if (prevSync < 2) {
+              yieldRetries.set(syncKey, prevSync + 1);
+              try {
+                await execFileAsync(
+                  "sudo",
+                  ["/usr/local/bin/swarm-ctl", "apply", `auto(${meta.workerId || meta.role}): verified self-update`],
+                  { timeout: 45_000 },
+                );
+              } catch (err) {
+                const msg = String(err?.stderr || err?.stdout || err?.message || err).slice(0, 600);
+                return {
+                  continue: `AUTO-BACKUP GATE FAILED (\`swarm-ctl apply\`): fix syntax/test error before finishing:\n${msg}`,
+                };
+              }
+            }
+          }
+        } catch {}
+      },
+    }),
+  );
+  for (const h of customHooks) hookRegistry.register(h);
+
   const swarmExtension = defineExtension({
     name: "swarm-core",
     tasks: [ForeverWatchTask],
@@ -708,37 +781,17 @@ export async function openSwarmDaemon({
             workerId: "lead",
             requireVerified: false,
           };
-
-          // 1. Read-only roles (`btw`, `reviewer`, `planner`) can NEVER mutate files
-          if (READONLY_ROLES.has(meta.role) && (call.name === "write" || call.name === "edit")) {
-            return { block: `Role '${meta.role}' is strictly read-only.` };
-          }
-          if (meta.role === "btw" && call.name === "bash") {
-            return { block: "Side-chat (/btw) cannot execute shell commands." };
-          }
-
-          // 2. Subagents are blocked from calling OptMem write tools directly
-          if (meta.role !== "lead" && call.name === "memory_note") {
-            return { block: "OptMem invariant: subagents must not write to OptMem; send findings to Lead via bus_send." };
-          }
-
-          // 3. Support & Social roles can NEVER execute outbound network/email sends
-          if (call.name === "bash") {
-            const cmd = String(call.arguments?.command || "");
-            if (DESTRUCTIVE_BASH_RE.test(cmd)) {
-              return {
-                block: `Blocked destructive command (${cmd.slice(0, 80)}). Requires human smartcard SSH confirmation.`,
-              };
-            }
-            if (meta.role !== "lead" && /\b(swarm-ctl\s+(?:apply|reload|reload-web|pull|rollback)|git\s+push)\b/i.test(cmd)) {
-              return {
-                block: "Subagents must not run `swarm-ctl apply/reload` or `git push` directly; notify Lead via `bus_send` once tests pass.",
-              };
-            }
-            if ((meta.role === "support" || meta.role === "social") && OUTBOUND_SEND_RE.test(cmd)) {
-              return { block: `Role '${meta.role}' is draft-only; outbound sending is strictly prohibited.` };
-            }
-          }
+          const res = await hookRegistry.runBeforeTool(call, { meta, api, context, workspaceDir });
+          if (res?.block) return { block: res.block };
+          if (res?.arguments) return { arguments: res.arguments };
+        },
+        async afterTool(call, result, api, context) {
+          const meta = (await api.snapshot(RoleMetaDoc, api.conversationId, context)) ?? {
+            role: "lead",
+            workerId: "lead",
+            requireVerified: false,
+          };
+          return hookRegistry.runAfterTool(call, result, { meta, api, context, workspaceDir });
         },
       }),
       hook(GenerationTask, {
@@ -747,77 +800,8 @@ export async function openSwarmDaemon({
             role: "lead",
             requireVerified: false,
           };
-          if (meta.requireVerified) {
-            const txt = extractAssistantText(answer);
-            const prevRetries = yieldRetries.get(api.conversationId) || 0;
-            const passed = /Verified:\s*PASS/i.test(txt);
-            if (!passed && prevRetries < 1) {
-              yieldRetries.set(api.conversationId, prevRetries + 1);
-              return {
-                continue:
-                  "VERIFICATION GATE: Run ALL syntax checks (`for f in src/*.mjs; do node --check \"$f\"; done`) AND ALL unit test files (`test/*.test.mjs` except `test/swarm.test.mjs`) via `bash`, fix any failing assertion, and end with `Verified: PASS (<test command>)`.",
-              };
-            }
-            if (passed && meta.role === "coder") {
-              const gateKey = `hardtest:${api.conversationId}`;
-              const prevHard = yieldRetries.get(gateKey) || 0;
-              if (prevHard < 2) {
-                try {
-                  await execFileAsync(
-                    "bash",
-                    [
-                      "-lc",
-                      'shopt -s nullglob; ran=0; srcs=0; ' +
-                        'for f in src/*.mjs src/*.js src/*.cjs *.mjs *.js *.cjs; do [ -f "$f" ] || continue; srcs=$((srcs+1)); node --no-warnings --check "$f" || exit 1; done; ' +
-                        'for t in test/*.test.mjs test/*.test.js test/*.test.cjs src/*.test.mjs src/*.test.js src/*.test.cjs *.test.mjs *.test.js *.test.cjs; do ' +
-                        '[ "$t" = "test/swarm.test.mjs" ] && continue; ran=$((ran+1)); node --no-warnings --test "$t" || exit 1; done; ' +
-                        'if [ "$ran" -eq 0 ]; then ' +
-                        'if [ -f go.mod ]; then go test ./... || exit 1; ran=1; ' +
-                        'elif [ -f pyproject.toml ] || [ -f pytest.ini ]; then pytest -q || exit 1; ran=1; fi; fi; ' +
-                        'if [ "$ran" -eq 0 ] && [ "$srcs" -gt 0 ]; then echo "HARD GATE: zero test files found/executed for $srcs source file(s)" >&2; exit 1; fi',
-                    ],
-                    { cwd: workspaceDir, timeout: 45_000 },
-                  );
-                  yieldRetries.delete(gateKey);
-                  yieldRetries.delete(api.conversationId);
-                } catch (err) {
-                  yieldRetries.set(gateKey, prevHard + 1);
-                  const out = `${err?.stdout || ""}\n${err?.stderr || err?.message || err}`.trim().slice(-1200);
-                  return {
-                    continue: `HARD TEST GATE FAILED — you claimed \`Verified: PASS\`, but automated syntax/unit tests failed in \`${workspaceDir}\`. Fix every failure and re-verify before finishing:\n${out}`,
-                  };
-                }
-              }
-            }
-          }
-
-          // Deterministic self-repo GitHub backup + reload gate on VPS (/opt/pi-durable-swarm)
-          if (meta.role === "lead" && existsSync(join(SELF_REPO_DIR, ".git"))) {
-            try {
-              const { stdout } = await execFileAsync("git", ["-C", SELF_REPO_DIR, "status", "--porcelain"], {
-                timeout: 5000,
-              });
-              if (stdout.trim()) {
-                const syncKey = `git:${api.conversationId}`;
-                const prevSync = yieldRetries.get(syncKey) || 0;
-                if (prevSync < 2) {
-                  yieldRetries.set(syncKey, prevSync + 1);
-                  try {
-                    await execFileAsync(
-                      "sudo",
-                      ["/usr/local/bin/swarm-ctl", "apply", `auto(${meta.workerId || meta.role}): verified self-update`],
-                      { timeout: 45_000 },
-                    );
-                  } catch (err) {
-                    const msg = String(err?.stderr || err?.stdout || err?.message || err).slice(0, 600);
-                    return {
-                      continue: `AUTO-BACKUP GATE FAILED (\`swarm-ctl apply\`): fix syntax/test error before finishing:\n${msg}`,
-                    };
-                  }
-                }
-              }
-            } catch {}
-          }
+          const res = await hookRegistry.runOnYield(answer, { meta, api, context, workspaceDir });
+          if (res?.continue) return { continue: res.continue };
         },
       }),
     ],
@@ -909,12 +893,73 @@ export async function openSwarmDaemon({
     return btwConv;
   }
 
+  async function getStatusSnapshot() {
+    const [swarm, inspection, usage, leadCtx, leadLive] = await Promise.all([
+      harness.snapshot(SwarmDoc, BACKGROUND_CONTEXT),
+      harness.inspect(BACKGROUND_CONTEXT),
+      harness.usage(BACKGROUND_CONTEXT),
+      lead.context(BACKGROUND_CONTEXT).catch(() => null),
+      harness.snapshot(LiveDoc, ROOT_CONVERSATION_ID, BACKGROUND_CONTEXT).catch(() => null),
+    ]);
+    let totalTokens = 0;
+    let costUsd = 0;
+    for (const u of Object.values(usage?.models || {})) {
+      totalTokens += u.totalTokens ?? 0;
+      costUsd += u.cost?.total ?? 0;
+    }
+    let activeProvider = roleModels.lead.provider;
+    let activeModel = roleModels.lead.modelId;
+    let contextTokens = 0;
+    for (let i = (leadCtx?.entries?.length || 0) - 1; i >= 0; i--) {
+      const m = leadCtx.entries[i]?.model?.[0];
+      if (m?.role === "assistant") {
+        if (m.provider) activeProvider = m.provider;
+        if (m.model) activeModel = m.model;
+        const u = m.usage;
+        const ctxTok = (u?.input || 0) + (u?.cacheRead || 0) + (u?.cacheWrite || 0) + (u?.output || 0);
+        if (ctxTok > 0) {
+          contextTokens = ctxTok;
+          break;
+        }
+      }
+    }
+    const modelSpec = models.getModel(activeProvider, activeModel) || models.getModel(roleModels.lead.provider, roleModels.lead.modelId);
+    const contextWindow = modelSpec?.contextWindow || 1_048_576;
+    return {
+      swarm: swarm ?? { workers: {}, drafts: {}, alerts: [], cronJobs: {} },
+      liveTasks: inspection.tasks.length,
+      pendingSubmissions: inspection.submissions.length,
+      lead: {
+        provider: activeProvider,
+        model: activeModel,
+        contextTokens,
+        contextWindow,
+        busy: Boolean(leadLive?.run),
+      },
+      hooks: hookRegistry.list(),
+      usage: { totalTokens, costUsd: +costUsd.toFixed(5), byModel: usage?.models ?? {} },
+    };
+  }
+
+  async function listWorkersSnapshot() {
+    const swarm = (await harness.snapshot(SwarmDoc, BACKGROUND_CONTEXT)) ?? { workers: {} };
+    const out = [];
+    for (const w of Object.values(swarm.workers || {})) {
+      if (!w) continue;
+      const convId = w.convId ?? w.conversationId;
+      const live = convId ? await harness.snapshot(LiveDoc, convId, BACKGROUND_CONTEXT) : null;
+      out.push(describeWorker(w, live));
+    }
+    return sortWorkers(out);
+  }
+
   supervisor.start();
 
   return {
     harness,
     lead,
     bus,
+    hooks: hookRegistry,
     supervisor,
     optmem,
     workspaceDir,
@@ -922,12 +967,24 @@ export async function openSwarmDaemon({
 
     /**
      * Submit user message:
+     * - Deterministic zero-LLM slash commands (`/help`, `/status`, `/workers`, `/hooks`, `/credits`)
+     *   execute in <50ms with 0 LLM calls even if every cloud & local provider is down!
      * - `/btw ...` routes immediately to isolated read-only Side-Chat without touching Lead!
      * - `steer: true` (`Ctrl+S` live feedback) injects mid-run into Lead or named `targetWorkerId`!
      * - Multi-task prompt gets tagged via System-1 Jev so Lead fans out parallel background workers without blocking!
      */
     async chat(text, { steer = false, targetWorkerId = "lead", wait = true } = {}) {
       const trimmed = String(text || "").trim();
+      if (targetWorkerId === "lead" && !steer) {
+        const cmdRes = await handleDeterministicCommand(trimmed, {
+          getStatus: getStatusSnapshot,
+          listWorkers: listWorkersSnapshot,
+          listHooks: () => hookRegistry.list(),
+          probeCredits,
+          conversationId: ROOT_CONVERSATION_ID,
+        });
+        if (cmdRes) return cmdRes;
+      }
       if (/^\/reinforce(?:\s|$)/i.test(trimmed) && targetWorkerId === "lead" && !steer) {
         const arg = trimmed.replace(/^\/reinforce\s*/i, "").trim().toLowerCase();
         const { runReinforceTournament, DEFAULT_CANDIDATES } = await import("./reinforce.mjs");
@@ -1043,64 +1100,13 @@ export async function openSwarmDaemon({
       return { jobId, taskId };
     },
 
-    async status() {
-      const [swarm, inspection, usage, leadCtx, leadLive] = await Promise.all([
-        harness.snapshot(SwarmDoc, BACKGROUND_CONTEXT),
-        harness.inspect(BACKGROUND_CONTEXT),
-        harness.usage(BACKGROUND_CONTEXT),
-        lead.context(BACKGROUND_CONTEXT).catch(() => null),
-        harness.snapshot(LiveDoc, ROOT_CONVERSATION_ID, BACKGROUND_CONTEXT).catch(() => null),
-      ]);
-      let totalTokens = 0;
-      let costUsd = 0;
-      for (const u of Object.values(usage?.models || {})) {
-        totalTokens += u.totalTokens ?? 0;
-        costUsd += u.cost?.total ?? 0;
-      }
-      let activeProvider = roleModels.lead.provider;
-      let activeModel = roleModels.lead.modelId;
-      let contextTokens = 0;
-      for (let i = (leadCtx?.entries?.length || 0) - 1; i >= 0; i--) {
-        const m = leadCtx.entries[i]?.model?.[0];
-        if (m?.role === "assistant") {
-          if (m.provider) activeProvider = m.provider;
-          if (m.model) activeModel = m.model;
-          const u = m.usage;
-          const ctxTok = (u?.input || 0) + (u?.cacheRead || 0) + (u?.cacheWrite || 0) + (u?.output || 0);
-          if (ctxTok > 0) {
-            contextTokens = ctxTok;
-            break;
-          }
-        }
-      }
-      const modelSpec = models.getModel(activeProvider, activeModel) || models.getModel(roleModels.lead.provider, roleModels.lead.modelId);
-      const contextWindow = modelSpec?.contextWindow || 1_048_576;
-      return {
-        swarm: swarm ?? { workers: {}, drafts: {}, alerts: [], cronJobs: {} },
-        liveTasks: inspection.tasks.length,
-        pendingSubmissions: inspection.submissions.length,
-        lead: {
-          provider: activeProvider,
-          model: activeModel,
-          contextTokens,
-          contextWindow,
-          busy: Boolean(leadLive?.run),
-        },
-        usage: { totalTokens, costUsd: +costUsd.toFixed(5), byModel: usage?.models ?? {} },
-      };
-    },
+    status: getStatusSnapshot,
 
     /** Read-only sidebar list: authoritative swarm registry + live run state, running first. */
-    async listWorkers() {
-      const swarm = (await harness.snapshot(SwarmDoc, BACKGROUND_CONTEXT)) ?? { workers: {} };
-      const out = [];
-      for (const w of Object.values(swarm.workers || {})) {
-        if (!w) continue;
-        const convId = w.convId ?? w.conversationId;
-        const live = convId ? await harness.snapshot(LiveDoc, convId, BACKGROUND_CONTEXT) : null;
-        out.push(describeWorker(w, live));
-      }
-      return sortWorkers(out);
+    listWorkers: listWorkersSnapshot,
+
+    listHooks() {
+      return hookRegistry.list();
     },
 
     async waitForWorker(workerId, timeoutMs = 120_000) {

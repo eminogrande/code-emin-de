@@ -55,6 +55,9 @@ export async function startUnixSocketServer({
       if (req.method === "GET" && url.pathname === "/workers") {
         return send(200, { workers: await daemon.listWorkers() });
       }
+      if (req.method === "GET" && url.pathname === "/hooks") {
+        return send(200, { hooks: daemon.listHooks() });
+      }
       if (req.method === "GET" && url.pathname === "/transcript") {
         const convId = Number(url.searchParams.get("convId") || "1");
         const max = Number(url.searchParams.get("max") || "30");
