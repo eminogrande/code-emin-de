@@ -155,7 +155,7 @@ test("status bar marks low context amber/red and colours badge by worst worker s
   const sel = bar.querySelector(".sb-model");
   assert.equal(sel.tagName, "SELECT");
   assert.ok(sel.options.length >= 4, "allowlisted model choices rendered");
-  assert.match(sel.value, /\//, "value is provider/modelId");
+  assert.match(sel.value, /^llmgateway \S+$/, "value is provider + modelId");
   assert.ok(sel.hidden === false);
   ctx.w.close();
 
