@@ -266,6 +266,7 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for full details and diagrams
 - **Hardware-only Web UI (`https://code.emin.de`):** WebAuthn Passkeys only (`mac-touchid` + `nuri-card-acr39u` via local bridge `127.0.0.1:4199`), HttpOnly SameSite cookies, CSP + DOMPurify XSS sanitization on Markdown & Mermaid SVG.
 - **Click-to-Sign Smartcard SSH Bridge:** The VPS holds **zero** remote SSH private keys — running `ssh nuri.com` from the VPS pauses and pops a `[Sign with Smartcard]` / `[Deny]` prompt in the authenticated browser, signing on the physical card over `127.0.0.1:4199`.
 - **Append-only GitHub backup:** Force-pushes are blocked by `destructive-bash-guard`; rollbacks use `git revert`.
+- **Chat image attachments:** server-side strict re-validation in [`src/image-util.mjs`](src/image-util.mjs) — data-URL/base64 shape only, magic-byte sniff (a lying prefix cannot smuggle SVG/HTML), 4 MB decoded + 20 MB body cap, header-derived pixel caps (16000 px side / 40 MP, no decompression), content-addressed store under `<dataDir>/images`, and authenticated immutable `GET /api/image/:id` (32-hex id regex, no traversal, no public URL).
 
 ---
 
@@ -310,7 +311,23 @@ The left sidebar holds only the orchestrator (`Lead` + the Lead model select); p
 buttons are gone. The right sidebar shows only *running* agents — everything finished or failed moves
 into a collapsed `<details>` section `Archived workers` (state, error, no transcript deletion).
 
-### Run the Full Deterministic Unit & Integration Test Suite (55 Tests, Zero Live API Keys Required)
+### Chat Composer Images (Paste / Attach)
+
+Images first, no generic files: `Ctrl/Cmd+V` anywhere (plain-text paste untouched) or the `Attach` button
+accepts `image/png|jpeg|webp|gif`, max 3 × 4 MB, with thumbnails + per-image remove. Images travel as
+real model content blocks (vision providers see the bytes); history replays ids only and renders via the
+authenticated image endpoint. Non-vision models reject the turn and the composer keeps the files.
+Tests: `test/images.test.mjs` (sniff/caps/dimensions/store), `test/chat-images.test.mjs` (paste,
+passthrough, rejections, clear), `test/chat-images-api.test.mjs` (auth, caps, payload, traversal).
+
+### Chat Theme (`src/chat-theme.css`)
+
+Design **inspired by [Rare UI](https://rareui.com/)** (MIT + Commons Clause + Attribution); no Rare UI
+code/assets copied — layouts are native CSS over the existing Solarized palette. Attribution lives in the
+CSS header and the page footer. Same-origin stylesheet via a tiny CSP-safe `<link>`; no class/ID or
+functionality changes, rails collapse to the existing drawers ≤1100/≤800 px. Tests: `test/ui-theme.test.mjs`.
+
+### Run the Full Deterministic Unit & Integration Test Suite (84 Tests, Zero Live API Keys Required)
 
 ```sh
 # Syntax-check every module
@@ -371,6 +388,7 @@ swarm steer w-auth "use timingSafeEqual"
 - `src/triage.mjs` — System-1 watcher & prompt router (`jev-latest` with deterministic offline fallback)
 - `src/web.mjs`, `src/webauthn.mjs`, `src/markdown.mjs`, `src/chat-client.js` — Solarized Light Passkey Web UI, XSS-safe Markdown/Mermaid rendering, and Click-to-Sign SSH bridge UI
 - `src/chat-images.js` & `src/image-util.mjs` — Composer image paste/attach (client) and strict magic-byte validation, caps, content-addressed storage + authenticated `/api/image/:id` serving (server)
+- `src/image-util.mjs`, `src/chat-images.js`, `src/chat-theme.css` — strict image sniff/decode/store for chat attachments, composer paste UI, and the Rare-UI-inspired theme
 - `src/reinforce.mjs` & `src/harness-bench.mjs` — Reproducible Docker `/reinforce` and cross-harness benchmark harnesses
 
 ### Documentation & Benchmark Receipts (`docs/`)
