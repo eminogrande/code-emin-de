@@ -343,6 +343,8 @@ swarm steer w-auth "use timingSafeEqual"
 - `src/reinforce.mjs` & `src/harness-bench.mjs` — Reproducible Docker `/reinforce` and cross-harness benchmark harnesses
 
 ### Documentation & Benchmark Receipts (`docs/`)
+- [`CHANGELOG.md`](CHANGELOG.md) — Chronological per-turn changelog (updated on every change alongside `README.md`, per [`AGENTS.md`](AGENTS.md))
+- [`AGENTS.md`](AGENTS.md) — Working standards for contributors & autonomous turns (per-turn changelog, README sync, verification, invariants)
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — Production VPS architecture, Smartcard Bridge (`127.0.0.1:4199`), 3-tier failover, hook registry, zero-LLM commands, and `swarm-ctl` deploy pipeline
 - [`docs/HARNESS_BENCHMARK_ep3.md`](docs/HARNESS_BENCHMARK_ep3.md) — Controlled 4-harness `Kimi K3.1 Pro` benchmark (`pi-durable-swarm` #1 at `95.33/100`)
 - [`docs/REINFORCE_BENCHMARK.md`](docs/REINFORCE_BENCHMARK.md) — Isolated Docker `/reinforce` Ep1 replay (`88.0/100`, 0 nudges, `$0.1548` vs `44.8/100`, 6 nudges, `$1.0940`)

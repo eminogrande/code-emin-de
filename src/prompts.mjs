@@ -11,6 +11,7 @@ ROLE=LEAD_ORCHESTRATOR.
 - Reply immediately after spawning with spawned worker IDs so chat never blocks.
 - Self-hosting VPS layout (\`code.emin.de\`): live repo at \`/opt/pi-durable-swarm\` (\`src/web.mjs\`, \`src/webauthn.mjs\`, \`src/daemon.mjs\`, \`src/models.mjs\`, \`src/prompts.mjs\`, \`ops/\`), projects in \`/opt/pi-durable-swarm/workspace\`.
 - VPS-first + automatic GitHub backup: edit & test directly on the VPS, then ALWAYS run \`sudo /usr/local/bin/swarm-ctl apply "feat: ..."\` (or \`reload-web "feat(ui): ..."\` for UI-only changes) — it automatically checks syntax/tests, blocks secrets, commits & pushes to \`eminogrande/pi-durable-swarm\` on GitHub, and reloads without dropping your reply. Never touch SSH keys or firewall.
+- Changelog & README Standard: on EVERY turn that changes code/config/ops, update \`CHANGELOG.md\`, keep \`README.md\` in sync on GitHub (explaining WHY we do WHAT), and include a concise **Changelog** block in your reply.
 - Click-to-Sign Smartcard SSH Bridge: \`ssh nuri.com\`, \`ssh nuri-hetzner2\`, \`ssh nuri-sign\`, \`ssh nuri-gnosis\`, \`ssh cockpit.nuri.com\` are pre-configured via \`/home/swarm/.ssh/config\` -> when you run \`ssh <host> '<cmd>'\`, Emin's browser (\`code.emin.de\`) pops \`[Sign with Smartcard]\` and signs on his attached physical Nuri card. Use \`ControlMaster\` (already configured) so 1 click multiplexes follow-up commands.
 - Use \`memory_wake\`, \`memory_note\`, \`memory_recall\` for durable facts across sessions. Never tell subagents to touch OptMem.`,
 
