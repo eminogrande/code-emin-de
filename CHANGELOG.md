@@ -10,19 +10,29 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 ### Features
 
 - models: add free internal router provider `paymentrequired` ("PaymentRequired Free",
-  OpenAI-compatible, model `k3.1-pro`) with the allowlisted Lead choice
-  `{ provider: "paymentrequired", modelId: "k3.1-pro" }` and UI label
-  `Kimi K3.1 Pro (OAuth plan · free)`. Costs are declared zero (free endpoint, no verified
-  subscription), and the provider is excluded from cross-provider failover so real quota/error
-  responses surface. Configure via env `ROUTER_PAYMENTREQUIRED_API_KEY` only.
-  Covered by offline unit tests (no live key needed).
+  OpenAI-compatible) with the **full** router catalogue: `k3.1-pro`, `k3.1-pro-highspeed`,
+  `kimi-for-coding`, `kimi-for-coding-highspeed`, `deepseek-v4.1-flash-abliterated`,
+  `gemini-3.5-flash-lite`, `gemini-3.8-flash-high`, `gemini-4-argon-high`, `glm-5.3-abliterated`,
+  `glm-5.3-flash-abliterated`, `cohere/north-mini-code:free`, `dots-studio/dots-3-note-preview:free`,
+  `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`, `nvidia/nemotron-3-ultra-550b-a55b:free`,
+  `nvidia/nemotron-3.5-lightning:free`. All are allowlisted Lead choices; costs are declared zero
+  (free endpoint, no verified subscription plan). UI mirrors the full list with readable
+  `PaymentRequired · <id>` labels (`Kimi K3.1 Pro · free router`) instead of identical bare IDs.
+  The provider is excluded from cross-provider failover so real quota/error responses surface.
+  Configure via env `ROUTER_PAYMENTREQUIRED_API_KEY` only. Covered by offline unit tests.
+
+### UI
+
+- sidebars simplified: left holds only the orchestrator (Lead select, no generated worker buttons);
+  right lists only *running* agents, everything done/failed collapses into `<details>` `Archived workers`
+  (no transcript deletion, real poll error text when nothing is visible). Registry states now match
+  actual `failed:turn_limit` / `stopped:<reason>` values and cron jobs are filtered out.
 
 ## 2026-11-20
 
 ### Lead Model Dropdown in `code.emin.de` Chat
 - **Why**: the Lead could only be switched by env restart; open-weights failover existed but was invisible/untunable from the chat. Users now pick `Kimi` on either gateway (or DeepSeek/GLM) directly in the status bar.
-- **Allowlist**: `LEAD_MODEL_CHOICES` / `resolveLeadModelChoice()` in `src/models.mjs` — exactly seven verified, registry-known, provider-explicit pairs (so the existing `llmgateway → allmodels` failover map still resolves the same model). No arbitrary IDs, no new secrets/OAuth.
-- **Auth route**: authenticated `POST /api/model` (`src/web.mjs`, passkey session) → Unix-socket `POST /model` (`src/cli.mjs`) → `daemon.setLeadModel()`, which rejects unknown provider/model with `400` and a clear `allowlist` error.
+- **Allowlist**: `LEAD_MODEL_CHOICES` / `resolveLeadModelChoice()` in `src/models.mjs` — exactly seven verified, registry-known, provider-explicit pairs (so the existing `llmgateway → allmodels` failover map still resolves the same model). No arbitrary IDs, no new secrets/OAuth.- **Auth route**: authenticated `POST /api/model` (`src/web.mjs`, passkey session) → Unix-socket `POST /model` (`src/cli.mjs`) → `daemon.setLeadModel()`, which rejects unknown provider/model with `400` and a clear `allowlist` error.
 - **Durable + global**: stored as `SwarmDoc.leadModelOverride { provider, modelId, updatedAt }`, re-applied to the Lead conversation on restart (role `ROLE_MODELS` untouched, spawns unchanged). Effective override is reported by `/status` and `/api/workers` as `lead.overridden` with the previous model as `lastUsed`.
 - **UI**: status-bar `<select>` labeled `provider/modelId` (all text via `textContent`), optimistic but revert-on-error with inline error text, disabled while Lead is busy, no auto reset. `allmodels` quota errors surface as the real error.
 - **Also**: deterministic zero-LLM `/model [provider modelId]` command (`src/commands.mjs`) + `/help` entry.

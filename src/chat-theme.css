@@ -90,6 +90,7 @@ aside {
   overscroll-behavior: contain;
   font-size: 0.86rem;
   padding: 0.9rem 0.75rem 1.5rem;
+  background: var(--paper-3);
   background: color-mix(in srgb, var(--paper-3) 82%, transparent);
   backdrop-filter: blur(8px);
   scrollbar-width: thin;
@@ -128,6 +129,7 @@ aside {
 
 .tgt:hover,
 .wk:hover {
+  background: var(--paper);
   background: color-mix(in srgb, var(--paper) 70%, transparent);
   border-color: var(--rule);
 }
@@ -603,6 +605,115 @@ form:focus-within {
   box-shadow: var(--focus);
 }
 
+#composer-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+#composer-row textarea {
+  flex: 1;
+  min-width: 0;
+}
+
+#attach-btn,
+#pending-images .rm {
+  appearance: none;
+  flex: none;
+  min-height: 40px;
+  padding: 0.2rem 0.7rem;
+  font: 0.78rem/1.2 var(--ui-font);
+  color: var(--muted);
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.14s ease, border-color 0.14s ease;
+}
+
+#attach-btn:hover,
+#attach-btn:focus-visible,
+#pending-images .rm:hover,
+#pending-images .rm:focus-visible {
+  color: var(--heading);
+  border-color: var(--accent);
+}
+
+#pending-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+#pending-images[hidden] {
+  display: none;
+}
+
+#pending-images figure {
+  position: relative;
+  width: 5rem;
+  margin: 0;
+  text-align: center;
+}
+
+#pending-images img,
+.himages img {
+  display: block;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+#pending-images img {
+  width: 5rem;
+  height: 4rem;
+}
+
+#pending-images .rm {
+  position: absolute;
+  top: -0.35rem;
+  right: -0.35rem;
+  width: 1.15rem;
+  min-height: 1.15rem;
+  padding: 0;
+  line-height: 1;
+  border-radius: 50%;
+  background: var(--paper);
+  color: var(--heading);
+}
+
+#pending-images figcaption {
+  font-size: 0.62rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#attach-status {
+  min-height: 1em;
+  margin: 0.35rem 0 0;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+#attach-status.bad {
+  color: var(--accent-warm);
+}
+
+.himages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+.himages img {
+  max-width: 9rem;
+  max-height: 7rem;
+}
+
 textarea {
   display: block;
   width: 100%;
@@ -656,6 +767,7 @@ textarea::placeholder {
   justify-content: space-between;
   gap: 0.5rem;
   padding: 0.35rem 0.7rem;
+  background: var(--paper-2);
   background: color-mix(in srgb, var(--paper-2) 88%, transparent);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--rule);

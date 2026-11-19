@@ -286,17 +286,29 @@ npm install
 ### Free Router Lead Model (`paymentrequired`)
 
 The free internal router is a built-in provider (`PaymentRequired Free`) at
-`https://router.paymentrequired.com/v1/internal` (OpenAI-compatible) with one catalog entry,
-`k3.1-pro` — the Lead dropdown shows it as `Kimi K3.1 Pro (OAuth plan · free)`.
+`https://router.paymentrequired.com/v1/internal` (OpenAI-compatible). Its catalogue is the full router set —
+`k3.1-pro`, `k3.1-pro-highspeed`, `kimi-for-coding`, `kimi-for-coding-highspeed`,
+`deepseek-v4.1-flash-abliterated`, `gemini-3.5-flash-lite`, `gemini-3.8-flash-high`,
+`gemini-4-argon-high`, `glm-5.3-abliterated`, `glm-5.3-flash-abliterated`,
+`cohere/north-mini-code:free`, `dots-studio/dots-3-note-preview:free`,
+`nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`, `nvidia/nemotron-3-ultra-550b-a55b:free`,
+`nvidia/nemotron-3.5-lightning:free` — all selectable in the Lead dropdown as
+`PaymentRequired · <id>` (`Kimi K3.1 Pro · free router` for `k3.1-pro`).
 
 ```sh
 ROUTER_PAYMENTREQUIRED_API_KEY=<key>   # in .env only, never committed
 ```
 
-Catalog costs are declared `0` because the endpoint is free; the label says *OAuth plan · free*
-rather than *subscription* since no billing identity is guaranteed. `paymentrequired` requests
-deliberately skip cross-provider failover, so the router's real error (quota, outage) is shown
-instead of a silent downgrade. Note `gemini-*` IDs are not exposed by this router.
+Catalog costs are declared `0` because the endpoint is free; labels say *free router* rather than
+*subscription/OAuth* since no Moonshot billing identity is verified for it. `paymentrequired` requests
+skip cross-provider failover, so the router's real error (quota, outage) is shown
+instead of a silent downgrade.
+
+### Sidebar Layout
+
+The left sidebar holds only the orchestrator (`Lead` + the Lead model select); per-worker navigation
+buttons are gone. The right sidebar shows only *running* agents — everything finished or failed moves
+into a collapsed `<details>` section `Archived workers` (state, error, no transcript deletion).
 
 ### Run the Full Deterministic Unit & Integration Test Suite (55 Tests, Zero Live API Keys Required)
 
