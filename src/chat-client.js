@@ -81,9 +81,13 @@
         var code = btn.parentElement.querySelector("code");
         var text = code ? code.textContent : "";
         var done = function () {
-          var old = btn.textContent;
-          btn.textContent = "Copied";
-          setTimeout(function () { btn.textContent = old; }, 1200);
+          if (btn.dataset.copied === "true") return;
+          btn.dataset.copied = "true";
+          btn.setAttribute("aria-label", "Copied");
+          setTimeout(function () {
+            btn.dataset.copied = "false";
+            btn.setAttribute("aria-label", "Copy");
+          }, 1500);
         };
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(text).then(done, function () {});

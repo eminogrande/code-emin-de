@@ -44,16 +44,15 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
   Tests: `test/images.test.mjs` (sniff/caps/dimensions/store), `test/chat-images.test.mjs` (paste,
   text passthrough, rejections, remove/clear, history links), `test/chat-images-api.test.mjs`
   (auth, body caps, daemon payload, error surfacing, traversal).
-- chat theme redesign (`src/chat-theme.css`, Rare UI *inspiration*, no framework swap): Solarized
-  paper/navy kept, warm accent; 3-column rail 248/1fr/280px with hairline borders + faint warm grid
-  instead of boxed cards, compact truncating lists, plain speech messages, bordered code with
-  highlight tokens, rounded composer with visible focus ring, 40px labeled actions, subdued empty
-  state. Rails collapse to existing `.open` drawers ≤1100px/≤800px (topbar triggers + backdrop, no
-  content overlay), `prefers-reduced-motion` honoured. Attribution in the CSS header and a footer
-  link; Rare UI is MIT + Commons Clause + Attribution and **no** Rare UI code or assets were copied.
-  Stylesheet is a same-origin asset with a tiny CSP-safe `<link>`; no class/ID/functionality
-  changes (markdown, Mermaid, model select, worker poll, image upload untouched).
-  Tests: `test/ui-theme.test.mjs`.
+- UI undo: drop the whole-page Rare UI restyle. `src/chat-theme.css` and its `<link>`/route are
+  removed, so the original inline Solarized chat layout is the base again (no rail grid, no
+  gradients, no page-wide type/spacing overrides); images, models and sidebar behaviour unchanged.
+  Instead one real Rare UI component is **copied**: `CopyButton` from
+  `components/CopyButton.tsx` (raw.githubusercontent.com/swamimalode07/rare-ui/main), translated
+  1:1 to native attributes/CSS in `src/rare-button.css` (data-slot/data-copied + blur swap,
+  reduced-motion guard). License MIT + Commons Clause + Attribution: source URL, copyright and
+  license stay in the CSS header, small footer credit links rareui.com. Tests:
+  `test/ui-theme.test.mjs`, `test/markdown.test.mjs`.
 
 ## 2026-11-20
 

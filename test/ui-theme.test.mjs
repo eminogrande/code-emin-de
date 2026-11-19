@@ -1,100 +1,86 @@
-// UI-only checks for the chat theme: stylesheet is valid-ish, linked, Solarized vars kept,
-// DOM/class contract unchanged, responsive + reduced-motion rules present.
+// UI checks after dropping the whole-page theme: native Solarized inline CSS stays the base,
+// one isolated Rare UI component stylesheet (adapted copy button), unchanged DOM contract.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
 
-const css = readFileSync(new URL("../src/chat-theme.css", import.meta.url), "utf8");
+const css = readFileSync(new URL("../src/rare-button.css", import.meta.url), "utf8");
 const src = readFileSync(new URL("../src/web.mjs", import.meta.url), "utf8");
+const md = readFileSync(new URL("../src/markdown.mjs", import.meta.url), "utf8");
 const page = src.slice(src.indexOf("function renderMinimalChat()"), src.indexOf("<script src=\"/chat-client.js\""));
 const html = page.slice(page.indexOf("<!doctype html>"));
+const doc = () => new JSDOM(html).window.document;
 
-function doc(htmlText) {
-  return new JSDOM(htmlText).window.document;
-}
-
-test("stylesheet is linked after the inline style and served same-origin", () => {
-  const d = doc(html);
-  const link = d.querySelector('link[rel="stylesheet"]');
-  assert.ok(link, "theme link present");
-  assert.equal(link.getAttribute("href"), "/chat-theme.css");
-  // link must come after the inline <style> so it can layer over it
-  const style = d.querySelector("style");
-  assert.ok(style.compareDocumentPosition(link) & 4 /* FOLLOWING */);
-  assert.match(src, /url\.pathname === "\/chat-theme\.css"[\s\S]{0,120}text\/css/);
-  // no remote stylesheet / font CDN
+test("only the small component stylesheet is linked, no full page theme", () => {
+  const d = doc();
+  const links = d.querySelectorAll('link[rel="stylesheet"]');
+  assert.equal(links.length, 1);
+  assert.equal(links[0].getAttribute("href"), "/rare-button.css");
+  assert.match(src, /url\.pathname === "\/rare-button\.css"[\s\S]{0,120}text\/css/);
+  assert.doesNotMatch(src, /chat-theme/);
   assert.equal(d.querySelectorAll('link[href^="http"]').length, 0);
 });
 
-test("solarized palette is reused through :root custom properties", () => {
-  const root = css.slice(css.indexOf(":root"), css.indexOf("}", css.indexOf(":root")));
+test("inline Solarized base and layout untouched by the theme layer", () => {
+  const style = doc().querySelector("style").textContent;
   for (const [name, val] of [
     ["--paper", "#fdf6e3"],
     ["--paper-2", "#eee8d5"],
     ["--ink", "#073642"],
     ["--heading", "#002b36"],
     ["--accent", "#b58900"],
-    ["--accent-warm", "#cb4b16"],
   ]) {
-    assert.match(root, new RegExp(name + ":\\s*" + val), name + " keeps solarized value");
+    assert.match(style, new RegExp(name + ":\\s*" + val), name);
   }
-  // no tacky gradients: only the warm wash + hairline grid (2 body + 2 grid lines)
-  assert.ok((css.match(/linear-gradient\(/g) || []).length <= 4);
-  assert.ok((css.match(/radial-gradient\(/g) || []).length <= 2);
+  // base still the classic flex page, not the theme's rail grid + gradients
+  assert.doesNotMatch(style, /--rail:/);
+  assert.doesNotMatch(style, /radial-gradient\(/);
+  for (const sel of ["#topbar", "#leftCol", "#rightCol", ".m.u", ".a", "#statusBar .sb-workers", "pre", ".mmd-out"]) {
+    assert.ok(style.includes(sel), "missing base rule for " + sel);
+  }
 });
 
-test("javascript-relevant ids and classes survive in the DOM", () => {
-  const d = doc(html);
-  for (const id of ["log", "q", "statusBar", "agents", "targets", "leftCol", "rightCol", "backdrop", "tLeft", "tRight", "agentsEmpty", "archive"]) {
+test("functionality ids and copy button contract survive", () => {
+  const d = doc();
+  for (const id of ["log", "q", "statusBar", "agents", "targets", "leftCol", "rightCol", "backdrop", "tLeft", "tRight", "agentsEmpty", "archive", "attach-input", "credit"]) {
     assert.ok(d.getElementById(id), "missing #" + id);
   }
   assert.ok(d.querySelector('[data-target="lead"].tgt[aria-current="true"]'));
-  assert.ok(d.querySelector("#leftCol.open, #leftCol")); // open class still applied by client script
   assert.match(src, /el\.classList\.add\('open'\)/);
   assert.match(src, /el\.classList\.remove\('open'\)/);
+  assert.match(src, /api\/render/);
+  assert.match(src, /api\/model/);
+  assert.match(src, /mermaid-vendor\.js/);
 });
 
-test("theme styles the existing class contract without renaming it", () => {
-  for (const sel of [".m.u", ".m.a", ".wk", ".tgt[aria-current=\"true\"]", "#statusBar .sb-workers", "pre", ".cb .copy", ".mmd-out"]) {
-    assert.ok(css.includes(sel), "missing rule for " + sel);
-  }
-  assert.ok(!/\.message-/.test(css), "no invented class names");
+test("component markup is the upstream one, attributes only, no innerHTML", () => {
+  assert.match(md, /data-slot="copy-button"/);
+  assert.match(md, /data-copied="false"/);
+  assert.match(md, /class="cb-icon"/);
+  assert.match(md, /cb-layer-idle/);
+  assert.match(md, /cb-layer-done/);
+  const btn = new JSDOM('<div class="cb"><button class="copy" data-slot="copy-button" data-copied="false" aria-label="Copy"><span class="cb-icon"><span class="cb-layer cb-layer-done"><svg></svg></span></span></button></div>').window.document.querySelector("div.cb > button.copy");
+  assert.ok(btn, "copy button present");
+  assert.equal(btn.getAttribute("aria-label"), "Copy");
+  assert.ok(btn.querySelector(".cb-layer-done svg"), "copied glyph layer");
 });
 
-test("layout rails, responsive collapse and reduced motion", () => {
-  assert.match(css, /--rail:\s*248px/);
-  assert.match(css, /--rail-r:\s*280px/);
-  assert.match(css, /@media \(max-width: 1100px\)/);
-  assert.match(css, /@media \(max-width: 800px\)/);
-  const q1100 = css.slice(css.indexOf("@media (max-width: 1100px)"), css.indexOf("@media (max-width: 800px)"));
-  assert.match(q1100, /#leftCol[\s\S]*?position: fixed/);
-  const q800 = css.slice(css.indexOf("@media (max-width: 800px)"), css.indexOf("prefers-reduced-motion"));
-  assert.match(q800, /#rightCol[\s\S]*?position: fixed/);
-  assert.match(q800, /#topbar[\s\S]*?sticky/);
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
-  assert.match(css, /#topbar button[\s\S]*?min-height: 40px/);
-  assert.match(css, /form:focus-within/);
-  assert.match(css, /:focus-visible/);
+test("adapted CSS is attributed to the exact upstream source and license", () => {
+  assert.match(css, /raw\.githubusercontent\.com\/swamimalode07\/rare-ui\/main\/components\/CopyButton\.tsx/);
+  assert.match(css, /MIT \+ Commons Clause License Condition v1\.0 \+ Attribution/);
+  assert.match(css, /Swami Malode/);
+  assert.match(css, /rareui\.com/);
+  assert.match(css, /LICENSE/);
+  assert.match(css, /prefers-reduced-motion/);
+  assert.match(css, /\[data-slot="copy-button"\]\[data-copied="true"\] \.cb-layer-done/);
 });
 
-test("attribution: MIT/Commons-Clause header note and footer link with safe rel", () => {
-  assert.match(css, /Rare UI inspiration/);
-  assert.match(css, /MIT \+ Commons Clause \+ Attribution/);
-  assert.match(css, /rareui|rareui\.com/);
-  const a = doc(html).querySelector("#credit a");
+test("footer credit is a small visible link with safe rel", () => {
+  const a = doc().querySelector("#credit a");
   assert.ok(a, "footer attribution link");
   assert.equal(a.getAttribute("href"), "https://rareui.com/");
   assert.equal(a.getAttribute("target"), "_blank");
   const rel = (a.getAttribute("rel") || "").split(/\s+/);
   assert.ok(rel.includes("noopener") && rel.includes("noreferrer"));
-  // attribution text must not be styled into invisibility
-  assert.match(css, /#credit/);
-});
-
-test("theme does not touch functionality markers (markdown/mermaid/model/upload)", () => {
-  assert.match(src, /api\/render/);
-  assert.match(src, /mermaid-vendor\.js/);
-  assert.match(src, /api\/model/);
-  assert.match(css, /\.hljs-keyword/); // highlight.js classes still themed
 });

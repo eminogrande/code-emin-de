@@ -24,10 +24,13 @@ const TAGS = [
   "a", "p", "br", "hr", "strong", "em", "b", "i", "del", "code", "pre", "span", "div", "button", "img",
   "ul", "ol", "li", "blockquote", "h1", "h2", "h3", "h4", "h5", "h6", "section",
   "table", "thead", "tbody", "tr", "th", "td", "kbd", "sub", "sup",
+  "svg", "rect", "path", "g",
 ];
 const ATTRS = [
   "href", "title", "target", "rel", "src", "alt", "width", "height", "class", "type",
-  "data-code", "start", "align", "colspan", "rowspan", "aria-expanded", "hidden",
+  "data-code", "data-slot", "data-copied", "aria-label", "aria-hidden", "viewBox", "fill",
+  "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "x", "y", "rx", "ry",
+  "start", "align", "colspan", "rowspan", "aria-expanded", "hidden",
 ];
 
 export function sanitize(html = "") {
@@ -83,7 +86,8 @@ function makeRenderer() {
     } else if (tag) {
       cls = ` class="language-${esc(tag)}"`;
     }
-    return `<div class="cb"><button class="copy" type="button" data-code="${esc(text)}">Copy</button><pre><code${cls}>${body}</code></pre></div>\n`;
+    // CopyButton markup adapted from Rare UI (src/rare-button.css holds the styles).
+    return `<div class="cb"><button class="copy" type="button" data-slot="copy-button" data-copied="false" data-code="${esc(text)}" aria-label="Copy" title="Copy"><span class="cb-icon" aria-hidden="true"><span class="cb-layer cb-layer-idle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></span><span class="cb-layer cb-layer-done"><svg viewBox="0 0 20 20" fill="none"><path d="M10 0a3 3 0 0 1 1.86.92 3 3 0 0 1 3.37 1.33 3 3 0 0 1 2.5 2.64 3 3 0 0 1 1.77 3.33 3 3 0 0 1 .5 1.78 3 3 0 0 1-.92 1.86 3 3 0 0 1-1.33 3.37 3 3 0 0 1-2.64 2.5 3 3 0 0 1-3.33 1.77A3 3 0 0 1 6.08 19.2a3 3 0 0 1-2.5-2.64 3 3 0 0 1-1.77-3.33A3 3 0 0 1 2 10.92a3 3 0 0 1 .92-1.86 3 3 0 0 1 1.33-3.37 3 3 0 0 1 2.64-2.5A3 3 0 0 1 10 0Z" fill="#FF5100"/><path d="M6 10.42 8.33 12.82 14 7" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span></span></button><pre><code${cls}>${body}</code></pre></div>\n`;
   };
   r.link = ({ href, title, tokens }) => {
     const text = r.parser.parseInline(tokens);

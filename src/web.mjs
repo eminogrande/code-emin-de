@@ -250,9 +250,8 @@ body{display:flex;flex-direction:column;max-width:48rem;margin:0 auto;padding:0 
 .a hr{border:0;border-top:1px solid var(--rule);margin:1rem 0}
 .a a{color:var(--accent)}
 .cb{position:relative}
-.cb .copy,.mmd-toggle{appearance:none;background:var(--paper);color:var(--muted);border:1px solid var(--rule);font:0.72em/1 ui-sans-serif,system-ui,sans-serif;padding:.28rem .5rem;border-radius:3px;cursor:pointer;opacity:.75}
-.cb .copy{position:absolute;top:.35rem;right:.4rem}
-.cb .copy:hover,.mmd-toggle:hover{opacity:1;border-color:var(--accent)}
+.mmd-toggle{appearance:none;background:var(--paper);color:var(--muted);border:1px solid var(--rule);font:0.72em/1 ui-sans-serif,system-ui,sans-serif;padding:.28rem .5rem;border-radius:3px;cursor:pointer;opacity:.75}
+.mmd-toggle:hover{opacity:1;border-color:var(--accent)}
 .mmd{position:relative;border:1px solid var(--rule);border-radius:3px;padding:.5rem}
 .mmd .mmd-toggle{margin:0 0 .35rem;display:inline-block}
 .mmd-out{overflow-x:auto}
@@ -347,7 +346,7 @@ textarea::placeholder{color:var(--muted);opacity:.65}
 .himages{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.4rem}
 .himages img{max-width:9rem;max-height:7rem;border-radius:.35rem;border:1px solid var(--rule);display:block}
 </style>
-<link rel="stylesheet" href="/chat-theme.css">
+<link rel="stylesheet" href="/rare-button.css">
 </head>
 <body>
 <div id="topbar">
@@ -385,7 +384,7 @@ textarea::placeholder{color:var(--muted);opacity:.65}
     </div>
     <p id="attach-status" aria-live="polite"></p>
   </form>
-  <p id="credit">Rare UI inspiration: <a href="https://rareui.com/" target="_blank" rel="noopener noreferrer">rareui.com</a></p>
+  <p id="credit">Copy button adapted from <a href="https://rareui.com/" target="_blank" rel="noopener noreferrer">Rare UI</a></p>
 </main>
 <aside id="rightCol">
   <div class="sect">
@@ -1160,8 +1159,8 @@ export async function startWebServer({
       if (req.method === "GET" && url.pathname === "/chat-client.js") {
         return assetFile("./chat-client.js", "text/javascript; charset=utf-8");
       }
-      if (req.method === "GET" && url.pathname === "/chat-theme.css") {
-        return assetFile("./chat-theme.css", "text/css; charset=utf-8");
+      if (req.method === "GET" && url.pathname === "/rare-button.css") {
+        return assetFile("./rare-button.css", "text/css; charset=utf-8");
       }
       if (req.method === "GET" && url.pathname === "/mermaid-vendor.js") {
         return assetFile("../node_modules/mermaid/dist/mermaid.min.js", "text/javascript; charset=utf-8");

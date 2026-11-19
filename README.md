@@ -320,12 +320,20 @@ authenticated image endpoint. Non-vision models reject the turn and the composer
 Tests: `test/images.test.mjs` (sniff/caps/dimensions/store), `test/chat-images.test.mjs` (paste,
 passthrough, rejections, clear), `test/chat-images-api.test.mjs` (auth, caps, payload, traversal).
 
-### Chat Theme (`src/chat-theme.css`)
+### Rare UI Copy Button (`src/rare-button.css`)
 
-Design **inspired by [Rare UI](https://rareui.com/)** (MIT + Commons Clause + Attribution); no Rare UI
-code/assets copied — layouts are native CSS over the existing Solarized palette. Attribution lives in the
-CSS header and the page footer. Same-origin stylesheet via a tiny CSP-safe `<link>`; no class/ID or
-functionality changes, rails collapse to the existing drawers ≤1100/≤800 px. Tests: `test/ui-theme.test.mjs`.
+The chat page keeps its **original native Solarized layout** (inline CSS in `src/web.mjs`, no
+whole-page theme layer). For the code-block copy affordance the actual Rare UI `CopyButton`
+component is **copied, not imitated**: markup and style values come from
+[`components/CopyButton.tsx`](https://raw.githubusercontent.com/swamimalode07/rare-ui/main/components/CopyButton.tsx)
+and are translated 1:1 from Tailwind/Motion to native DOM attributes + CSS in `src/rare-button.css`
+(blur/opacity swap, `data-copied` state, reduced-motion opt-out). No React, Tailwind or bundler.
+
+Rare UI is **MIT + Commons Clause License Condition v1.0 + Attribution** (© 2026 Swami Malode, see
+[LICENSE](https://raw.githubusercontent.com/swamimalode07/rare-ui/main/LICENSE)): the source URL,
+license and copyright stay in the CSS header, and a small visible footer link credits the project.
+Images, models and the sidebar keep their existing behaviour and selectors. Tests: `test/ui-theme.test.mjs`,
+`test/markdown.test.mjs`.
 
 ### Run the Full Deterministic Unit & Integration Test Suite (84 Tests, Zero Live API Keys Required)
 
@@ -386,9 +394,9 @@ swarm steer w-auth "use timingSafeEqual"
 - `src/bus.mjs` — Zero-dependency `node:sqlite` FTS5 cross-agent message bus with broadcast ack isolation
 - `src/optmem.mjs` & `src/memo` — Durable cross-session memory with auto-`nap` drain (Lead-only writer)
 - `src/triage.mjs` — System-1 watcher & prompt router (`jev-latest` with deterministic offline fallback)
-- `src/web.mjs`, `src/webauthn.mjs`, `src/markdown.mjs`, `src/chat-client.js` — Solarized Light Passkey Web UI, XSS-safe Markdown/Mermaid rendering, and Click-to-Sign SSH bridge UI
+- `src/web.mjs`, `src/webauthn.mjs`, `src/markdown.mjs`, `src/chat-client.js` — Solarized Light Passkey Web UI, XSS-safe Markdown/Mermaid rendering, copied Rare UI copy button, and Click-to-Sign SSH bridge UI
 - `src/chat-images.js` & `src/image-util.mjs` — Composer image paste/attach (client) and strict magic-byte validation, caps, content-addressed storage + authenticated `/api/image/:id` serving (server)
-- `src/image-util.mjs`, `src/chat-images.js`, `src/chat-theme.css` — strict image sniff/decode/store for chat attachments, composer paste UI, and the Rare-UI-inspired theme
+- `src/image-util.mjs`, `src/chat-images.js`, `src/rare-button.css` — strict image sniff/decode/store for chat attachments, composer paste UI, and the adapted Rare UI copy button
 - `src/reinforce.mjs` & `src/harness-bench.mjs` — Reproducible Docker `/reinforce` and cross-harness benchmark harnesses
 
 ### Documentation & Benchmark Receipts (`docs/`)
