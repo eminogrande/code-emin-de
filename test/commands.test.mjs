@@ -63,11 +63,34 @@ test("2. probeProviderHealth reports configured/unconfigured, HTTP 402 billing e
   assert.match(results[2].detail, /ECONNREFUSED/);
 });
 
-test("3. handleDeterministicCommand returns null for non-deterministic commands (/btw, normal chat)", async () => {
+test("3. handleDeterministicCommand formats describeWorker shape (id, role, state, model, lastError) and returns null for /btw", async () => {
   const resBtw = await handleDeterministicCommand("/btw what is running?");
   assert.equal(resBtw, null);
   const resChat = await handleDeterministicCommand("fix the bug in src/web.mjs");
   assert.equal(resChat, null);
+
+  const resWorkers = await handleDeterministicCommand("/workers", {
+    listWorkers: async () => [
+      {
+        id: "w-auth",
+        role: "coder",
+        state: "running",
+        model: "deepseek-v4.1-flash-uncensored",
+        lastError: null,
+      },
+      {
+        id: "w-old",
+        role: "reviewer",
+        state: "failed:turn_limit",
+        model: "kimi-k3.1-pro",
+        lastError: "turn_limit: 8 turns",
+      },
+    ],
+  });
+  assert.equal(resWorkers.llmCalls, 0);
+  assert.match(resWorkers.text, /`w-auth` \[coder\] — \*\*RUNNING\*\* · `deepseek-v4\.1-flash-uncensored`/);
+  assert.match(resWorkers.text, /`w-old` \[reviewer\] — \*\*FAILED:TURN_LIMIT\*\* · `kimi-k3\.1-pro` · err: turn_limit: 8 turns/);
+  assert.doesNotMatch(resWorkers.text, /undefined/);
 });
 
 test("4. Daemon E2E: /help, /status, /workers, /hooks, /credits execute with ZERO LLM calls even when all models throw", async () => {

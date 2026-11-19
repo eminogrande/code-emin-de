@@ -99,7 +99,7 @@ export async function probeProviderHealth({
   const llmgBase = (env.LLMGATEWAY_BASE_URL || "https://api.llmgateway.io/v1").replace(/\/+$/, "");
 
   const allmKey = (env.ALLMODELS_API_KEY || "").trim();
-  const allmBase = (env.ALLMODELS_BASE_URL || "https://allmodels.io/api/v1").replace(/\/+$/, "");
+  const allmBase = (env.ALLMODELS_BASE_URL || "https://api.allmodels.io/v1").replace(/\/+$/, "");
 
   const localBase = (env.LOCAL_LLAMA_URL || "http://127.0.0.1:8089/v1").replace(/\/+$/, "");
   const localModel = env.LOCAL_LLAMA_MODEL || DEFAULT_LOCAL_LLAMA_MODEL;
@@ -184,10 +184,13 @@ function formatWorkers(workers) {
   }
   const lines = [`**Swarm Workers** _(${workers.length} registered, running first)_:`];
   for (const w of workers) {
-    const state = w.running ? `RUNNING (${w.phase || "active"})` : (w.status || "idle").toUpperCase();
-    const turns = w.maxTurns ? ` · turns ${w.turns ?? 0}/${w.maxTurns}` : "";
-    const model = w.modelId ? ` · \`${w.modelId}\`` : "";
-    lines.push(`- \`${w.workerId}\` [${w.role || "worker"}] — **${state}**${model}${turns}`);
+    const id = w.id || w.workerId || "unknown";
+    const rawState = w.state || (w.running ? "running" : w.status || "idle");
+    const state = String(rawState).toUpperCase();
+    const modelName = w.model || w.modelId;
+    const model = modelName ? ` · \`${modelName}\`` : "";
+    const err = w.lastError ? ` · err: ${w.lastError}` : "";
+    lines.push(`- \`${id}\` [${w.role || "worker"}] — **${state}**${model}${err}`);
   }
   return lines.join("\n");
 }
