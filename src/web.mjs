@@ -554,12 +554,17 @@ function sbField(cls) {
 // Allowlisted Lead model choices (provider/modelId); mirrors LEAD_MODEL_CHOICES in src/models.mjs.
 const MODEL_CHOICES = [
   ['llmgateway', 'kimi-k3.1-pro'],
+  ['paymentrequired', 'k3.1-pro'],
   ['allmodels', 'moonshotai/kimi-k3.1-pro-abliterated'],
   ['llmgateway', 'deepseek-v4.1-flash-uncensored'],
   ['allmodels', 'deepseek/deepseek-v4.1-flash-abliterated'],
   ['llmgateway', 'glm-5.3'],
   ['allmodels', 'z-ai/glm-5.3-abliterated'],
 ];
+// Human labels for choices that read badly as `provider/modelId` (e.g. the free router plan).
+const MODEL_LABELS = {
+  'paymentrequired k3.1-pro': 'Kimi K3.1 Pro (OAuth plan · free)',
+};
 const sbModel = statusBar ? document.createElement('select') : null;
 const sbErr = statusBar ? sbField('sb-err') : null;
 if (sbModel) {
@@ -570,7 +575,7 @@ if (sbModel) {
   for (const [pv, md] of MODEL_CHOICES) {
     const o = document.createElement('option');
     o.value = pv + ' ' + md;
-    o.textContent = pv + '/' + md;
+    o.textContent = MODEL_LABELS[pv + ' ' + md] || pv + '/' + md;
     sbModel.appendChild(o);
   }
   statusBar.appendChild(sbModel);

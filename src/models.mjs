@@ -19,6 +19,14 @@ const LLMGATEWAY_OPEN_MODELS = [
   { id: "muse-spark-open", name: "Meta Muse Spark Open 816B/A42B (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text", "image"], cost: { input: 1.25, output: 4.25, cacheRead: 0.15, cacheWrite: 0 } },
 ];
 
+// PaymentRequired internal router (free lead endpoint, OpenAI-compatible). Costs are declared
+// zero on purpose: the endpoint is free, but no billing identity / subscription is verified.
+const ROUTER_PAYMENTREQUIRED_MODELS = [
+  { id: "k3.1-pro", name: "Kimi K3.1 Pro (OAuth plan · free)", contextWindow: 262144, maxTokens: 32768, reasoning: true, input: ["text", "image"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
+];
+
+const ROUTER_PAYMENTREQUIRED_BASE_URL = "https://router.paymentrequired.com/v1/internal";
+
 const ALLMODELS_OPEN_MODELS = [
   { id: "deepseek/deepseek-v4.1-flash-abliterated", name: "DeepSeek V4.1 Flash Abliterated (open-weights)", contextWindow: 1048576, maxTokens: 8192, reasoning: true, input: ["text", "image"], cost: { input: 0.3, output: 1.2, cacheRead: 0.03, cacheWrite: 0 } },
   { id: "deepseek/deepseek-v4.1-flash-ultrafast", name: "DeepSeek V4.1 Flash Ultrafast (open-weights)", contextWindow: 1048576, maxTokens: 8192, reasoning: true, input: ["text", "image"], cost: { input: 0.18, output: 0.65, cacheRead: 0.01, cacheWrite: 0 } },
@@ -36,6 +44,7 @@ const ALLMODELS_OPEN_MODELS = [
  */
 export const LEAD_MODEL_CHOICES = Object.freeze([
   { provider: "llmgateway", modelId: "kimi-k3.1-pro" },
+  { provider: "paymentrequired", modelId: "k3.1-pro" },
   { provider: "allmodels", modelId: "moonshotai/kimi-k3.1-pro-abliterated" },
   { provider: "llmgateway", modelId: "deepseek-v4.1-flash-uncensored" },
   { provider: "allmodels", modelId: "deepseek/deepseek-v4.1-flash-abliterated" },
@@ -147,6 +156,8 @@ export function attachOpenWeightsFailover(models, { cooldownMs = 5 * 60_000, loc
 
   function buildFailoverChain(model) {
     const chain = [];
+    // Free router: surface the real error (no cross-provider fallback hiding quota/errors).
+    if (model?.provider === "paymentrequired") return [model];
     const seen = new Set();
     const push = (m) => {
       if (!m) return;
@@ -386,6 +397,35 @@ export function createOpenModels({ enableFailover = true } = {}) {
           next.provider = { order: ["lyber", "hopper", "abliteration"], allow_fallbacks: true };
         }
         return next;
+      }),
+    }),
+  );
+
+  models.setProvider(
+    createProvider({
+      id: "paymentrequired",
+      name: "PaymentRequired Free",
+      baseUrl: ROUTER_PAYMENTREQUIRED_BASE_URL,
+      auth: { apiKey: envApiKeyAuth("PaymentRequired router API key", ["ROUTER_PAYMENTREQUIRED_API_KEY"]) },
+      models: ROUTER_PAYMENTREQUIRED_MODELS.map((m) => ({
+        ...m,
+        api: "openai-completions",
+        provider: "paymentrequired",
+        baseUrl: ROUTER_PAYMENTREQUIRED_BASE_URL,
+        type: "chat",
+        compat: {
+          supportsStore: false,
+          supportsDeveloperRole: false,
+          maxTokensField: "max_tokens",
+          thinkingFormat: "openrouter",
+          requiresReasoningContentOnAssistantMessages: true,
+          supportsStrictMode: false,
+        },
+      })),
+      api: wrapApiWithPayload((payload, model) => {
+        if (!payload || typeof payload !== "object") return payload;
+        const cap = model.maxTokens || 8192;
+        return { ...payload, max_tokens: payload.max_tokens ? Math.min(Number(payload.max_tokens), cap) : cap };
       }),
     }),
   );
