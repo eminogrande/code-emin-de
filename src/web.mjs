@@ -510,7 +510,7 @@ function fmtTok(n) {
 
 function truncId(id, max) {
   const s = String(id || '');
-  const lim = max || 30;
+  const lim = max || 40;
   return s.length > lim ? s.slice(0, lim - 1) + '\u2026' : s;
 }
 

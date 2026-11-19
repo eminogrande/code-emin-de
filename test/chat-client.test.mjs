@@ -122,3 +122,50 @@ test("right AGENTS sidebar renders newly attached workers and statusBar shows mo
   assert.match(bar, /1 running \/ 2 total/);
   w.close();
 });
+
+test("pure status formatting helpers: free %, budget level, worker count, id truncation", async () => {
+  const { w } = boot([]);
+  await flush();
+  assert.equal(w.eval("ctxFreePct(0,1000)"), 100);
+  assert.equal(w.eval("ctxFreePct(920,1000)"), 8);
+  assert.equal(w.eval("ctxFreePct(500,0)"), null);
+  assert.equal(w.eval("ctxFreePct(5,1000)"), 100, "clamped");
+  assert.equal(w.eval("budgetLevel(30)"), "");
+  assert.equal(w.eval("budgetLevel(24)"), "warn");
+  assert.equal(w.eval("budgetLevel(9)"), "bad");
+  assert.equal(w.eval("budgetLevel(null)"), "");
+  assert.equal(w.eval("workerCountText([{state:'running'},{state:'idle_done'},{state:'running'}])"), "2 running / 3 total");
+  assert.equal(w.eval("workerCountText(null)"), "0 running / 0 total");
+  assert.equal(w.eval("truncId('short')"), "short");
+  const long = w.eval("truncId('a'.repeat(80), 10)");
+  assert.equal(long.length, 10);
+  assert.ok(long.endsWith("\u2026"));
+  w.close();
+});
+
+test("status bar marks low context amber/red and colours badge by worst worker state", async () => {
+  const lead = (tokens) => ({ lead: { model: "m".repeat(80), contextTokens: tokens, contextWindow: 1000 } });
+  let ctx = boot([], [], lead(900));
+  await flush();
+  let bar = ctx.w.document.getElementById("statusBar");
+  assert.equal(bar.hidden, false);
+  const ctxEl = bar.querySelector(".sb-ctx");
+  assert.ok(ctxEl.classList.contains("bad"));
+  assert.match(ctxEl.textContent, /10% frei/);
+  assert.equal(bar.querySelector(".sb-model").textContent.length, 40, "long model ids truncated");
+  ctx.w.close();
+
+  ctx = boot([], [{ state: "failed_turn_limit" }, { state: "running" }], lead(500));
+  await flush();
+  bar = ctx.w.document.getElementById("statusBar");
+  assert.ok(bar.querySelector(".sb-ctx").classList.contains("warn"));
+  assert.ok(bar.querySelector(".sb-workers").classList.contains("bad"));
+  ctx.w.close();
+});
+
+test("status bar stays hidden without lead or workers", async () => {
+  const { w } = boot([], [], null);
+  await flush();
+  assert.equal(w.document.getElementById("statusBar").hidden, true);
+  w.close();
+});
