@@ -331,7 +331,7 @@ and are translated 1:1 from Tailwind/Motion to native DOM attributes + CSS in `s
 
 Rare UI is **MIT + Commons Clause License Condition v1.0 + Attribution** (© 2026 Swami Malode, see
 [LICENSE](https://raw.githubusercontent.com/swamimalode07/rare-ui/main/LICENSE)): the source URL,
-license and copyright stay in the CSS header, and a small visible footer link credits the project.
+license and copyright stay in the CSS header; an unobtrusive `About · Credits` sidebar link credits the project without a chat-bottom banner.
 Images, models and the sidebar keep their existing behaviour and selectors. Tests: `test/ui-theme.test.mjs`,
 `test/markdown.test.mjs`.
 

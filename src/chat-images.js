@@ -5,6 +5,7 @@
   var MAX_IMAGES = 3;
   var MAX_BYTES = 4 * 1024 * 1024;
   var MAX_EVENT_B64 = 6 * 1024 * 1024;
+  var MAX_DIM = 4096;
   var TYPES = { 'image/png': true, 'image/jpeg': true, 'image/webp': true, 'image/gif': true };
 
   var deck = null;
@@ -134,18 +135,79 @@
     return pending.map(function (p) { return { name: p.name, mimeType: p.file.type, file: p.file }; });
   }
 
+  // Decode real bytes in the browser: rejects corrupt files, applies EXIF rotation,
+  // and re-encodes to standard PNG (JPEG fallback) so provider MIME always matches magic bytes.
+  function loadBitmap(file, name) {
+    return Promise.resolve(createImageBitmap(file)).then(function (b) { return b; }, function () {
+      throw new Error('invalid or unsupported image format: ' + name);
+    });
+  }
+
+  function toCanvas(bmp, name) {
+    var w = bmp.width || bmp.naturalWidth;
+    var h = bmp.height || bmp.naturalHeight;
+    if (!(w > 0 && h > 0)) throw new Error('invalid or unsupported image format: ' + name);
+    var scale = Math.min(1, MAX_DIM / Math.max(w, h));
+    var c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(w * scale));
+    c.height = Math.max(1, Math.round(h * scale));
+    var ctx = c.getContext('2d');
+    if (!ctx) throw new Error('could not decode image');
+    ctx.imageSmoothingQuality = 'high';
+    // Flatten transparency onto white so JPEG fallback never turns black.
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(bmp, 0, 0, c.width, c.height);
+    if (bmp.close) bmp.close();
+    return c;
+  }
+
+  function encode(canvas, mime, quality) {
+    return new Promise(function (resolve, reject) {
+      canvas.toBlob(function (b) { b ? resolve(b) : reject(new Error('image encode failed')); }, mime, quality);
+    });
+  }
+
+  function canNormalize() {
+    return typeof createImageBitmap === 'function' &&
+      typeof document.createElement('canvas').toBlob === 'function';
+  }
+
+  function normalize(e) {
+    // No decoder (old/jsdom): forward raw bytes, server still sniffs strictly.
+    if (!canNormalize()) return Promise.resolve({ blob: e.file, mimeType: e.mimeType });
+    return loadBitmap(e.file, e.name).then(function (bmp) {
+      var canvas = toCanvas(bmp, e.name);
+      return encode(canvas, 'image/png').then(function (blob) {
+        if (blob.size <= MAX_BYTES) return { blob: blob, mimeType: 'image/png' };
+        return encode(canvas, 'image/jpeg', 0.92).then(function (jpg) {
+          if (jpg.size <= MAX_BYTES) return { blob: jpg, mimeType: 'image/jpeg' };
+          throw new Error(e.name + ': ' + mb(blob.size) + 'MB after conversion, reduce the screenshot');
+        });
+      });
+    });
+  }
+
+  function toDataUrl(blob, name) {
+    return new Promise(function (resolve, reject) {
+      var fr = new FileReader();
+      fr.onload = function () {
+        var url = String(fr.result || '');
+        if (url.length > MAX_EVENT_B64) reject(new Error(name + ' too large when encoded'));
+        else resolve(url);
+      };
+      fr.onerror = function () { reject(new Error('could not read ' + name)); };
+      fr.readAsDataURL(blob);
+    });
+  }
+
   function toDataUrls(entries) {
     sending = true;
     return Promise.all(entries.map(function (e) {
-      return new Promise(function (resolve, reject) {
-        var fr = new FileReader();
-        fr.onload = function () {
-          var url = String(fr.result || '');
-          if (url.length > MAX_EVENT_B64) reject(new Error(e.name + ' too large when encoded'));
-          else resolve({ dataUrl: url, name: e.name, mimeType: e.mimeType });
-        };
-        fr.onerror = function () { reject(new Error('could not read ' + e.name)); };
-        fr.readAsDataURL(e.file);
+      return normalize(e).then(function (r) {
+        return toDataUrl(r.blob, e.name).then(function (dataUrl) {
+          return { dataUrl: dataUrl, name: e.name, mimeType: r.mimeType };
+        });
       });
     })).then(function (out) { sending = false; return out; }, function (err) { sending = false; throw err; });
   }

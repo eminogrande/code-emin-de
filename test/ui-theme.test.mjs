@@ -43,7 +43,7 @@ test("inline Solarized base and layout untouched by the theme layer", () => {
 
 test("functionality ids and copy button contract survive", () => {
   const d = doc();
-  for (const id of ["log", "q", "statusBar", "agents", "targets", "leftCol", "rightCol", "backdrop", "tLeft", "tRight", "agentsEmpty", "archive", "attach-input", "credit"]) {
+  for (const id of ["log", "q", "statusBar", "agents", "targets", "leftCol", "rightCol", "backdrop", "tLeft", "tRight", "agentsEmpty", "archive", "attach-input"]) {
     assert.ok(d.getElementById(id), "missing #" + id);
   }
   assert.ok(d.querySelector('[data-target="lead"].tgt[aria-current="true"]'));
@@ -76,8 +76,9 @@ test("adapted CSS is attributed to the exact upstream source and license", () =>
   assert.match(css, /\[data-slot="copy-button"\]\[data-copied="true"\] \.cb-layer-done/);
 });
 
-test("footer credit is a small visible link with safe rel", () => {
-  const a = doc().querySelector("#credit a");
+test("credit lives in sidebar About link, not chat footer", () => {
+  assert.equal(doc().querySelector("#credit"), null);
+  const a = doc().querySelector("#leftCol .credits a");
   assert.ok(a, "footer attribution link");
   assert.equal(a.getAttribute("href"), "https://rareui.com/");
   assert.equal(a.getAttribute("target"), "_blank");

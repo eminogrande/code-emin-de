@@ -316,6 +316,8 @@ pre{padding:.75rem .9rem;overflow-x:auto;border-left:2px solid var(--rule);margi
 #statusBar .sb-model{max-width:24rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--heading);font-weight:600}
 #statusBar select.sb-model{appearance:none;background:var(--paper);border:1px solid var(--rule);border-radius:2px;font:inherit;color:var(--heading);font-weight:600;padding:0 .2rem;max-width:24rem}
 #archived{margin-top:.6rem}
+#leftCol .credits{font-size:.7rem;margin-top:1rem}
+#leftCol .credits a{color:var(--muted)}
 #archived summary{cursor:pointer;color:var(--muted);font-size:.75rem;letter-spacing:.06em;text-transform:uppercase}
 #archive{list-style:none;margin:.4rem 0 0;padding:0;display:flex;flex-direction:column;gap:.3rem}
 #archive .wsub{color:var(--muted);font-size:.75rem;display:block}
@@ -364,6 +366,7 @@ textarea::placeholder{color:var(--muted);opacity:.65}
     </button>
     <div id="targets"></div>
   </div>
+  <div class="sect credits"><a href="https://rareui.com/" target="_blank" rel="noopener noreferrer" title="Rare UI component credits">About · Credits</a></div>
 </aside>
 <main>
   <div id="log" aria-live="polite"></div>
@@ -384,7 +387,6 @@ textarea::placeholder{color:var(--muted);opacity:.65}
     </div>
     <p id="attach-status" aria-live="polite"></p>
   </form>
-  <p id="credit">Copy button adapted from <a href="https://rareui.com/" target="_blank" rel="noopener noreferrer">Rare UI</a></p>
 </main>
 <aside id="rightCol">
   <div class="sect">

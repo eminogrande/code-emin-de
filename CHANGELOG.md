@@ -52,7 +52,7 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
   `components/CopyButton.tsx` (raw.githubusercontent.com/swamimalode07/rare-ui/main), translated
   1:1 to native attributes/CSS in `src/rare-button.css` (data-slot/data-copied + blur swap,
   reduced-motion guard). License MIT + Commons Clause + Attribution: source URL, copyright and
-  license stay in the CSS header, small footer credit links rareui.com. Tests:
+  license stay in the CSS header, unobtrusive `About · Credits` sidebar link links rareui.com (no chat-bottom banner). Tests:
   `test/ui-theme.test.mjs`, `test/markdown.test.mjs`.
 
 ## 2026-11-20
