@@ -179,7 +179,10 @@ Inspired by `system-on-an-agent`'s rule-based control plane: operational command
 | `/status` | `0` | Reports active Lead provider/model, busy/idle state, context window usage (`%`), total session tokens & USD spend, live tasks, workers, pending drafts, and forever-watchers. |
 | `/workers` | `0` | Lists every registered worker sorted running-first with role, model, phase/status, and turn count (`turns/maxTurns`). |
 | `/hooks` | `0` | Lists all registered out-of-core guardrail & lifecycle hooks with enabled status, priority, events, and live `calls / blocks / continues / errors` counters. |
+| `/model [provider modelId]` | `0` | Shows or switches the Lead model from a fixed allowlist of verified open-weights pairs (e.g. `llmgateway/kimi-k3.1-pro`, `allmodels/moonshotai/kimi-k3.1-pro-abliterated`). Durable in `SwarmDoc.leadModelOverride`; arbitrary IDs are rejected. |
 | `/credits` | `0` | Runs a parallel zero-token `GET /models` health & billing probe against Tier 1 (`llmgateway`), Tier 2 (`allmodels`), and Tier 3 (`local-llama`), reporting exact HTTP status (`200`, `402 credits exhausted`, `401`, `unreachable`) and latency in ms. |
+
+**Lead model dropdown (`#statusBar`)** — the same allowlist is a `<select>` in the chat status bar; changes `POST /api/model` (passkey-session only) → daemon `POST /model`, validated against `LEAD_MODEL_CHOICES` (`src/models.mjs`), so no arbitrary model/provider can be persisted and no extra secrets/OAuth are needed. The choice is **global and applies to new turns** (never retroactively to a running turn), survives restarts, is disabled while Lead is busy, and a rejected switch restores the previous value with an inline error (e.g. an `allmodels` quota error is shown, never faked as switched).
 
 **LLM-routed slash commands** (intentionally go through models):
 - `/btw <question>` — Routes to an isolated read-only side-chat conversation (`deepseek-v4.1-flash-1017`) without blocking or interrupting Lead.

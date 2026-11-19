@@ -5,6 +5,17 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ---
 
+## 2026-11-20
+
+### Lead Model Dropdown in `code.emin.de` Chat
+- **Why**: the Lead could only be switched by env restart; open-weights failover existed but was invisible/untunable from the chat. Users now pick `Kimi` on either gateway (or DeepSeek/GLM) directly in the status bar.
+- **Allowlist**: `LEAD_MODEL_CHOICES` / `resolveLeadModelChoice()` in `src/models.mjs` — exactly six verified, registry-known, provider-explicit pairs (so the existing `llmgateway → allmodels` failover map still resolves the same model). No arbitrary IDs, no new secrets/OAuth.
+- **Auth route**: authenticated `POST /api/model` (`src/web.mjs`, passkey session) → Unix-socket `POST /model` (`src/cli.mjs`) → `daemon.setLeadModel()`, which rejects unknown provider/model with `400` and a clear `allowlist` error.
+- **Durable + global**: stored as `SwarmDoc.leadModelOverride { provider, modelId, updatedAt }`, re-applied to the Lead conversation on restart (role `ROLE_MODELS` untouched, spawns unchanged). Effective override is reported by `/status` and `/api/workers` as `lead.overridden` with the previous model as `lastUsed`.
+- **UI**: status-bar `<select>` labeled `provider/modelId` (all text via `textContent`), optimistic but revert-on-error with inline error text, disabled while Lead is busy, no auto reset. `allmodels` quota errors surface as the real error.
+- **Also**: deterministic zero-LLM `/model [provider modelId]` command (`src/commands.mjs`) + `/help` entry.
+- **Tests**: `test/lead-model.test.mjs` (allowlist validation incl. wrong provider/unknown model, persistence + effective `/status` across restart, `/api/model` auth + `/model` socket route). `test/chat-client.test.mjs` updated for the `<select>`.
+
 ## 2026-11-19
 
 ### Guard Against Empty/Undefined `POST /chat` Transcript Poisoning
