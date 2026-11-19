@@ -145,13 +145,13 @@ test("pure status formatting helpers: free %, budget level, worker count, id tru
 
 test("status bar marks low context amber/red and colours badge by worst worker state", async () => {
   const lead = (tokens) => ({ lead: { model: "m".repeat(80), contextTokens: tokens, contextWindow: 1000 } });
-  let ctx = boot([], [], lead(900));
+  let ctx = boot([], [], lead(950));
   await flush();
   let bar = ctx.w.document.getElementById("statusBar");
   assert.equal(bar.hidden, false);
   const ctxEl = bar.querySelector(".sb-ctx");
   assert.ok(ctxEl.classList.contains("bad"));
-  assert.match(ctxEl.textContent, /10% frei/);
+  assert.match(ctxEl.textContent, /5% frei/);
   assert.equal(bar.querySelector(".sb-model").textContent.length, 40, "long model ids truncated");
   ctx.w.close();
 
