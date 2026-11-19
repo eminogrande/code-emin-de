@@ -152,7 +152,11 @@ test("status bar marks low context amber/red and colours badge by worst worker s
   const ctxEl = bar.querySelector(".sb-ctx");
   assert.ok(ctxEl.classList.contains("bad"));
   assert.match(ctxEl.textContent, /5% frei/);
-  assert.equal(bar.querySelector(".sb-model").textContent.length, 40, "long model ids truncated");
+  const sel = bar.querySelector(".sb-model");
+  assert.equal(sel.tagName, "SELECT");
+  assert.ok(sel.options.length >= 4, "allowlisted model choices rendered");
+  assert.match(sel.value, /\//, "value is provider/modelId");
+  assert.ok(sel.hidden === false);
   ctx.w.close();
 
   ctx = boot([], [{ id: "w-fail", state: "failed_turn_limit" }, { id: "w-run", state: "running" }], lead(800));
