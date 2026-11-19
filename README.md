@@ -352,7 +352,7 @@ swarm steer w-auth "use timingSafeEqual"
 | `GET /workers` | Authoritative worker list sorted running-first |
 | `GET /hooks` | Registered out-of-core guardrail & lifecycle hooks with live counters |
 | `GET /transcript?convId=1&max=40` | Bounded conversation transcript |
-| `POST /chat` | Submit user message (`{ text: string }`, validated non-empty; deterministic slash commands, `/btw`, `/reinforce`, steer, or Lead turn) |
+| `POST /chat` | Submit user message (`{ text: string, images?: [{mimeType,data} base64] }`, validated non-empty unless images are attached; deterministic slash commands, `/btw`, `/reinforce`, steer, or Lead turn) |
 | `POST /cron` | Register a durable `ForeverWatchTask` watcher |
 
 ---
@@ -370,6 +370,7 @@ swarm steer w-auth "use timingSafeEqual"
 - `src/optmem.mjs` & `src/memo` — Durable cross-session memory with auto-`nap` drain (Lead-only writer)
 - `src/triage.mjs` — System-1 watcher & prompt router (`jev-latest` with deterministic offline fallback)
 - `src/web.mjs`, `src/webauthn.mjs`, `src/markdown.mjs`, `src/chat-client.js` — Solarized Light Passkey Web UI, XSS-safe Markdown/Mermaid rendering, and Click-to-Sign SSH bridge UI
+- `src/chat-images.js` & `src/image-util.mjs` — Composer image paste/attach (client) and strict magic-byte validation, caps, content-addressed storage + authenticated `/api/image/:id` serving (server)
 - `src/reinforce.mjs` & `src/harness-bench.mjs` — Reproducible Docker `/reinforce` and cross-harness benchmark harnesses
 
 ### Documentation & Benchmark Receipts (`docs/`)

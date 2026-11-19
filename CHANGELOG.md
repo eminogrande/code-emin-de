@@ -27,6 +27,15 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
   right lists only *running* agents, everything done/failed collapses into `<details>` `Archived workers`
   (no transcript deletion, real poll error text when nothing is visible). Registry states now match
   actual `failed:turn_limit` / `stopped:<reason>` values and cron jobs are filtered out.
+- chat theme redesign (`src/chat-theme.css`, Rare UI *inspiration*, no framework swap): Solarized
+  paper/navy kept, warm accent; 3-column rail 248/1fr/280px with hairline borders + faint warm grid
+  instead of boxed cards, compact truncating lists, plain speech messages, bordered code with
+  highlight tokens, rounded composer with visible focus ring, 40px labeled actions, subdued empty
+  state. Rails collapse to existing `.open` drawers ≤1100px/≤800px (topbar triggers + backdrop, no
+  content overlay), `prefers-reduced-motion` honoured. Attribution in the CSS header and a footer
+  link. Stylesheet is a same-origin asset with a tiny CSP-safe `<link>`; no class/ID/functionality
+  changes (markdown, Mermaid, model select, worker poll, image upload untouched).
+  Tests: `test/ui-theme.test.mjs`.
 
 ## 2026-11-20
 
