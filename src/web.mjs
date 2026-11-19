@@ -397,8 +397,9 @@ textarea::placeholder{color:var(--muted);opacity:.65}
     </details>
   </div>
 </aside>
-<script src="/chat-client.js" defer></script>
-<script src="/chat-images.js" defer></script>
+<!-- No defer: these must define window.chatRender/window.chatImages before the inline boot script below runs. -->
+<script src="/chat-client.js"></script>
+<script src="/chat-images.js"></script>
 <script>
 const log = document.getElementById('log');
 const q = document.getElementById('q');
