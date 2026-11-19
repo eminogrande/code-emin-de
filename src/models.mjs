@@ -21,8 +21,33 @@ const LLMGATEWAY_OPEN_MODELS = [
 
 // PaymentRequired internal router (free lead endpoint, OpenAI-compatible). Costs are declared
 // zero on purpose: the endpoint is free, but no billing identity / subscription is verified.
+// `input`/`reasoning` stay conservative: text-only unless the ID advertises vision/reasoning.
+const routerModel = (id, name, opts = {}) => ({
+  id,
+  name,
+  contextWindow: opts.contextWindow || 262144,
+  maxTokens: 32768,
+  reasoning: opts.reasoning !== false,
+  input: opts.image ? ["text", "image"] : ["text"],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+});
+
 const ROUTER_PAYMENTREQUIRED_MODELS = [
-  { id: "k3.1-pro", name: "Kimi K3.1 Pro (OAuth plan · free)", contextWindow: 262144, maxTokens: 32768, reasoning: true, input: ["text", "image"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
+  routerModel("k3.1-pro", "Kimi K3.1 Pro · free router", { image: true }),
+  routerModel("k3.1-pro-highspeed", "Kimi K3.1 Pro Highspeed · free router", { image: true }),
+  routerModel("kimi-for-coding", "Kimi for Coding · free router"),
+  routerModel("kimi-for-coding-highspeed", "Kimi for Coding Highspeed · free router"),
+  routerModel("deepseek-v4.1-flash-abliterated", "DeepSeek V4.1 Flash Abliterated · free router"),
+  routerModel("gemini-3.5-flash-lite", "Gemini 3.5 Flash Lite · free router", { image: true, reasoning: false }),
+  routerModel("gemini-3.8-flash-high", "Gemini 3.8 Flash High · free router", { image: true }),
+  routerModel("gemini-4-argon-high", "Gemini 4 Argon High · free router", { image: true }),
+  routerModel("glm-5.3-abliterated", "GLM-5.3 Abliterated · free router"),
+  routerModel("glm-5.3-flash-abliterated", "GLM-5.3 Flash Abliterated · free router"),
+  routerModel("cohere/north-mini-code:free", "Cohere North Mini Code · free", { reasoning: false }),
+  routerModel("dots-studio/dots-3-note-preview:free", "Dots 3 Note Preview · free", { reasoning: false }),
+  routerModel("nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "Nemotron 3 Nano Omni 30B A3B · free", { image: true }),
+  routerModel("nvidia/nemotron-3-ultra-550b-a55b:free", "Nemotron 3 Ultra 550B A55B · free"),
+  routerModel("nvidia/nemotron-3.5-lightning:free", "Nemotron 3.5 Lightning · free"),
 ];
 
 const ROUTER_PAYMENTREQUIRED_BASE_URL = "https://router.paymentrequired.com/v1/internal";
@@ -44,7 +69,7 @@ const ALLMODELS_OPEN_MODELS = [
  */
 export const LEAD_MODEL_CHOICES = Object.freeze([
   { provider: "llmgateway", modelId: "kimi-k3.1-pro" },
-  { provider: "paymentrequired", modelId: "k3.1-pro" },
+  ...ROUTER_PAYMENTREQUIRED_MODELS.map((m) => ({ provider: "paymentrequired", modelId: m.id })),
   { provider: "allmodels", modelId: "moonshotai/kimi-k3.1-pro-abliterated" },
   { provider: "llmgateway", modelId: "deepseek-v4.1-flash-uncensored" },
   { provider: "allmodels", modelId: "deepseek/deepseek-v4.1-flash-abliterated" },

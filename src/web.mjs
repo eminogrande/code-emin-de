@@ -309,8 +309,13 @@ pre{padding:.75rem .9rem;overflow-x:auto;border-left:2px solid var(--rule);margi
 .m.err{color:#dc322f;font-size:.9rem}
 #statusBar{display:flex;flex-wrap:wrap;gap:.35rem .7rem;align-items:center;padding:.3rem 0;border-top:1px solid var(--rule);font-size:.75rem;color:var(--muted)}
 #statusBar[hidden]{display:none}
-#statusBar .sb-model{max-width:15rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--heading);font-weight:600}
-#statusBar select.sb-model{appearance:none;background:var(--paper);border:1px solid var(--rule);border-radius:2px;font:inherit;color:var(--heading);font-weight:600;padding:0 .2rem;max-width:15rem}
+#statusBar .sb-model{max-width:24rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--heading);font-weight:600}
+#statusBar select.sb-model{appearance:none;background:var(--paper);border:1px solid var(--rule);border-radius:2px;font:inherit;color:var(--heading);font-weight:600;padding:0 .2rem;max-width:24rem}
+#archived{margin-top:.6rem}
+#archived summary{cursor:pointer;color:var(--muted);font-size:.75rem;letter-spacing:.06em;text-transform:uppercase}
+#archive{list-style:none;margin:.4rem 0 0;padding:0;display:flex;flex-direction:column;gap:.3rem}
+#archive .wsub{color:var(--muted);font-size:.75rem;display:block}
+#archive .werr{color:#cb4b16;font-size:.75rem;display:block}
 #statusBar select.sb-model:disabled{opacity:.55}
 #statusBar .sb-err{color:#dc322f;max-width:20rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #statusBar .sb-num{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
@@ -359,7 +364,11 @@ textarea::placeholder{color:var(--muted);opacity:.65}
   <div class="sect">
     <h2>Agents</h2>
     <ul id="agents"></ul>
-    <p class="empty" id="agentsEmpty">No background agents.</p>
+    <p class="empty" id="agentsEmpty">No running agents.</p>
+    <details id="archived">
+      <summary>Archived workers</summary>
+      <ul id="archive"></ul>
+    </details>
   </div>
 </aside>
 <script src="/chat-client.js" defer></script>
@@ -555,16 +564,32 @@ function sbField(cls) {
 const MODEL_CHOICES = [
   ['llmgateway', 'kimi-k3.1-pro'],
   ['paymentrequired', 'k3.1-pro'],
+  ['paymentrequired', 'k3.1-pro-highspeed'],
+  ['paymentrequired', 'kimi-for-coding'],
+  ['paymentrequired', 'kimi-for-coding-highspeed'],
+  ['paymentrequired', 'deepseek-v4.1-flash-abliterated'],
+  ['paymentrequired', 'gemini-3.5-flash-lite'],
+  ['paymentrequired', 'gemini-3.8-flash-high'],
+  ['paymentrequired', 'gemini-4-argon-high'],
+  ['paymentrequired', 'glm-5.3-abliterated'],
+  ['paymentrequired', 'glm-5.3-flash-abliterated'],
+  ['paymentrequired', 'cohere/north-mini-code:free'],
+  ['paymentrequired', 'dots-studio/dots-3-note-preview:free'],
+  ['paymentrequired', 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free'],
+  ['paymentrequired', 'nvidia/nemotron-3-ultra-550b-a55b:free'],
+  ['paymentrequired', 'nvidia/nemotron-3.5-lightning:free'],
   ['allmodels', 'moonshotai/kimi-k3.1-pro-abliterated'],
   ['llmgateway', 'deepseek-v4.1-flash-uncensored'],
   ['allmodels', 'deepseek/deepseek-v4.1-flash-abliterated'],
   ['llmgateway', 'glm-5.3'],
   ['allmodels', 'z-ai/glm-5.3-abliterated'],
 ];
-// Human labels for choices that read badly as provider/modelId (e.g. the free router plan).
-const MODEL_LABELS = {
-  'paymentrequired k3.1-pro': 'Kimi K3.1 Pro (OAuth plan · free)',
-};
+const PROVIDER_LABEL = { llmgateway: 'LLMGateway', allmodels: 'AllModels', paymentrequired: 'PaymentRequired' };
+// Readable, provider-prefixed labels: a bare id column would read identically in 13rem.
+const MODEL_LABELS = { 'paymentrequired k3.1-pro': 'Kimi K3.1 Pro · free router' };
+function modelLabel(pv, md) {
+  return MODEL_LABELS[pv + ' ' + md] || (PROVIDER_LABEL[pv] || pv) + ' · ' + md;
+}
 const sbModel = statusBar ? document.createElement('select') : null;
 const sbErr = statusBar ? sbField('sb-err') : null;
 if (sbModel) {
@@ -575,7 +600,7 @@ if (sbModel) {
   for (const [pv, md] of MODEL_CHOICES) {
     const o = document.createElement('option');
     o.value = pv + ' ' + md;
-    o.textContent = MODEL_LABELS[pv + ' ' + md] || pv + '/' + md;
+    o.textContent = modelLabel(pv, md);
     sbModel.appendChild(o);
   }
   statusBar.appendChild(sbModel);
