@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createModels } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai/providers/faux";
-import { attachOpenWeightsFailover, createOpenModels, isFailoverEligibleError, LLMGATEWAY_TO_ALLMODELS_MAP } from "../src/models.mjs";
+import { attachOpenWeightsFailover, createOpenModels, isFailoverEligibleError, LLMGATEWAY_TO_ALLMODELS_MAP, ROUTER_PAYMENTREQUIRED_MODELS } from "../src/models.mjs";
 
 test("1. isFailoverEligibleError matches HTTP 402 billing/credit errors and 5xx outages", () => {
   assert.equal(isFailoverEligibleError('HTTP 402: {"error":{"code":"billing_error","message":"organization has insufficient credits"}}'), true);
@@ -173,20 +173,33 @@ test("4. attachOpenWeightsFailover falls over to Tier-3 local-llama with explici
   }
 });
 
-test("paymentrequired: registered free provider, zero costs, no cross-provider fallback", async () => {
+test("paymentrequired: registered free provider, full catalogue, zero costs, no cross-provider fallback", async () => {
   const prevRouter = process.env.ROUTER_PAYMENTREQUIRED_API_KEY;
   const prevAll = process.env.ALLMODELS_API_KEY;
   process.env.ROUTER_PAYMENTREQUIRED_API_KEY = "test-router-key";
   try {
     const models = createOpenModels({ enableFailover: false });
-    const m = models.getModel("paymentrequired", "k3.1-pro");
-    assert.ok(m, "model registered");
-    assert.equal(m.provider, "paymentrequired");
-    assert.equal(m.api, "openai-completions");
-    assert.equal(m.baseUrl, "https://router.paymentrequired.com/v1/internal");
-    assert.match(m.name, /free|OAuth/i);
-    assert.deepEqual(m.cost, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
-    assert.equal(m.compat.maxTokensField, "max_tokens");
+    const ids = [
+      "deepseek-v4.1-flash-abliterated", "gemini-3.5-flash-lite", "gemini-3.8-flash-high",
+      "gemini-4-argon-high", "glm-5.3-abliterated", "glm-5.3-flash-abliterated", "k3.1-pro",
+      "k3.1-pro-highspeed", "kimi-for-coding", "kimi-for-coding-highspeed",
+      "cohere/north-mini-code:free", "dots-studio/dots-3-note-preview:free",
+      "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+      "nvidia/nemotron-3-ultra-550b-a55b:free", "nvidia/nemotron-3.5-lightning:free",
+    ];
+    assert.equal(ROUTER_PAYMENTREQUIRED_MODELS.length, ids.length);
+    for (const id of ids) {
+      const m = models.getModel("paymentrequired", id);
+      assert.ok(m, `model ${id} registered`);
+      assert.equal(m.provider, "paymentrequired");
+      assert.equal(m.api, "openai-completions");
+      assert.equal(m.baseUrl, "https://router.paymentrequired.com/v1/internal");
+      assert.equal(m.type, "chat");
+      assert.ok(m.name && m.maxTokens > 0 && m.contextWindow > 0, id);
+      assert.deepEqual(m.cost, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+      assert.equal(m.compat.maxTokensField, "max_tokens");
+    }
+    assert.match(models.getModel("paymentrequired", "k3.1-pro").name, /free router/i);
 
     // Free endpoint errors must surface directly (no fallback hop even with allmodels key present).
     process.env.ALLMODELS_API_KEY = "test-allmodels-key";

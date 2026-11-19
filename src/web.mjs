@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { unixRpc } from "./cli.mjs";
+import { ID_RE, MAX_BODY_BYTES, storeImages } from "./image-util.mjs";
 import { renderMarkdown } from "./markdown.mjs";
 import { openPasskeyStore } from "./webauthn.mjs";
 
@@ -40,6 +41,10 @@ async function readJsonLimited(req, maxBytes = 65_536) {
   return raw ? JSON.parse(raw) : {};
 }
 
+function extOf(mimeType) {
+  return mimeType === "image/jpeg" ? "jpg" : String(mimeType).replace("image/", "");
+}
+
 function sessionCookieHeader(token, maxAgeSec = 14 * 86_400) {
   const secure = ORIGIN.startsWith("https://") ? "; Secure" : "";
   return `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSec}${secure}`;
@@ -51,7 +56,7 @@ const SECURITY_HEADERS = {
   "Referrer-Policy": "no-referrer",
   "Cache-Control": "no-store",
   "Content-Security-Policy":
-    "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:4199; img-src 'self' https: http:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:4199; img-src 'self' data: blob: https: http:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
   "Cross-Origin-Opener-Policy": "same-origin",
 };
 
@@ -327,7 +332,22 @@ pre{padding:.75rem .9rem;overflow-x:auto;border-left:2px solid var(--rule);margi
 form{padding:.75rem 0 1.25rem;border-top:1px solid var(--rule)}
 textarea{width:100%;border:0;outline:0;background:transparent;color:var(--heading);font:inherit;resize:none;max-height:12rem;padding:0;margin:0}
 textarea::placeholder{color:var(--muted);opacity:.65}
+#composer-row{display:flex;gap:.5rem;align-items:flex-start}
+#composer-row textarea{flex:1}
+#attach-btn{flex:none;border:1px solid var(--rule);border-radius:.4rem;background:transparent;color:var(--muted);font:inherit;font-size:.8rem;padding:.1rem .45rem;cursor:pointer}
+#attach-btn:hover,#attach-btn:focus-visible{color:var(--heading);border-color:#2aa198}
+#pending-images{display:flex;gap:.5rem;flex-wrap:wrap;padding-bottom:.5rem}
+#pending-images[hidden]{display:none}
+#pending-images figure{margin:0;position:relative;width:5rem;text-align:center}
+#pending-images img{width:5rem;height:4rem;object-fit:cover;border-radius:.35rem;border:1px solid var(--rule);display:block}
+#pending-images figcaption{font-size:.6rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#pending-images .rm{position:absolute;top:-.35rem;right:-.35rem;width:1.15rem;height:1.15rem;line-height:1;border-radius:50%;border:1px solid var(--rule);background:var(--paper);color:var(--heading);cursor:pointer;font-size:.85rem;padding:0}
+#attach-status{margin:.35rem 0 0;font-size:.7rem;color:var(--muted);min-height:1em}
+#attach-status.bad{color:#dc322f}
+.himages{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.4rem}
+.himages img{max-width:9rem;max-height:7rem;border-radius:.35rem;border:1px solid var(--rule);display:block}
 </style>
+<link rel="stylesheet" href="/chat-theme.css">
 </head>
 <body>
 <div id="topbar">
@@ -357,8 +377,15 @@ textarea::placeholder{color:var(--muted);opacity:.65}
   </div>
   <div id="statusBar" aria-live="off"></div>
   <form id="f">
-    <textarea id="q" rows="1" placeholder="Ask…" autofocus></textarea>
+    <div id="pending-images" hidden></div>
+    <div id="composer-row">
+      <button type="button" id="attach-btn" aria-label="Attach images" title="Attach images (images only, max 3 × 4MB)">Attach</button>
+      <input type="file" id="attach-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
+      <textarea id="q" rows="1" placeholder="Ask…" autofocus></textarea>
+    </div>
+    <p id="attach-status" aria-live="polite"></p>
   </form>
+  <p id="credit">Rare UI inspiration: <a href="https://rareui.com/" target="_blank" rel="noopener noreferrer">rareui.com</a></p>
 </main>
 <aside id="rightCol">
   <div class="sect">
@@ -372,6 +399,7 @@ textarea::placeholder{color:var(--muted);opacity:.65}
   </div>
 </aside>
 <script src="/chat-client.js" defer></script>
+<script src="/chat-images.js" defer></script>
 <script>
 const log = document.getElementById('log');
 const q = document.getElementById('q');
@@ -460,6 +488,12 @@ async function syncHistory() {
       node.innerHTML = html;
       if (window.chatRender) window.chatRender(node);
     }
+    // Attachment history: ids only, images streamed by the authenticated /api/image endpoint.
+    const imgsSig = (e.images || []).join(',');
+    if (imgsSig && node.dataset.images !== imgsSig && window.chatImages) {
+      window.chatImages.renderHistory(node, e.images);
+      node.dataset.images = imgsSig;
+    }
     rendered.set(e.id, html);
     const want = after ? after.nextElementSibling : log.firstElementChild;
     if (node !== want) log.insertBefore(node, want);
@@ -470,7 +504,7 @@ async function syncHistory() {
   const lastRole = entries.length ? entries[entries.length - 1].role : '';
   const userTexts = new Set(entries.filter((e) => e.role === 'user').map((e) => (e.text || '').trim()));
   for (const p of Array.from(log.querySelectorAll('.pending'))) {
-    if (p.classList.contains('u') ? userTexts.has((p.dataset.raw || '').trim()) : lastRole === 'assistant') p.remove();
+    if (p.classList.contains('u') ? (userTexts.has((p.dataset.raw || '').trim()) || p.querySelector('.himages')) : lastRole === 'assistant') p.remove();
   }
   if (keep) log.scrollTop = log.scrollHeight; else log.scrollTop = prevTop;
 }
@@ -511,6 +545,8 @@ let target = 'lead';
 const targetsBox = document.getElementById('targets');
 const agentsUl = document.getElementById('agents');
 const agentsEmpty = document.getElementById('agentsEmpty');
+const archiveBox = document.getElementById('archived');
+const archiveUl = document.getElementById('archive');
 const statusBar = document.getElementById('statusBar');
 
 function fmtTok(n) {
@@ -542,7 +578,7 @@ function budgetLevel(free) {
 
 function workerCountText(list) {
   const l = list || [];
-  const running = l.filter((w) => w && w.state === 'running').length;
+  const running = l.filter(isRunning).length;
   return running + ' running / ' + l.length + ' total';
 }
 
@@ -550,7 +586,7 @@ function workerCountText(list) {
 function workerLevel(list) {
   const l = list || [];
   if (l.some((w) => w && /fail/i.test(String(w.state || '')))) return 'bad';
-  return l.some((w) => w && w.state === 'running') ? 'live' : '';
+  return l.some(isRunning) ? 'live' : '';
 }
 
 function sbField(cls) {
@@ -654,7 +690,7 @@ const sbWorkers = statusBar ? sbField('sb-workers') : null;
 function renderStatus(st, list) {
   if (!statusBar) return;
   const lead = (st && st.lead) || null;
-  const workers = list || [];
+  const workers = (list || []).filter(isWorker);
   if (sbModel) {
     const id = lead && lead.model ? String(lead.model) : '';
     sbModel.hidden = !id;
@@ -696,8 +732,13 @@ document.addEventListener('click', (ev) => {
   const b = ev.target.closest?.('[data-target]');
   if (b) { setTarget(b.dataset.target); closeDrawers(); }
 });
+setTarget('lead');
 
-const STATE_LABEL = { running: 'running', idle_done: 'idle', failed: 'failed', failed_turn_limit: 'failed (turn limit)' };
+// Registry states: running, idle_done, failed:turn_limit, stopped:<reason>, failed.
+const STATE_LABEL = { running: 'running', idle_done: 'idle', failed: 'failed', 'failed:turn_limit': 'failed (turn limit)' };
+const stateKey = (s) => String(s || 'idle_done').replace(/[:\s]/g, '_');
+const isRunning = (w) => Boolean(w) && String(w.state || '') === 'running';
+const isWorker = (w) => Boolean(w) && w.id && w.id !== 'lead' && !/^cron/i.test(String(w.role || w.id));
 function elapsed(ms) {
   const s = Math.max(0, Math.round(ms / 1000));
   if (s < 60) return s + 's';
@@ -706,55 +747,44 @@ function elapsed(ms) {
   return Math.floor(m / 60) + 'h ' + (m % 60) + 'm';
 }
 
-function renderAgents(list) {
+// Reconcile one <ul> against a worker list (running-first order comes from the server).
+function fillList(ul, list, withDot) {
   const known = new Set(list.map((w) => w.id));
-  for (const n of Array.from(agentsUl.children)) if (!known.has(n.dataset.id)) n.remove();
+  for (const n of Array.from(ul.children)) if (!known.has(n.dataset.id)) n.remove();
   const now = Date.now();
   let after = null;
   for (const w of list) {
-    let li = agentsUl.querySelector('[data-id="' + CSS.escape(w.id) + '"]');
+    let li = ul.querySelector('[data-id="' + CSS.escape(w.id) + '"]');
     if (!li) {
       li = document.createElement('li');
       li.dataset.id = w.id;
-      li.innerHTML = '<div class="wtop"><span class="dot"></span><span class="wrole"></span></div><span class="wsub"></span><span class="wsub werr"></span>';
+      li.innerHTML = (withDot ? '<div class="wtop"><span class="dot"></span><span class="wrole"></span></div>' : '<span class="wrole"></span>') + '<span class="wsub"></span><span class="werr"></span>';
       li.querySelector('.wrole').textContent = w.role || w.id;
     }
-    li.className = 'wk s-' + (w.state || 'idle');
+    li.className = 'wk s-' + stateKey(w.state);
     li.querySelector('.wrole').textContent = (w.role || 'worker') + ' · ' + w.id;
     li.querySelector('.wsub').textContent =
-      (STATE_LABEL[w.state] || w.state || 'idle') + (w.createdAt ? ' · ' + elapsed(now - w.createdAt) : '');
-    const err = li.querySelector('.werr');
-    err.textContent = w.lastError ? String(w.lastError).slice(0, 120) : '';
-    const want = after ? after.nextElementSibling : agentsUl.firstElementChild;
-    if (li !== want) agentsUl.insertBefore(li, want);
+      (STATE_LABEL[w.state] || String(w.state || 'idle')) + (w.createdAt && withDot ? ' · ' + elapsed(now - w.createdAt) : '');
+    li.querySelector('.werr').textContent = w.lastError ? String(w.lastError).slice(0, 120) : '';
+    const want = after ? after.nextElementSibling : ul.firstElementChild;
+    if (li !== want) ul.insertBefore(li, want);
     after = li;
   }
-  agentsEmpty.hidden = list.length > 0;
 }
 
-// Worker navigation in the left sidebar follows the same live list.
-function renderTargets(list) {
-  const ids = [];
-  for (const w of list) if (w.id && w.id !== 'lead' && !ids.includes(w.id)) ids.push(w.id);
-  for (const n of Array.from(targetsBox.children)) if (!ids.includes(n.dataset.target)) n.remove();
-  const now = Date.now();
-  for (const id of ids) {
-    let b = targetsBox.querySelector('[data-target="' + CSS.escape(id) + '"]');
-    if (!b) {
-      b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'tgt';
-      b.dataset.target = id;
-      b.innerHTML = '<span class="tname"></span><span class="tmeta"></span>';
-      targetsBox.appendChild(b);
-    }
-    const w = list.find((x) => x.id === id);
-    b.querySelector('.tname').textContent = w.role || 'worker';
-    b.querySelector('.tmeta').textContent =
-      (STATE_LABEL[w.state] || w.state || 'idle') + (w.createdAt ? ' · ' + elapsed(now - w.createdAt) : '');
-    b.setAttribute('aria-current', String(target === id));
-  }
-  if (target !== 'lead' && !ids.includes(target)) setTarget('lead');
+// Right sidebar: running agents live; everything else collapses into Archived workers.
+function renderAgents(list) {
+  const workers = list.filter(isWorker);
+  fillList(agentsUl, workers.filter(isRunning), true);
+  if (archiveUl) fillList(archiveUl, workers.filter((w) => !isRunning(w)), false);
+  agentsEmpty.hidden = agentsUl.children.length > 0;
+  if (archiveBox) archiveBox.hidden = !archiveUl || archiveUl.children.length === 0;
+}
+
+// Left sidebar keeps ONLY the orchestrator (Lead); no per-worker targets are generated.
+function renderTargets() {
+  for (const n of Array.from(targetsBox.children)) n.remove();
+  setTarget('lead');
 }
 
 // Poll the read-only agent list on the shared backoff; paused while hidden.
@@ -770,7 +800,11 @@ async function pollWorkers() {
     renderAgents(list);
     renderTargets(list);
     renderStatus(d.status || null, list);
-  } catch {}
+    agentsEmpty.textContent = list.length ? '' : 'No running agents.';
+  } catch (e) {
+    // Surface the real poll failure instead of a silently stale/empty sidebar.
+    if (!agentsUl.children.length && !agentsEmpty.hidden) agentsEmpty.textContent = 'Poll failed: ' + String((e && e.message) || e);
+  }
 }
 workersTimer = setInterval(pollWorkers, POLL_MS);
 
@@ -868,25 +902,51 @@ q.addEventListener('input', fit);
 
 async function send(steer = false) {
   const text = q.value.trim();
-  if (!text) return;
+  const imgs = window.chatImages ? window.chatImages.take() : [];
+  if (!text && !imgs.length) return;
+  let payloadImages = [];
+  if (imgs.length) {
+    try {
+      payloadImages = await window.chatImages.toDataUrls(imgs);
+    } catch (e) {
+      window.chatImages.note(e.message || 'Image read failed', true);
+      return;
+    }
+  }
   q.value = '';
   fit();
   const userNode = addHtml('u', '', text);
-  if (userNode) userNode.dataset.raw = text;
-  renderMd(text).then((h) => {
-    if (h && userNode && userNode.isConnected) {
-      userNode.innerHTML = h;
-      if (window.chatRender) window.chatRender(userNode);
+  if (userNode) {
+    userNode.dataset.raw = text;
+    if (payloadImages.length) {
+      const box = document.createElement('div');
+      box.className = 'himages';
+      payloadImages.forEach((p) => {
+        const img = document.createElement('img');
+        img.src = p.dataUrl;
+        img.alt = p.name;
+        box.appendChild(img);
+      });
+      userNode.appendChild(box);
     }
-  });
+  }
+  if (text) {
+    renderMd(text).then((h) => {
+      if (h && userNode && userNode.isConnected) {
+        const keepImgs = userNode.querySelector('.himages');
+        userNode.innerHTML = h;
+        if (keepImgs) userNode.appendChild(keepImgs);
+      }
+    });
+  }
   const pending = addHtml('a', '', '…');
   busy = true;
   clearTimeout(pollTimer);
   try {
     const r = await fetch('/api/chat', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ text, steer, targetWorkerId: target })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, steer, targetWorkerId: target, images: payloadImages })
     });
     if (r.status === 401) { location.reload(); return; }
     const d = await safeJson(r);
@@ -895,13 +955,16 @@ async function send(steer = false) {
       setTimeout(() => { syncHistory().catch(() => {}); }, 2000);
     } else if (d.error) {
       pending.classList.add('err');
-      pending.textContent = 'Error: ' + d.error;
+      pending.textContent = 'Error: ' + d.error +
+        (payloadImages.length ? ' — the current model may not accept images; switch to a vision model.' : '');
     } else if (d.html) {
       pending.innerHTML = d.html;
       if (window.chatRender) window.chatRender(pending);
     } else {
       pending.textContent = d.text || '(done)';
     }
+    // Attachments only leave the deck once the message actually landed.
+    if (d && !d.error && imgs.length) window.chatImages.clear();
   } catch (e) {
     pending.textContent = 'Swarm reconnecting — syncing reply…';
     setTimeout(() => { syncHistory().catch(() => {}); }, 2000);
@@ -912,11 +975,18 @@ async function send(steer = false) {
   }
 }
 
+const attachBtn = document.getElementById('attach-btn');
+const attachInput = document.getElementById('attach-input');
+if (attachBtn && attachInput) attachBtn.onclick = () => attachInput.click();
+
 q.addEventListener('keydown', (ev) => {
   if (ev.key === 'Enter' && !ev.shiftKey) {
     ev.preventDefault();
     send(busy);
-  } else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') {
+    return;
+  }
+  // Ctrl/Cmd+V is handled by chat-images.js so pasted text stays untouched.
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') {
     ev.preventDefault();
     send(true);
   }
@@ -940,6 +1010,7 @@ export async function startWebServer({
   rpId = RP_ID,
   origin = ORIGIN,
 } = {}) {
+  const dataDirResolved = dirname(authDbPath);
   await mkdir(dirname(authDbPath), { recursive: true });
   await mkdir(dirname(bridgeSecretFile), { recursive: true });
   const auth = openPasskeyStore(authDbPath, { rpId, rpName: rpId, expectedOrigin: origin });
@@ -1089,8 +1160,31 @@ export async function startWebServer({
       if (req.method === "GET" && url.pathname === "/chat-client.js") {
         return assetFile("./chat-client.js", "text/javascript; charset=utf-8");
       }
+      if (req.method === "GET" && url.pathname === "/chat-theme.css") {
+        return assetFile("./chat-theme.css", "text/css; charset=utf-8");
+      }
       if (req.method === "GET" && url.pathname === "/mermaid-vendor.js") {
         return assetFile("../node_modules/mermaid/dist/mermaid.min.js", "text/javascript; charset=utf-8");
+      }
+
+      if (req.method === "GET" && url.pathname === "/chat-images.js") {
+        return assetFile("./chat-images.js", "text/javascript; charset=utf-8");
+      }
+      if (req.method === "GET" && url.pathname.startsWith("/api/image/")) {
+        const id = url.pathname.slice("/api/image/".length);
+        if (!ID_RE.test(id)) return sendJson(404, { error: "not_found" });
+        for (const ext of ["png", "jpg", "gif", "webp"]) {
+          try {
+            const buf = await readFile(join(dataDirResolved, "images", `${id}.${ext}`));
+            res.writeHead(200, {
+              "Content-Type": ext === "jpg" ? "image/jpeg" : `image/${ext}`,
+              ...SECURITY_HEADERS,
+              "Cache-Control": "private, max-age=31536000, immutable",
+            });
+            return res.end(buf);
+          } catch {}
+        }
+        return sendJson(404, { error: "not_found" });
       }
 
       if (req.method === "POST" && url.pathname === "/api/render") {
@@ -1161,7 +1255,7 @@ export async function startWebServer({
           const text = String(e.text || "");
           if (e.role === "user") {
             const clean = text.replace(/^\[ROUTER_HINT:[^\]]+\]\n/, "");
-            entries.push({ id: e.id, role: "user", text: clean, html: renderMarkdown(clean) });
+            entries.push({ id: e.id, role: "user", text: clean, html: renderMarkdown(clean), ...(e.images?.length ? { images: e.images } : {}) });
           } else if (e.role === "assistant") {
             if (text) {
               entries.push({ id: e.id, role: "assistant", text, html: renderMarkdown(text) });
@@ -1175,16 +1269,40 @@ export async function startWebServer({
       }
 
       if (req.method === "POST" && url.pathname === "/api/chat") {
-        const body = await readJsonLimited(req, 65_536);
+        const body = await readJsonLimited(req, MAX_BODY_BYTES);
         const text = String(body.text || "").trim();
-        if (!text) return sendJson(400, { error: "Empty prompt" });
+        let images = [];
+        try {
+          images = await storeImages(dataDirResolved, body.images);
+        } catch (err) {
+          const msg = String(err?.message || err);
+          return sendJson(msg.startsWith("Payload") ? 413 : 400, { error: msg });
+        }
+        if (!text && !images.length) return sendJson(400, { error: "Empty prompt" });
+        if (!images.length) {
+          const out = await unixRpc(sockPath, "POST", "/chat", {
+            text,
+            steer: !!body.steer,
+            targetWorkerId: body.targetWorkerId || "lead",
+            wait: true,
+          });
+          if (out && !out.error && out.text) out.html = renderMarkdown(out.text);
+          return sendJson(out?.error ? 500 : 200, out);
+        }
+        // Images present: ship base64 content blocks alongside the text.
+        const payload = [];
+        for (const i of images) {
+          payload.push({ mimeType: i.mimeType, data: (await readFile(join(dataDirResolved, "images", `${i.id}.${extOf(i.mimeType)}`))).toString("base64") });
+        }
         const out = await unixRpc(sockPath, "POST", "/chat", {
           text,
+          images: payload,
           steer: !!body.steer,
           targetWorkerId: body.targetWorkerId || "lead",
           wait: true,
         });
         if (out && !out.error && out.text) out.html = renderMarkdown(out.text);
+        if (out && !out.error) out.images = images.map((i) => i.id);
         return sendJson(out?.error ? 500 : 200, out);
       }
 

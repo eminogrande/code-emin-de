@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { startUnixSocketServer, unixRpc } from "../src/cli.mjs";
 import { openSwarmDaemon } from "../src/daemon.mjs";
-import { LEAD_MODEL_CHOICES, resolveLeadModelChoice } from "../src/models.mjs";
+import { LEAD_MODEL_CHOICES, resolveLeadModelChoice, ROUTER_PAYMENTREQUIRED_MODELS } from "../src/models.mjs";
 import { startWebServer } from "../src/web.mjs";
 
 test("1. allowlist: only known verified provider/model pairs resolve", () => {
@@ -24,6 +24,13 @@ test("1. allowlist: only known verified provider/model pairs resolve", () => {
     modelId: "k3.1-pro",
   });
   assert.equal(resolveLeadModelChoice("paymentrequired", "gemini-3.7-flash-high"), null);
+  // every router catalogue entry is selectable, and only under the router provider
+  const routerIds = ROUTER_PAYMENTREQUIRED_MODELS.map((m) => m.id);
+  assert.equal(routerIds.length, 15);
+  for (const id of routerIds) {
+    assert.ok(resolveLeadModelChoice("paymentrequired", id), id);
+    assert.equal(resolveLeadModelChoice("llmgateway", id), null, id);
+  }
   // wrong provider for a known model id, unknown provider, unknown model, empty
   assert.equal(resolveLeadModelChoice("allmodels", "kimi-k3.1-pro"), null);
   assert.equal(resolveLeadModelChoice("openrouter", "kimi-k3.1-pro"), null);

@@ -29,6 +29,7 @@ import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { openAgentBus } from "./bus.mjs";
 import { handleDeterministicCommand, probeProviderHealth } from "./commands.mjs";
 import { createBuiltinGuardHooks, HookRegistry } from "./hooks.mjs";
+import { imageId } from "./image-util.mjs";
 import { createOpenModels, resolveLeadModelChoice, ROLE_MODELS } from "./models.mjs";
 import { createOptMem } from "./optmem.mjs";
 import { ROLE_INSTRUCTIONS } from "./prompts.mjs";
@@ -250,8 +251,12 @@ export async function openSwarmDaemon({
       const m = e.model?.[0];
       if (!m) return { id: e.id, kind: e.kind };
       if (m.role === "user") {
-        const text = typeof m.content === "string" ? m.content : JSON.stringify(m.content);
-        return { id: e.id, role: "user", text };
+        if (typeof m.content === "string") return { id: e.id, role: "user", text: m.content };
+        const blocks = m.content || [];
+        const text = blocks.filter((b) => b.type === "text").map((b) => b.text).join("\n");
+        // History carries content-addressed ids only, never the base64 payload.
+        const images = blocks.filter((b) => b.type === "image").map((b) => imageId(Buffer.from(String(b.data || ""), "base64")));
+        return { id: e.id, role: "user", text, ...(images.length ? { images } : {}) };
       }
       if (m.role === "assistant") {
         const texts = (m.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
@@ -990,8 +995,9 @@ export async function openSwarmDaemon({
      * - `steer: true` (`Ctrl+S` live feedback) injects mid-run into Lead or named `targetWorkerId`!
      * - Multi-task prompt gets tagged via System-1 Jev so Lead fans out parallel background workers without blocking!
      */
-    async chat(text, { steer = false, targetWorkerId = "lead", wait = true } = {}) {
-      if (text == null || typeof text !== "string" || !text.trim()) {
+    async chat(text, { steer = false, targetWorkerId = "lead", wait = true, images = [] } = {}) {
+      const hasImages = Array.isArray(images) && images.length > 0;
+      if (text == null || typeof text !== "string" || (!text.trim() && !hasImages)) {
         return {
           route: "invalid",
           conversationId: ROOT_CONVERSATION_ID,
@@ -1083,10 +1089,17 @@ export async function openSwarmDaemon({
         targetConv = await harness.conversation(w.convId, BACKGROUND_CONTEXT);
       }
 
-      const content =
+      const promptText =
         targetWorkerId === "lead" && routeInfo.route === "fanout_parallel"
           ? `[ROUTER_HINT: fanout_parallel — spawn separate parallel workers via spawn_worker and return immediately]\n${text}`
           : text;
+      // Real image content blocks: provider sees the actual bytes, not filenames.
+      const content = hasImages
+        ? [
+            ...(promptText.trim() ? [{ type: "text", text: promptText }] : []),
+            ...images.map((i) => ({ type: "image", data: String(i.data), mimeType: String(i.mimeType) })),
+          ]
+        : promptText;
 
       const sub = await targetConv.submit(
         {

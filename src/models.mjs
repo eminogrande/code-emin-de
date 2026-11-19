@@ -32,7 +32,7 @@ const routerModel = (id, name, opts = {}) => ({
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 });
 
-const ROUTER_PAYMENTREQUIRED_MODELS = [
+export const ROUTER_PAYMENTREQUIRED_MODELS = [
   routerModel("k3.1-pro", "Kimi K3.1 Pro · free router", { image: true }),
   routerModel("k3.1-pro-highspeed", "Kimi K3.1 Pro Highspeed · free router", { image: true }),
   routerModel("kimi-for-coding", "Kimi for Coding · free router"),

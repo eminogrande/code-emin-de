@@ -66,13 +66,14 @@ export async function startUnixSocketServer({
       if (req.method === "POST" && url.pathname === "/chat") {
         const body = await readJsonBody(req);
         const text = typeof body.text === "string" ? body.text : "";
-        if (!text.trim()) {
+        if (!text.trim() && !(Array.isArray(body.images) && body.images.length)) {
           return send(400, { error: "text is required" });
         }
         const reply = await daemon.chat(text, {
           steer: !!body.steer,
           targetWorkerId: body.targetWorkerId || "lead",
           wait: body.wait !== false,
+          images: Array.isArray(body.images) ? body.images : [],
         });
         return send(200, reply);
       }

@@ -10,7 +10,7 @@ const clientScript = [...src.matchAll(/<script>\n([\s\S]*?)\n<\/script>/g)].pop(
 
 function boot(history, workers = [], status = null) {
   const dom = new JSDOM(
-    `<!doctype html><body><div id="topbar"><button id="tLeft"></button><button id="tRight"></button></div><div id="backdrop" hidden></div><aside id="leftCol"><div id="targets"></div></aside><main><div id="log"></div><div id="sshBar"><span id="sshDesc"></span><button id="sshApprove"></button><button id="sshDeny"></button></div><div id="statusBar"></div><form id="f"><textarea id="q"></textarea></form></main><aside id="rightCol"><ul id="agents"></ul><p id="agentsEmpty"></p></aside></body>`,
+    `<!doctype html><body><div id="topbar"><button id="tLeft"></button><button id="tRight"></button></div><div id="backdrop" hidden></div><aside id="leftCol"><button data-target="lead" aria-current="true">Lead</button><div id="targets"></div></aside><main><div id="log"></div><div id="sshBar"><span id="sshDesc"></span><button id="sshApprove"></button><button id="sshDeny"></button></div><div id="statusBar"></div><form id="f"><textarea id="q"></textarea></form></main><aside id="rightCol"><ul id="agents"></ul><p id="agentsEmpty"></p><details id="archived"><summary>Archived workers</summary><ul id="archive"></ul></details></aside></body>`,
     { runScripts: "outside-only", pretendToBeVisual: true },
   );
   const w = dom.window;
@@ -101,10 +101,12 @@ test("reply placeholder survives until the assistant entry lands, then goes", as
   w.close();
 });
 
-test("right AGENTS sidebar renders newly attached workers and statusBar shows model/context/workers", async () => {
+test("right sidebar shows only running agents; anything else is collapsed into Archived workers", async () => {
   const workers = [
     { id: "w-coder", role: "coder", state: "running", createdAt: Date.now() - 5000, lastError: null },
     { id: "btw-sidechat", role: "btw", state: "idle_done", createdAt: Date.now() - 120000, lastError: null },
+    { id: "w-fail", role: "coder", state: "stopped:aborted", createdAt: Date.now() - 9000, lastError: "aborted: user stop" },
+    { id: "cron-1", role: "cron", state: "running", createdAt: Date.now(), lastError: null },
   ];
   const status = {
     lead: { provider: "allmodels", model: "moonshotai/kimi-k3.1-pro-abliterated", contextTokens: 42000, contextWindow: 1048576 },
@@ -113,13 +115,46 @@ test("right AGENTS sidebar renders newly attached workers and statusBar shows mo
   const { w } = boot([], workers, status);
   await flush();
   const agentsUl = w.document.getElementById("agents");
-  assert.equal(agentsUl.children.length, 2, "newly created worker <li> nodes must be inserted into #agents");
+  assert.equal(agentsUl.children.length, 1, "only the running worker stays live");
   assert.match(agentsUl.children[0].textContent, /coder · w-coder/);
   assert.equal(w.document.getElementById("agentsEmpty").hidden, true);
+  const archive = w.document.getElementById("archive");
+  assert.equal(archive.children.length, 2, "done + failed workers are archived, cron excluded");
+  assert.match(archive.textContent, /idle/);
+  assert.match(archive.textContent, /aborted: user stop/);
+  assert.ok([...archive.children].some((li) => li.className.includes("s-stopped_aborted")));
+  const box = w.document.getElementById("archived");
+  assert.equal(box.hidden, false);
+  assert.equal(box.open, false, "archived section starts collapsed");
   const bar = w.document.getElementById("statusBar").textContent;
   assert.match(bar, /kimi-k3\.1-pro-abliterated/);
   assert.match(bar, /42k\/1\.05M/);
-  assert.match(bar, /1 running \/ 2 total/);
+  assert.match(bar, /1 running \/ 3 total/);
+  w.close();
+});
+
+test("left sidebar keeps only the lead target (no generated worker buttons)", async () => {
+  const { w } = boot([], [
+    { id: "w-coder", role: "coder", state: "running", createdAt: Date.now(), lastError: null },
+    { id: "w-two", role: "btw", state: "idle_done", createdAt: Date.now(), lastError: null },
+  ]);
+  await flush();
+  const targets = w.document.getElementById("targets");
+  assert.equal(targets.children.length, 0);
+  const lead = w.document.querySelector('[data-target="lead"]');
+  assert.equal(lead.getAttribute("aria-current"), "true", "static Lead target remains active");
+  assert.equal(targets.querySelectorAll("[data-target]").length, 0);
+  w.close();
+});
+
+test("failed poll surfaces a real message when nothing is listed", async () => {
+  const { w } = boot([]);
+  await flush();
+  w.fetch = async () => {
+    throw new Error("network down");
+  };
+  await w.eval("pollWorkers()");
+  assert.match(w.document.getElementById("agentsEmpty").textContent, /network down/);
   w.close();
 });
 
@@ -159,7 +194,7 @@ test("status bar marks low context amber/red and colours badge by worst worker s
   assert.ok(sel.hidden === false);
   ctx.w.close();
 
-  ctx = boot([], [{ id: "w-fail", state: "failed_turn_limit" }, { id: "w-run", state: "running" }], lead(800));
+  ctx = boot([], [{ id: "w-fail", state: "failed:turn_limit" }, { id: "w-run", state: "running" }], lead(800));
   await flush();
   bar = ctx.w.document.getElementById("statusBar");
   assert.ok(bar.querySelector(".sb-ctx").classList.contains("warn"));
