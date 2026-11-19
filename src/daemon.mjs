@@ -767,14 +767,14 @@ export async function openSwarmDaemon({
                     "bash",
                     [
                       "-lc",
-                      'shopt -s nullglob; ran=0; ' +
-                        'for f in src/*.mjs src/*.js src/*.cjs; do node --no-warnings --check "$f" || exit 1; done; ' +
-                        'for t in test/*.test.mjs test/*.test.js test/*.test.cjs src/*.test.mjs src/*.test.js src/*.test.cjs; do ' +
+                      'shopt -s nullglob; ran=0; srcs=0; ' +
+                        'for f in src/*.mjs src/*.js src/*.cjs *.mjs *.js *.cjs; do [ -f "$f" ] || continue; srcs=$((srcs+1)); node --no-warnings --check "$f" || exit 1; done; ' +
+                        'for t in test/*.test.mjs test/*.test.js test/*.test.cjs src/*.test.mjs src/*.test.js src/*.test.cjs *.test.mjs *.test.js *.test.cjs; do ' +
                         '[ "$t" = "test/swarm.test.mjs" ] && continue; ran=$((ran+1)); node --no-warnings --test "$t" || exit 1; done; ' +
                         'if [ "$ran" -eq 0 ]; then ' +
                         'if [ -f go.mod ]; then go test ./... || exit 1; ran=1; ' +
                         'elif [ -f pyproject.toml ] || [ -f pytest.ini ]; then pytest -q || exit 1; ran=1; fi; fi; ' +
-                        'if [ "$ran" -eq 0 ]; then echo "HARD GATE: zero test files found/executed in workspace" >&2; exit 1; fi',
+                        'if [ "$ran" -eq 0 ] && [ "$srcs" -gt 0 ]; then echo "HARD GATE: zero test files found/executed for $srcs source file(s)" >&2; exit 1; fi',
                     ],
                     { cwd: workspaceDir, timeout: 45_000 },
                   );
