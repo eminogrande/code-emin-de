@@ -13,6 +13,21 @@
   - `btw` (read-only side-chat): `deepseek-v4.1-flash-1017`
   - System-1 triage (`src/triage.mjs`): `jev-latest` (`/v1/decisions`) with deterministic offline fallback
 
+## 1.1 Durable Multi-Orchestration Control Plane
+
+`SwarmDoc.orchestrations` maps stable orchestration IDs to named Lead conversations. `General` maps to
+the existing root conversation for backwards compatibility. Every worker carries `orchestrationId`;
+workers spawned by a named Lead inherit it, while existing workers default to `General`.
+
+A UI-created worker has a durable goal, role, mode, conversation, enabled flag, run counter, and schedule.
+One-shot workers run immediately and remain manually triggerable. Recurring workers own a registered
+`swarm.forever_work` task. Its `tick` commits run metadata, submits bounded work to the same conversation,
+then `sleepUntil` the next interval. The harness—not a JavaScript `setInterval`—owns recovery after restart.
+Busy workers record `skipped_overlap`; paused workers retain their durable task but receive no submissions.
+This avoids token-burning infinite loops and unbounded queued submissions. Creation is capped at 50 named
+orchestrations and 25 workers per orchestration. Role/mode/interval/goal validation is model-free in
+`src/orchestrations.mjs`; authenticated web routes proxy to the existing `0600` Unix socket.
+
 ## 2. 3-Tier Open-Weights Failover & Local Failsafe (`src/models.mjs` + `llama-failsafe.service`)
 
 Cloud billing exhaustion (HTTP `402`) or provider outages (`5xx` / timeouts) must **never** cause a silent shutdown:

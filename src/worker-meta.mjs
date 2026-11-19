@@ -34,6 +34,14 @@ export function describeWorker(worker, live) {
     state: workerState(live),
     createdAt: Number(worker.createdAt) || 0,
     lastError: lastError(live?.runFailure),
+    orchestrationId: String(worker.orchestrationId || "general"),
+    name: String(worker.name || worker.workerId || worker.id || "worker"),
+    mode: worker.mode === "recurring" ? "recurring" : "once",
+    enabled: worker.enabled !== false,
+    everyMs: worker.mode === "recurring" ? Number(worker.everyMs) || null : null,
+    runCount: Number(worker.runCount) || 0,
+    lastRunAt: Number(worker.lastRunAt) || null,
+    lastAction: worker.lastAction ? String(worker.lastAction).slice(0, 80) : null,
   };
   if (worker.modelId) out.model = String(worker.modelId);
   return out;

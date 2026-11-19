@@ -9,6 +9,17 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ### Features
 
+- **Durable multi-orchestration jobs:** named left-sidebar orchestrations now own independent Lead
+  conversations, transcripts, and worker rosters. The approved Solarized visual design is unchanged.
+- **Persistent one-shot and recurring workers:** create workers from the right sidebar, run them manually,
+  or schedule them every 10 seconds–31 days. `swarm.forever_work` survives SQLite/daemon restarts,
+  sleeps without model spend, reuses conversation history, supports durable pause/resume, and skips
+  overlapping ticks. Caps: 50 named orchestrations, 25 workers/orchestration.
+- Added authenticated web + Unix-socket orchestration APIs, private-goal-safe public metadata, model-free
+  validation, ownership inheritance for Lead-spawned workers, and `GET /api/history?convId=<id>`.
+- Added `test/orchestrations.test.mjs` and browser coverage for session switching, worker scoping,
+  scheduling, pause behavior, validation, and real close/reopen persistence. Full suite: **111 passing**.
+
 - models: add free internal router provider `paymentrequired` ("PaymentRequired Free",
   OpenAI-compatible) with the **full** router catalogue: `k3.1-pro`, `k3.1-pro-highspeed`,
   `kimi-for-coding`, `kimi-for-coding-highspeed`, `deepseek-v4.1-flash-abliterated`,

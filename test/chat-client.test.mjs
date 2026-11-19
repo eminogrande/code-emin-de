@@ -10,7 +10,7 @@ const clientScript = [...src.matchAll(/<script>\n([\s\S]*?)\n<\/script>/g)].pop(
 
 function boot(history, workers = [], status = null) {
   const dom = new JSDOM(
-    `<!doctype html><body><div id="topbar"><button id="tLeft"></button><button id="tRight"></button></div><div id="backdrop" hidden></div><aside id="leftCol"><button data-target="lead" aria-current="true">Lead</button><div id="targets"></div></aside><main><div id="log"></div><div id="sshBar"><span id="sshDesc"></span><button id="sshApprove"></button><button id="sshDeny"></button></div><div id="statusBar"></div><form id="f"><textarea id="q"></textarea></form></main><aside id="rightCol"><ul id="agents"></ul><p id="agentsEmpty"></p><details id="archived"><summary>Archived workers</summary><ul id="archive"></ul></details></aside></body>`,
+    `<!doctype html><body><div id="topbar"><button id="tLeft"></button><button id="tRight"></button></div><div id="backdrop" hidden></div><aside id="leftCol"><button data-target="lead" data-conv="1" aria-current="true">General</button><div id="targets"></div><form id="new-orch"><input id="orch-name"><button>Add</button></form><p id="orch-status"></p></aside><main><div id="log"></div><div id="sshBar"><span id="sshDesc"></span><button id="sshApprove"></button><button id="sshDeny"></button></div><div id="statusBar"></div><form id="f"><textarea id="q"></textarea></form></main><aside id="rightCol"><button id="toggle-worker-form"></button><form id="new-worker"><input id="worker-name"><select id="worker-role"></select><select id="worker-mode"><option value="once">once</option></select><label id="worker-interval-label"><input id="worker-minutes"></label><textarea id="worker-goal"></textarea></form><p id="worker-form-status"></p><ul id="agents"></ul><p id="agentsEmpty"></p><details id="archived"><summary>Archived workers</summary><ul id="archive"></ul></details></aside></body>`,
     { runScripts: "outside-only", pretendToBeVisual: true },
   );
   const w = dom.window;
@@ -101,7 +101,7 @@ test("reply placeholder survives until the assistant entry lands, then goes", as
   w.close();
 });
 
-test("right sidebar shows only running agents; anything else is collapsed into Archived workers", async () => {
+test("right sidebar shows all persistent workers for the selected orchestration", async () => {
   const workers = [
     { id: "w-coder", role: "coder", state: "running", createdAt: Date.now() - 5000, lastError: null },
     { id: "btw-sidechat", role: "btw", state: "idle_done", createdAt: Date.now() - 120000, lastError: null },
@@ -115,21 +115,16 @@ test("right sidebar shows only running agents; anything else is collapsed into A
   const { w } = boot([], workers, status);
   await flush();
   const agentsUl = w.document.getElementById("agents");
-  assert.equal(agentsUl.children.length, 1, "only the running worker stays live");
-  assert.match(agentsUl.children[0].textContent, /coder · w-coder/);
+  assert.equal(agentsUl.children.length, 2, "running and idle workers stay visible; btw/cron excluded: " + [...agentsUl.children].map((n) => n.dataset.id).join(","));
+  assert.match(agentsUl.children[0].textContent, /w-coder/);
+  assert.match(agentsUl.textContent, /aborted: user stop/);
   assert.equal(w.document.getElementById("agentsEmpty").hidden, true);
-  const archive = w.document.getElementById("archive");
-  assert.equal(archive.children.length, 2, "done + failed workers are archived, cron excluded");
-  assert.match(archive.textContent, /idle/);
-  assert.match(archive.textContent, /aborted: user stop/);
-  assert.ok([...archive.children].some((li) => li.className.includes("s-stopped_aborted")));
   const box = w.document.getElementById("archived");
-  assert.equal(box.hidden, false);
-  assert.equal(box.open, false, "archived section starts collapsed");
+  assert.equal(box.hidden, true);
   const bar = w.document.getElementById("statusBar").textContent;
   assert.match(bar, /kimi-k3\.1-pro-abliterated/);
   assert.match(bar, /42k\/1\.05M/);
-  assert.match(bar, /1 running \/ 3 total/);
+  assert.match(bar, /1 running \/ 2 total/);
   w.close();
 });
 
@@ -144,6 +139,26 @@ test("left sidebar keeps only the lead target (no generated worker buttons)", as
   const lead = w.document.querySelector('[data-target="lead"]');
   assert.equal(lead.getAttribute("aria-current"), "true", "static Lead target remains active");
   assert.equal(targets.querySelectorAll("[data-target]").length, 0);
+  w.close();
+});
+
+test("named orchestration switches conversation and scopes its workers", async () => {
+  const { w, calls } = boot([], [
+    { id: "general-w", name: "General worker", role: "coder", state: "idle_done", orchestrationId: "general" },
+    { id: "ops-w", name: "Ops worker", role: "watcher", state: "idle_done", orchestrationId: "orch-ops", mode: "recurring", everyMs: 60000, enabled: true },
+  ]);
+  await flush();
+  w.eval(`renderTargets([{id:'general',name:'General',conversationId:1},{id:'orch-ops',name:'Operations',conversationId:9}])`);
+  const button = w.document.querySelector('[data-target="orchestration:orch-ops"]');
+  assert.equal(button.querySelector('.tname').textContent, 'Operations');
+  button.click();
+  await flush();
+  assert.equal(button.dataset.conv, '9');
+  assert.match(w.document.getElementById('q').placeholder, /Operations/);
+  assert.ok(calls.some((u) => String(u).includes('/api/history?convId=9')));
+  assert.match(w.document.getElementById('agents').textContent, /Ops worker/);
+  assert.doesNotMatch(w.document.getElementById('agents').textContent, /General worker/);
+  assert.match(w.document.getElementById('agents').textContent, /every 1m/);
   w.close();
 });
 

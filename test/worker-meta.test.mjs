@@ -32,6 +32,14 @@ test("worker-meta: record exposes only public fields", () => {
     createdAt: 5,
     lastError: "turn_limit: max turns",
     model: "m1",
+    orchestrationId: "general",
+    name: "w-a",
+    mode: "once",
+    enabled: true,
+    everyMs: null,
+    runCount: 0,
+    lastRunAt: null,
+    lastAction: null,
   });
   assert.ok(!("goal" in out));
 });

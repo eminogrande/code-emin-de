@@ -305,11 +305,23 @@ Catalog costs are declared `0` because the endpoint is free; labels say *free ro
 skip cross-provider failover, so the router's real error (quota, outage) is shown
 instead of a silent downgrade.
 
-### Sidebar Layout
+### Durable Orchestrations & Sidebar Layout
 
-The left sidebar holds only the orchestrator (`Lead` + the Lead model select); per-worker navigation
-buttons are gone. The right sidebar shows only *running* agents — everything finished or failed moves
-into a collapsed `<details>` section `Archived workers` (state, error, no transcript deletion).
+**WHY:** one global Lead and a flat worker list cannot represent several independent long-lived jobs.
+Each named orchestration owns a separate durable Lead conversation. The Solarized design stays intact:
+the left sidebar lists `General` plus user-created orchestrations; selecting one switches its transcript
+and workers. The right sidebar creates and controls that orchestration's workers.
+
+- **One task:** a persistent worker conversation runs immediately and remains available for `Run now`.
+- **Recurring:** durable `swarm.forever_work` uses `sleepUntil`: **zero model tokens while sleeping**,
+  restart recovery, and the same worker conversation on every run.
+- **Safety:** intervals are 10 seconds–31 days, busy ticks are skipped instead of queued, pause/resume
+  is durable, roles are allowlisted, and private goals never appear in sidebar JSON.
+- **Limits:** 50 named orchestrations and 25 workers per orchestration bound accidental fanout. Workers
+  spawned by an orchestration Lead inherit its ownership automatically.
+
+“Permanent” means durable identity, history, ownership, and schedule—not an infinite generation loop.
+Each recurring run is bounded and returns, keeping cost and concurrency explicit.
 
 ### Chat Composer Images (Paste / Attach)
 
@@ -374,7 +386,11 @@ swarm steer w-auth "use timingSafeEqual"
 | :--- | :--- |
 | `GET /healthz` | Liveness check (`{ ok: true, pid }`) |
 | `GET /status` | Full Lead state, usage ledger, active tasks, hooks, drafts, cron watchers |
-| `GET /workers` | Authoritative worker list sorted running-first |
+| `GET /workers` | Authoritative worker list sorted running-first, including orchestration/schedule metadata |
+| `GET /orchestrations` | List `General` and named durable Lead conversations |
+| `POST /orchestrations` | Create a named orchestration (`{ name }`) |
+| `POST /orchestration-workers` | Create one-shot/recurring worker (`{ orchestrationId, name, role, goal, mode, everyMs? }`) |
+| `POST /orchestration-worker` | `{ workerId, action: "run" | "pause" | "resume" }` |
 | `GET /hooks` | Registered out-of-core guardrail & lifecycle hooks with live counters |
 | `GET /transcript?convId=1&max=40` | Bounded conversation transcript |
 | `POST /chat` | Submit user message (`{ text: string, images?: [{mimeType,data} base64] }`, validated non-empty unless images are attached; deterministic slash commands, `/btw`, `/reinforce`, steer, or Lead turn) |
@@ -385,7 +401,8 @@ swarm steer w-auth "use timingSafeEqual"
 ## 10. Repository Map & Deep-Dive Docs
 
 ### Core Modules (`src/`)
-- `src/daemon.mjs` — Durable swarm orchestration (`Harness`, `SwarmDoc`, `RoleMetaDoc`, tools, `ForeverWatchTask`, Lead/worker lifecycle)
+- `src/daemon.mjs` — Durable swarm orchestration (`Harness`, `SwarmDoc`, `RoleMetaDoc`, tools, `ForeverWatchTask`, `ForeverWorkTask`, Lead/worker lifecycle)
+- `src/orchestrations.mjs` — Pure validation/public shaping for named Leads, worker modes, intervals, and schedules
 - `src/hooks.mjs` — Out-of-core `HookRegistry`, manifest validator, and built-in deterministic security & verification guardrails
 - `src/commands.mjs` — Deterministic zero-LLM slash commands (`/help`, `/status`, `/workers`, `/hooks`, `/credits`) + 3-tier health probe
 - `src/models.mjs` — Open-weights model catalog, role roster, and 3-tier failover (`llmgateway` -> `allmodels` -> `local-llama` with explicit warning banner)

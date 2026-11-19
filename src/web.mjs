@@ -318,6 +318,14 @@ pre{padding:.75rem .9rem;overflow-x:auto;border-left:2px solid var(--rule);margi
 #archived{margin-top:.6rem}
 #leftCol .credits{font-size:.7rem;margin-top:1rem}
 #leftCol .credits a{color:var(--muted)}
+.mini-form{display:flex;flex-direction:column;gap:.4rem;margin:.6rem 0}
+.mini-form input,.mini-form select,.mini-form textarea{box-sizing:border-box;width:100%;border:1px solid var(--rule);border-radius:3px;background:var(--paper);color:var(--ink);font:inherit;font-size:.8rem;padding:.35rem;resize:vertical}
+.mini-form button,.wk button,#toggle-worker-form{appearance:none;border:1px solid var(--rule);border-radius:3px;background:var(--paper);color:var(--heading);font:inherit;font-size:.78rem;padding:.3rem .45rem;cursor:pointer}
+.mini-form button:hover,.wk button:hover,#toggle-worker-form:hover{border-color:var(--accent)}
+.mini-form label{font-size:.75rem;color:var(--muted)}
+.mini-form label input{width:4.5rem;margin:0 .25rem}
+.wk .wactions{display:flex;gap:.35rem;margin-top:.35rem}
+.wk .wgoal{font-size:.72rem;color:var(--muted);margin-top:.25rem;white-space:pre-wrap}
 #archived summary{cursor:pointer;color:var(--muted);font-size:.75rem;letter-spacing:.06em;text-transform:uppercase}
 #archive{list-style:none;margin:.4rem 0 0;padding:0;display:flex;flex-direction:column;gap:.3rem}
 #archive .wsub{color:var(--muted);font-size:.75rem;display:block}
@@ -359,12 +367,17 @@ textarea::placeholder{color:var(--muted);opacity:.65}
 <div id="backdrop" hidden></div>
 <aside id="leftCol">
   <div class="sect">
-    <h2>Send to</h2>
-    <button type="button" class="tgt" data-target="lead" aria-current="true">
-      <span class="tname">Lead</span>
-      <span class="tmeta">main conversation</span>
+    <h2>Orchestrations</h2>
+    <button type="button" class="tgt" data-target="lead" data-conv="1" aria-current="true">
+      <span class="tname">General</span>
+      <span class="tmeta">main orchestration</span>
     </button>
     <div id="targets"></div>
+    <form id="new-orch" class="mini-form">
+      <input id="orch-name" maxlength="60" required placeholder="New job name" aria-label="New orchestration name">
+      <button type="submit">Add orchestration</button>
+    </form>
+    <p id="orch-status" class="empty" aria-live="polite"></p>
   </div>
   <div class="sect credits"><a href="https://rareui.com/" target="_blank" rel="noopener noreferrer" title="Rare UI component credits">About · Credits</a></div>
 </aside>
@@ -391,6 +404,16 @@ textarea::placeholder{color:var(--muted);opacity:.65}
 <aside id="rightCol">
   <div class="sect">
     <h2>Agents</h2>
+    <button type="button" id="toggle-worker-form">New worker</button>
+    <form id="new-worker" class="mini-form" hidden>
+      <input id="worker-name" maxlength="60" required placeholder="Worker name" aria-label="Worker name">
+      <select id="worker-role" aria-label="Worker role"><option>coder</option><option>planner</option><option>reviewer</option><option>watcher</option><option>support</option><option>social</option></select>
+      <select id="worker-mode" aria-label="Worker schedule"><option value="once">One task</option><option value="recurring">Recurring</option></select>
+      <label id="worker-interval-label" hidden>Every <input id="worker-minutes" type="number" min="1" max="44640" value="5"> minutes</label>
+      <textarea id="worker-goal" rows="4" maxlength="12000" required placeholder="What should this worker do?"></textarea>
+      <button type="submit">Create worker</button>
+    </form>
+    <p id="worker-form-status" class="empty" aria-live="polite"></p>
     <ul id="agents"></ul>
     <p class="empty" id="agentsEmpty">No running agents.</p>
     <details id="archived">
@@ -465,7 +488,7 @@ const rendered = new Map();
 // Reconcile rendered log against transcript order: reuse by id, insert new, drop vanished.
 // An unsent-input draft, selection and scroll stay untouched unless the log was at the bottom.
 async function syncHistory() {
-  const r = await fetch('/api/history');
+  const r = await fetch('/api/history?convId=' + encodeURIComponent(currentConv));
   if (r.status === 401) { location.reload(); return; }
   if (!r.ok) throw new Error('history ' + r.status);
   const d = await safeJson(r);
@@ -544,6 +567,10 @@ async function hydrate() {
 
 // ---- sidebars: send target + live agents (textContent only, read-only API) ----
 let target = 'lead';
+let currentConv = 1;
+let currentOrchestration = 'general';
+let orchestrationList = [{ id: 'general', name: 'General', conversationId: 1 }];
+let allWorkers = [];
 const targetsBox = document.getElementById('targets');
 const agentsUl = document.getElementById('agents');
 const agentsEmpty = document.getElementById('agentsEmpty');
@@ -724,23 +751,30 @@ function renderStatus(st, list) {
   statusBar.hidden = !lead && workers.length === 0;
 }
 
-function setTarget(id) {
+function setTarget(id, convId, orchestrationId) {
   target = id;
+  currentConv = Number(convId) || 1;
+  currentOrchestration = orchestrationId || 'general';
+  rendered.clear();
+  log.replaceChildren();
+  q.placeholder = 'Message ' + (orchestrationList.find((o) => o.id === currentOrchestration)?.name || 'orchestration') + '…';
   for (const b of document.querySelectorAll('[data-target]')) {
     b.setAttribute('aria-current', String(b.dataset.target === id));
   }
+  renderAgents(allWorkers);
+  syncHistory().catch(() => {});
 }
 document.addEventListener('click', (ev) => {
   const b = ev.target.closest?.('[data-target]');
-  if (b) { setTarget(b.dataset.target); closeDrawers(); }
+  if (b) { setTarget(b.dataset.target, b.dataset.conv, b.dataset.orch); closeDrawers(); }
 });
-setTarget('lead');
+// Initial General/Lead state is declared above and rendered by the static HTML.
 
 // Registry states: running, idle_done, failed:turn_limit, stopped:<reason>, failed.
 const STATE_LABEL = { running: 'running', idle_done: 'idle', failed: 'failed', 'failed:turn_limit': 'failed (turn limit)' };
 const stateKey = (s) => String(s || 'idle_done').replace(/[:\s]/g, '_');
 const isRunning = (w) => Boolean(w) && String(w.state || '') === 'running';
-const isWorker = (w) => Boolean(w) && w.id && w.id !== 'lead' && !/^cron/i.test(String(w.role || w.id));
+const isWorker = (w) => Boolean(w) && w.id && w.id !== 'lead' && w.role !== 'btw' && !/^cron/i.test(String(w.role || w.id));
 function elapsed(ms) {
   const s = Math.max(0, Math.round(ms / 1000));
   if (s < 60) return s + 's';
@@ -760,14 +794,23 @@ function fillList(ul, list, withDot) {
     if (!li) {
       li = document.createElement('li');
       li.dataset.id = w.id;
-      li.innerHTML = (withDot ? '<div class="wtop"><span class="dot"></span><span class="wrole"></span></div>' : '<span class="wrole"></span>') + '<span class="wsub"></span><span class="werr"></span>';
+      li.innerHTML = (withDot ? '<div class="wtop"><span class="dot"></span><span class="wrole"></span></div>' : '<span class="wrole"></span>') + '<span class="wsub"></span><span class="werr"></span><div class="wactions"><button type="button" data-worker-action="run">Run now</button><button type="button" data-worker-action="pause"></button></div>';
       li.querySelector('.wrole').textContent = w.role || w.id;
     }
     li.className = 'wk s-' + stateKey(w.state);
-    li.querySelector('.wrole').textContent = (w.role || 'worker') + ' · ' + w.id;
+    li.querySelector('.wrole').textContent = w.name || ((w.role || 'worker') + ' · ' + w.id);
+    const schedule = w.mode === 'recurring' ? ' · every ' + Math.round((w.everyMs || 0) / 60000) + 'm' : ' · once';
     li.querySelector('.wsub').textContent =
-      (STATE_LABEL[w.state] || String(w.state || 'idle')) + (w.createdAt && withDot ? ' · ' + elapsed(now - w.createdAt) : '');
+      (w.enabled === false ? 'paused' : (STATE_LABEL[w.state] || String(w.state || 'idle'))) + schedule + ' · ' + (w.runCount || 0) + ' runs';
     li.querySelector('.werr').textContent = w.lastError ? String(w.lastError).slice(0, 120) : '';
+    const runBtn = li.querySelector('[data-worker-action="run"]');
+    runBtn.dataset.workerId = w.id;
+    runBtn.disabled = w.enabled === false || isRunning(w);
+    const pauseBtn = li.querySelector('[data-worker-action="pause"]');
+    pauseBtn.dataset.workerId = w.id;
+    pauseBtn.hidden = w.mode !== 'recurring';
+    pauseBtn.dataset.workerAction = w.enabled === false ? 'resume' : 'pause';
+    pauseBtn.textContent = w.enabled === false ? 'Resume' : 'Pause';
     const want = after ? after.nextElementSibling : ul.firstElementChild;
     if (li !== want) ul.insertBefore(li, want);
     after = li;
@@ -776,31 +819,45 @@ function fillList(ul, list, withDot) {
 
 // Right sidebar: running agents live; everything else collapses into Archived workers.
 function renderAgents(list) {
-  const workers = list.filter(isWorker);
-  fillList(agentsUl, workers.filter(isRunning), true);
-  if (archiveUl) fillList(archiveUl, workers.filter((w) => !isRunning(w)), false);
+  const workers = list.filter(isWorker).filter((w) => (w.orchestrationId || 'general') === currentOrchestration);
+  fillList(agentsUl, workers, true);
   agentsEmpty.hidden = agentsUl.children.length > 0;
-  if (archiveBox) archiveBox.hidden = !archiveUl || archiveUl.children.length === 0;
+  agentsEmpty.textContent = 'No workers in this orchestration.';
+  if (archiveBox) archiveBox.hidden = true;
 }
 
-// Left sidebar keeps ONLY the orchestrator (Lead); no per-worker targets are generated.
-function renderTargets() {
-  for (const n of Array.from(targetsBox.children)) n.remove();
-  setTarget('lead');
+// Left sidebar lists durable named orchestrations, each backed by its own Lead conversation.
+function renderTargets(list) {
+  orchestrationList = list && list.length ? list : orchestrationList;
+  targetsBox.replaceChildren();
+  for (const o of orchestrationList.filter((x) => x.id !== 'general')) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tgt';
+    b.dataset.target = 'orchestration:' + o.id;
+    b.dataset.conv = String(o.conversationId);
+    b.dataset.orch = o.id;
+    b.setAttribute('aria-current', String(currentOrchestration === o.id));
+    const name = document.createElement('span'); name.className = 'tname'; name.textContent = o.name;
+    const meta = document.createElement('span'); meta.className = 'tmeta'; meta.textContent = o.state || 'idle';
+    b.append(name, meta); targetsBox.appendChild(b);
+  }
 }
 
 // Poll the read-only agent list on the shared backoff; paused while hidden.
 async function pollWorkers() {
   if (document.hidden) return;
   try {
-    const r = await fetch('/api/workers');
-    if (r.status === 401) { location.reload(); return; }
+    const [r, or] = await Promise.all([fetch('/api/workers'), fetch('/api/orchestrations')]);
+    if (r.status === 401 || or.status === 401) { location.reload(); return; }
     if (!r.ok) return;
     const d = await safeJson(r);
+    const od = or.ok ? await safeJson(or) : null;
     if (!d || d._nonJson) return;
     const list = (d.workers || []).filter((w) => w && w.id && w.id !== 'lead');
+    allWorkers = list;
+    renderTargets(od?.orchestrations || orchestrationList);
     renderAgents(list);
-    renderTargets(list);
     renderStatus(d.status || null, list);
     agentsEmpty.textContent = list.length ? '' : 'No running agents.';
   } catch (e) {
@@ -809,6 +866,66 @@ async function pollWorkers() {
   }
 }
 workersTimer = setInterval(pollWorkers, POLL_MS);
+
+// Durable orchestration and worker controls. No prompt/LLM is needed to create or control these.
+const orchStatus = document.getElementById('orch-status');
+document.getElementById('new-orch').onsubmit = async (ev) => {
+  ev.preventDefault();
+  orchStatus.textContent = 'Creating…';
+  try {
+    const name = document.getElementById('orch-name').value;
+    const r = await fetch('/api/orchestrations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+    const d = await safeJson(r);
+    if (!r.ok || d.error) throw new Error(d.error || 'Create failed');
+    document.getElementById('orch-name').value = '';
+    orchStatus.textContent = 'Created ' + d.name;
+    await pollWorkers();
+    setTarget('orchestration:' + d.id, d.conversationId, d.id);
+  } catch (e) { orchStatus.textContent = String(e.message || e); }
+};
+
+const workerForm = document.getElementById('new-worker');
+const workerMode = document.getElementById('worker-mode');
+const intervalLabel = document.getElementById('worker-interval-label');
+document.getElementById('toggle-worker-form').onclick = () => { workerForm.hidden = !workerForm.hidden; };
+workerMode.onchange = () => { intervalLabel.hidden = workerMode.value !== 'recurring'; };
+workerForm.onsubmit = async (ev) => {
+  ev.preventDefault();
+  const status = document.getElementById('worker-form-status');
+  status.textContent = 'Creating…';
+  try {
+    const mode = workerMode.value;
+    const payload = {
+      orchestrationId: currentOrchestration,
+      name: document.getElementById('worker-name').value,
+      role: document.getElementById('worker-role').value,
+      goal: document.getElementById('worker-goal').value,
+      mode,
+      everyMs: mode === 'recurring' ? Number(document.getElementById('worker-minutes').value) * 60000 : undefined,
+    };
+    const r = await fetch('/api/orchestration-workers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const d = await safeJson(r);
+    if (!r.ok || d.error) throw new Error(d.error || 'Create failed');
+    workerForm.reset(); intervalLabel.hidden = true; workerForm.hidden = true;
+    status.textContent = mode === 'recurring' ? 'Recurring worker started.' : 'One-shot worker started.';
+    await pollWorkers();
+  } catch (e) { status.textContent = String(e.message || e); }
+};
+
+document.addEventListener('click', async (ev) => {
+  const b = ev.target.closest?.('[data-worker-action]');
+  if (!b) return;
+  b.disabled = true;
+  try {
+    const r = await fetch('/api/orchestration-worker', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workerId: b.dataset.workerId, action: b.dataset.workerAction }) });
+    const d = await safeJson(r);
+    if (!r.ok || d.error) throw new Error(d.error || 'Action failed');
+    await pollWorkers();
+  } catch (e) {
+    document.getElementById('worker-form-status').textContent = String(e.message || e);
+    b.disabled = false;
+  }
+});
 
 // ---- responsive drawers ----
 const leftCol = document.getElementById('leftCol');
@@ -1236,6 +1353,28 @@ export async function startWebServer({
         return sendJson(200, workersCache.body, { "Cache-Control": "private, max-age=2" });
       }
 
+      if (req.method === "GET" && url.pathname === "/api/orchestrations") {
+        const out = await unixRpc(sockPath, "GET", "/orchestrations");
+        return sendJson(out?.error ? 500 : 200, out);
+      }
+      if (req.method === "POST" && url.pathname === "/api/orchestrations") {
+        const body = await readJsonLimited(req, 4096);
+        const out = await unixRpc(sockPath, "POST", "/orchestrations", { name: body.name });
+        return sendJson(out?.error ? 400 : 201, out);
+      }
+      if (req.method === "POST" && url.pathname === "/api/orchestration-workers") {
+        const body = await readJsonLimited(req, 32_768);
+        const out = await unixRpc(sockPath, "POST", "/orchestration-workers", body);
+        workersCache = null;
+        return sendJson(out?.error ? 400 : 201, out);
+      }
+      if (req.method === "POST" && url.pathname === "/api/orchestration-worker") {
+        const body = await readJsonLimited(req, 4096);
+        const out = await unixRpc(sockPath, "POST", "/orchestration-worker", body);
+        workersCache = null;
+        return sendJson(out?.error ? 400 : 200, out);
+      }
+
       if (req.method === "GET" && url.pathname === "/api/status") {
         const st = await unixRpc(sockPath, "GET", "/status");
         if (st?.error) return sendJson(500, st);
@@ -1249,7 +1388,9 @@ export async function startWebServer({
 
       if (req.method === "GET" && url.pathname === "/api/history") {
         const max = Math.min(Math.max(Number(url.searchParams.get("max") || 40) || 40, 1), 200);
-        const out = await unixRpc(sockPath, "GET", `/transcript?convId=1&max=${max}`);
+        const requestedConv = Number(url.searchParams.get("convId") || "1");
+        const convId = Number.isSafeInteger(requestedConv) && requestedConv > 0 ? requestedConv : 1;
+        const out = await unixRpc(sockPath, "GET", `/transcript?convId=${convId}&max=${max}`);
         if (out?.error) return sendJson(500, out);
         // Entry ids let the client reconcile in place (no re-render wipe, no duplicates).
         const entries = [];

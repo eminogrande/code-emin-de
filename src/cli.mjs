@@ -55,6 +55,24 @@ export async function startUnixSocketServer({
       if (req.method === "GET" && url.pathname === "/workers") {
         return send(200, { workers: await daemon.listWorkers() });
       }
+      if (req.method === "GET" && url.pathname === "/orchestrations") {
+        return send(200, { orchestrations: await daemon.listOrchestrations() });
+      }
+      if (req.method === "POST" && url.pathname === "/orchestrations") {
+        const body = await readJsonBody(req);
+        return send(201, await daemon.createOrchestration(body.name));
+      }
+      if (req.method === "POST" && url.pathname === "/orchestration-workers") {
+        const body = await readJsonBody(req);
+        return send(201, await daemon.createOrchestrationWorker(body.orchestrationId, body));
+      }
+      if (req.method === "POST" && url.pathname === "/orchestration-worker") {
+        const body = await readJsonBody(req);
+        const out = body.action === "run"
+          ? await daemon.triggerOrchestrationWorker(body.workerId)
+          : await daemon.setOrchestrationWorkerEnabled(body.workerId, body.action === "resume");
+        return send(200, out);
+      }
       if (req.method === "GET" && url.pathname === "/hooks") {
         return send(200, { hooks: daemon.listHooks() });
       }

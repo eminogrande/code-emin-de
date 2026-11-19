@@ -32,6 +32,14 @@ import { createBuiltinGuardHooks, HookRegistry } from "./hooks.mjs";
 import { imageId } from "./image-util.mjs";
 import { createOpenModels, resolveLeadModelChoice, ROLE_MODELS } from "./models.mjs";
 import { createOptMem } from "./optmem.mjs";
+import {
+  DEFAULT_ORCHESTRATION_ID,
+  MIN_WORKER_INTERVAL_MS,
+  nextRunAt,
+  publicOrchestration,
+  validateOrchestrationName,
+  validateWorkerInput,
+} from "./orchestrations.mjs";
 import { ROLE_INSTRUCTIONS } from "./prompts.mjs";
 import { classifyUserPrompt, triageWatcherEvent } from "./triage.mjs";
 import { createSupervisor, SUPERVISOR_DEFAULTS } from "./supervisor.mjs";
@@ -47,6 +55,7 @@ export const SwarmDoc = defineDoc({
     alerts: [],
     approvals: [],
     cronJobs: {},
+    orchestrations: {}, // named durable Lead conversations; workers point back by orchestrationId
     leadModelOverride: null, // { provider, modelId } from the chat model dropdown (allowlisted only)
   }),
   checkpointWhen: (_v, _ops, info) => info.deltasSinceBase >= 16,
@@ -61,7 +70,7 @@ export const RoleMetaDoc = defineDoc({
   scope: "conversation",
   history: "latest",
   fork: "current",
-  initial: () => ({ role: "lead", workerId: "lead", requireVerified: false }),
+  initial: () => ({ role: "lead", workerId: "lead", orchestrationId: DEFAULT_ORCHESTRATION_ID, requireVerified: false }),
   checkpointWhen: () => true,
 });
 
@@ -84,6 +93,7 @@ function roleToolSet(role) {
 function roleToolNames(role) {
   switch (role) {
     case "lead":
+    case "orchestrator":
       return [
         "spawn_worker",
         "list_workers",
@@ -241,6 +251,57 @@ export async function openSwarmDaemon({
     },
   });
 
+  // Durable recurring worker: permanent conversation, zero-token sleep between runs.
+  // A busy worker is skipped rather than queued, preventing unbounded overlapping submissions.
+  const ForeverWorkTask = defineTask({
+    name: "swarm.forever_work",
+    version: 1,
+    initial: (input) => ({ phase: "tick", runs: 0, workerId: input.workerId }),
+    phases: {
+      async tick(task, runtime, context) {
+        const { workerId } = task.input;
+        const now = runtime.now();
+        const swarm = (await runtime.snapshot(SwarmDoc, context)) || { workers: {} };
+        const worker = swarm.workers?.[workerId];
+        if (!worker) return runtime.commit(() => ({ status: "terminal", outcome: { status: "done", reason: "worker_missing" } }), context);
+        const everyMs = Math.max(MIN_WORKER_INTERVAL_MS, Number(worker.everyMs) || 60_000);
+        let runs = task.state.checkpoint.runs || 0;
+        if (worker.enabled === false) {
+          await runtime.commit(async (tx) => {
+            const doc = await tx.doc(SwarmDoc);
+            if (doc.workers[workerId]) doc.workers[workerId].lastAction = "paused";
+          }, context);
+          return runtime.sleepUntil(now + everyMs, { phase: "tick", runs: task.state.checkpoint.runs || 0, workerId }, context);
+        }
+        const live = await runtime.snapshot(LiveDoc, worker.convId, context);
+        if (live?.run) {
+          await runtime.commit(async (tx) => {
+            const doc = await tx.doc(SwarmDoc);
+            if (doc.workers[workerId]) doc.workers[workerId].lastAction = "skipped_overlap";
+          }, context);
+        } else {
+          runs += 1;
+          await runtime.commit(async (tx) => {
+            const doc = await tx.doc(SwarmDoc);
+            const w = doc.workers[workerId];
+            if (w) Object.assign(w, { lastRunAt: now, lastAction: "submitted", runCount: (w.runCount || 0) + 1 });
+          }, context);
+          const conv = await runtime.conversation(worker.convId, context);
+          if (conv) {
+            await conv.submit({
+              type: "input",
+              content: `[RECURRING RUN ${runs} | ORCHESTRATION=${worker.orchestrationId} | WORKER=${workerId}]\n${worker.goal}\n\nPerform this run now. Keep prior conversation context; do not repeat completed work unless the goal requires it.`,
+            }, context);
+          }
+        }
+        await runtime.sleepUntil(now + everyMs, { phase: "tick", runs, workerId }, context);
+      },
+    },
+    async abort(_task, runtime, context) {
+      await runtime.commit(() => ({ status: "terminal", outcome: { status: "aborted" } }), context);
+    },
+  });
+
   // Read full non-truncated transcript of any sibling conversation
   async function readConversationTranscript(convId, maxEntries = 40) {
     if (!harnessRef) return [];
@@ -278,6 +339,97 @@ export async function openSwarmDaemon({
     });
   }
 
+  async function createNamedOrchestration(name) {
+    const cleanName = validateOrchestrationName(name);
+    const swarm = await harnessRef.snapshot(SwarmDoc, BACKGROUND_CONTEXT);
+    if (Object.keys(swarm?.orchestrations || {}).length >= 50) throw new Error("Orchestration limit reached (50)");
+    const id = `orch-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    let convId;
+    await harnessRef.commit(async (tx) => {
+      const c = await tx.createConversation({ ownership: { kind: "ownerless" } });
+      convId = c.id;
+      await configure(tx, convId, {
+        model: roleModels.lead,
+        thinkingLevel: "high",
+        cwd: workspaceDir,
+        maxTurns: 16,
+        tools: roleToolSet("orchestrator"),
+        instructions: `${ROLE_INSTRUCTIONS.lead}\n- You lead only orchestration ${id} (${cleanName}). Keep spawned workers on this job.`,
+      });
+      const meta = await tx.doc(RoleMetaDoc, convId);
+      Object.assign(meta, { role: "orchestrator", workerId: id, orchestrationId: id, requireVerified: false });
+      const doc = await tx.doc(SwarmDoc);
+      doc.orchestrations ||= {};
+      doc.orchestrations[id] = { id, name: cleanName, convId, createdAt: Date.now() };
+    }, BACKGROUND_CONTEXT);
+    return { id, name: cleanName, conversationId: convId };
+  }
+
+  async function createPersistentWorker(orchestrationId, input) {
+    const args = validateWorkerInput(input);
+    if (orchestrationId !== DEFAULT_ORCHESTRATION_ID) {
+      const snap = await harnessRef.snapshot(SwarmDoc, BACKGROUND_CONTEXT);
+      if (!snap?.orchestrations?.[orchestrationId]) throw new Error(`Unknown orchestration: ${orchestrationId}`);
+    }
+    const workers = await listWorkersSnapshot();
+    if (workers.filter((w) => w.orchestrationId === orchestrationId).length >= 25) throw new Error("Worker limit reached (25 per orchestration)");
+    const workerId = `w-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const mRef = roleModels[args.role] || roleModels.coder;
+    const requireVerified = args.role === "coder";
+    const now = Date.now();
+    let convId;
+    let taskId = null;
+    await harnessRef.commit(async (tx) => {
+      const c = await tx.createConversation({ ownership: { kind: "ownerless" } });
+      convId = c.id;
+      await configure(tx, convId, {
+        model: mRef,
+        thinkingLevel: "high",
+        cwd: workspaceDir,
+        maxTurns: args.role === "coder" ? 40 : 16,
+        tools: roleToolSet(args.role),
+        instructions: ROLE_INSTRUCTIONS[args.role] || ROLE_INSTRUCTIONS.coder,
+      });
+      const meta = await tx.doc(RoleMetaDoc, convId);
+      Object.assign(meta, { role: args.role, workerId, orchestrationId, requireVerified });
+      if (args.mode === "recurring") {
+        taskId = await tx.createTask(ForeverWorkTask, { workerId }, {
+          ownership: { kind: "conversation" }, conversationId: ROOT_CONVERSATION_ID, background: true,
+        });
+      }
+      const doc = await tx.doc(SwarmDoc);
+      doc.workers[workerId] = {
+        workerId, orchestrationId, name: args.name, role: args.role, modelId: mRef.modelId,
+        convId, requireVerified, goal: args.goal, mode: args.mode, everyMs: args.everyMs,
+        enabled: true, runCount: 0, taskId, createdAt: now,
+        supervisor: { status: "supervising", autoResumes: 0, nextAt: 0 },
+      };
+    }, BACKGROUND_CONTEXT);
+    const conv = await harnessRef.conversation(convId, BACKGROUND_CONTEXT);
+    if (args.mode === "once") {
+      await conv.submit({ type: "input", content: `[ONE-SHOT | ORCHESTRATION=${orchestrationId} | WORKER=${workerId}]\n${args.goal}` }, BACKGROUND_CONTEXT);
+    }
+    harnessRef.resume();
+    return { id: workerId, orchestrationId, conversationId: convId, taskId, ...args };
+  }
+
+  async function triggerPersistentWorker(workerId) {
+    const snap = await harnessRef.snapshot(SwarmDoc, BACKGROUND_CONTEXT);
+    const worker = snap?.workers?.[workerId];
+    if (!worker?.orchestrationId || worker.enabled === false) throw new Error("Worker is unknown or paused");
+    const live = await harnessRef.snapshot(LiveDoc, worker.convId, BACKGROUND_CONTEXT);
+    if (live?.run) throw new Error("Worker is already running");
+    const conv = await harnessRef.conversation(worker.convId, BACKGROUND_CONTEXT);
+    await harnessRef.commit(async (tx) => {
+      const doc = await tx.doc(SwarmDoc);
+      const w = doc.workers[workerId];
+      Object.assign(w, { lastRunAt: Date.now(), lastAction: "manual", runCount: (w.runCount || 0) + 1 });
+    }, BACKGROUND_CONTEXT);
+    await conv.submit({ type: "input", content: `[MANUAL RUN | ORCHESTRATION=${worker.orchestrationId} | WORKER=${workerId}]\n${worker.goal}` }, BACKGROUND_CONTEXT);
+    harnessRef.resume();
+    return { ok: true, workerId, conversationId: worker.convId };
+  }
+
   const spawnWorkerTool = defineTool({
     name: "spawn_worker",
     description:
@@ -297,6 +449,8 @@ export async function openSwarmDaemon({
       const role = args.role;
       const mRef = roleModels[role] || roleModels.coder;
       const requireVerified = args.requireVerified ?? role === "coder";
+      const parentMeta = await api.snapshot(RoleMetaDoc, api.conversationId, context);
+      const orchestrationId = parentMeta?.orchestrationId || DEFAULT_ORCHESTRATION_ID;
       let convId;
       await api.commit(async (tx) => {
         const c = await tx.createConversation({ ownership: { kind: "ownerless" } });
@@ -312,11 +466,15 @@ export async function openSwarmDaemon({
         const rDoc = await tx.doc(RoleMetaDoc, convId);
         rDoc.role = role;
         rDoc.workerId = args.workerId;
+        rDoc.orchestrationId = orchestrationId;
         rDoc.requireVerified = requireVerified;
 
         const sDoc = await tx.doc(SwarmDoc);
         sDoc.workers[args.workerId] = {
           workerId: args.workerId,
+          orchestrationId,
+          name: args.workerId,
+          mode: "once",
           role,
           modelId: mRef.modelId,
           convId,
@@ -764,7 +922,7 @@ export async function openSwarmDaemon({
 
   const swarmExtension = defineExtension({
     name: "swarm-core",
-    tasks: [ForeverWatchTask],
+    tasks: [ForeverWatchTask, ForeverWorkTask],
     tools: [
       spawnWorkerTool,
       requestReviewTool,
@@ -856,6 +1014,7 @@ export async function openSwarmDaemon({
     const rDoc = await tx.doc(RoleMetaDoc, lead.id);
     rDoc.role = "lead";
     rDoc.workerId = "lead";
+    rDoc.orchestrationId = DEFAULT_ORCHESTRATION_ID;
     rDoc.requireVerified = false;
     // Re-apply a durable dropdown override so it survives daemon restarts.
     const sDoc = await tx.doc(SwarmDoc);
@@ -970,9 +1129,23 @@ export async function openSwarmDaemon({
       if (!w) continue;
       const convId = w.convId ?? w.conversationId;
       const live = convId ? await harness.snapshot(LiveDoc, convId, BACKGROUND_CONTEXT) : null;
-      out.push(describeWorker(w, live));
+      out.push({ ...describeWorker(w, live), nextRunAt: nextRunAt(w) });
     }
     return sortWorkers(out);
+  }
+
+  async function listOrchestrationsSnapshot() {
+    const snap = (await harness.snapshot(SwarmDoc, BACKGROUND_CONTEXT)) || {};
+    const all = [
+      { id: DEFAULT_ORCHESTRATION_ID, name: "General", convId: ROOT_CONVERSATION_ID, createdAt: 0 },
+      ...Object.values(snap.orchestrations || {}),
+    ];
+    const out = [];
+    for (const o of all) {
+      const live = await harness.snapshot(LiveDoc, o.convId, BACKGROUND_CONTEXT);
+      out.push(publicOrchestration(o, live));
+    }
+    return out;
   }
 
   supervisor.start();
@@ -1082,7 +1255,14 @@ export async function openSwarmDaemon({
       }
 
       let targetConv = lead;
-      if (targetWorkerId !== "lead") {
+      const isOrchestrationTarget = targetWorkerId.startsWith("orchestration:");
+      if (isOrchestrationTarget) {
+        const id = targetWorkerId.slice("orchestration:".length);
+        const snap = await harness.snapshot(SwarmDoc, BACKGROUND_CONTEXT);
+        const orchestration = snap?.orchestrations?.[id];
+        if (!orchestration) throw new Error(`Unknown orchestration: ${id}`);
+        targetConv = await harness.conversation(orchestration.convId, BACKGROUND_CONTEXT);
+      } else if (targetWorkerId !== "lead") {
         const snap = (await harness.snapshot(SwarmDoc, BACKGROUND_CONTEXT)) ?? { workers: {} };
         const w = snap.workers?.[targetWorkerId];
         if (!w) throw new Error(`Unknown targetWorkerId: ${targetWorkerId}`);
@@ -1090,7 +1270,7 @@ export async function openSwarmDaemon({
       }
 
       const promptText =
-        targetWorkerId === "lead" && routeInfo.route === "fanout_parallel"
+        (targetWorkerId === "lead" || isOrchestrationTarget) && routeInfo.route === "fanout_parallel"
           ? `[ROUTER_HINT: fanout_parallel — spawn separate parallel workers via spawn_worker and return immediately]\n${text}`
           : text;
       // Real image content blocks: provider sees the actual bytes, not filenames.
@@ -1124,6 +1304,23 @@ export async function openSwarmDaemon({
         ...(errMsg ? { error: errMsg } : {}),
       };
     },
+
+    createOrchestration: createNamedOrchestration,
+    listOrchestrations: listOrchestrationsSnapshot,
+    createOrchestrationWorker: createPersistentWorker,
+
+    async setOrchestrationWorkerEnabled(workerId, enabled) {
+      const snap = await harness.snapshot(SwarmDoc, BACKGROUND_CONTEXT);
+      if (!snap?.workers?.[workerId]?.orchestrationId) throw new Error(`Unknown orchestration worker: ${workerId}`);
+      if (snap.workers[workerId].mode !== "recurring") throw new Error("Only recurring workers can be paused");
+      await harness.commit(async (tx) => {
+        const doc = await tx.doc(SwarmDoc);
+        Object.assign(doc.workers[workerId], { enabled: Boolean(enabled), lastAction: enabled ? "resumed" : "paused" });
+      }, BACKGROUND_CONTEXT);
+      return { ok: true, workerId, enabled: Boolean(enabled) };
+    },
+
+    triggerOrchestrationWorker: triggerPersistentWorker,
 
     async scheduleForever({ jobId, kind, sourcePath = "", everyMs = 60_000 }) {
       let taskId;
