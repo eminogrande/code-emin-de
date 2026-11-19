@@ -179,7 +179,16 @@ test("4. Daemon E2E: /help, /status, /workers, /hooks, /credits execute with ZER
     assert.match(rCredits.text, /local-llama \(LFM3-1\.7B-Q4_K_M\)/);
     assert.match(rCredits.text, /\*\*OK\*\*/);
 
-    // Proof: zero LLM invocations occurred across all 5 slash commands!
+    // Proof: empty / undefined input is rejected cleanly without writing a poisoned entry to durable.sqlite!
+    const rUndef = await daemon.chat(undefined);
+    assert.equal(rUndef.route, "invalid");
+    assert.equal(rUndef.status, "rejected");
+    assert.match(rUndef.error, /Empty or non-string/);
+    const rBlank = await daemon.chat("   ");
+    assert.equal(rBlank.route, "invalid");
+    assert.equal(rBlank.status, "rejected");
+
+    // Proof: zero LLM invocations occurred across all 5 slash commands + invalid inputs!
     assert.equal(modelCallCount, 0);
   } finally {
     await daemon.close();

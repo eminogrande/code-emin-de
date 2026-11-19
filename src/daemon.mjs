@@ -974,7 +974,16 @@ export async function openSwarmDaemon({
      * - Multi-task prompt gets tagged via System-1 Jev so Lead fans out parallel background workers without blocking!
      */
     async chat(text, { steer = false, targetWorkerId = "lead", wait = true } = {}) {
-      const trimmed = String(text || "").trim();
+      if (text == null || typeof text !== "string" || !text.trim()) {
+        return {
+          route: "invalid",
+          conversationId: ROOT_CONVERSATION_ID,
+          status: "rejected",
+          text: "",
+          error: "Empty or non-string message",
+        };
+      }
+      const trimmed = text.trim();
       if (targetWorkerId === "lead" && !steer) {
         const cmdRes = await handleDeterministicCommand(trimmed, {
           getStatus: getStatusSnapshot,

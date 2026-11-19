@@ -7,6 +7,10 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ## 2026-11-19
 
+### Guard Against Empty/Undefined `POST /chat` Transcript Poisoning
+- **Fixed root cause of `content is not iterable` outage**: `POST /chat` (`src/cli.mjs`) and `daemon.chat()` (`src/daemon.mjs`) now strictly validate non-empty string `text` before touching `@earendil-works/pi-durable`, returning HTTP `400 { error: "text is required" }` / `{ route: "invalid", status: "rejected" }` instead of inserting a contentless `pi.user` entry that breaks subsequent LLM turns.
+- Added regression assertions in `test/commands.test.mjs` and repaired the poisoned live entry (`#3497`) on VPS `durable.sqlite` (backup saved to `durable.sqlite.bak-entry3497`).
+
 ### Standards & Documentation
 - Added `CHANGELOG.md` and `AGENTS.md` codifying the per-turn changelog + GitHub `README.md` sync standard for both local sessions and the live VPS Lead Orchestrator (`src/prompts.mjs`).
 - Added `Changelog` link and standard note in `README.md`.

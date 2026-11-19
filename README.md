@@ -322,7 +322,7 @@ swarm steer w-auth "use timingSafeEqual"
 | `GET /workers` | Authoritative worker list sorted running-first |
 | `GET /hooks` | Registered out-of-core guardrail & lifecycle hooks with live counters |
 | `GET /transcript?convId=1&max=40` | Bounded conversation transcript |
-| `POST /chat` | Submit user message (deterministic slash commands, `/btw`, `/reinforce`, steer, or Lead turn) |
+| `POST /chat` | Submit user message (`{ text: string }`, validated non-empty; deterministic slash commands, `/btw`, `/reinforce`, steer, or Lead turn) |
 | `POST /cron` | Register a durable `ForeverWatchTask` watcher |
 
 ---
