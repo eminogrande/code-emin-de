@@ -151,13 +151,40 @@ if (isDirectMain) {
   } else if (cmd === "reinforce") {
     const sub = (process.argv[3] || "").trim().toLowerCase();
     if (sub === "harness") {
-      const { runHarnessTournament, EPISODE_2_SUPERVISOR_AND_CLIENT_BUGFIX, EPISODE_3_STANDALONE_RETRY_CACHE } = await import("./harness-bench.mjs");
+      const {
+        runHarnessTournament,
+        EPISODE_2_SUPERVISOR_AND_CLIENT_BUGFIX,
+        EPISODE_3_STANDALONE_RETRY_CACHE,
+        EPISODE_4_AGENTS_SIDEBAR_REPAIR,
+      } = await import("./harness-bench.mjs");
       const epArg = (process.argv[4] || "ep2").trim().toLowerCase();
-      const episode = epArg === "ep3" ? EPISODE_3_STANDALONE_RETRY_CACHE : EPISODE_2_SUPERVISOR_AND_CLIENT_BUGFIX;
+      const episode =
+        epArg === "ep3"
+          ? EPISODE_3_STANDALONE_RETRY_CACHE
+          : epArg === "ep4"
+            ? EPISODE_4_AGENTS_SIDEBAR_REPAIR
+            : EPISODE_2_SUPERVISOR_AND_CLIENT_BUGFIX;
       const out = await runHarnessTournament({
         repoDir: process.env.SWARM_SELF_REPO || dirname(dirname(fileURLToPath(import.meta.url))),
         episode,
         routerKey: process.env.ROUTER_INTERNAL_KEY,
+        reportPrefix: epArg,
+      });
+      console.log(out.markdown);
+    } else if (sub === "local") {
+      const {
+        runLocalAdapterTournament,
+        EPISODE_3_STANDALONE_RETRY_CACHE,
+        EPISODE_4_AGENTS_SIDEBAR_REPAIR,
+      } = await import("./harness-bench.mjs");
+      const epArg = (process.argv[4] || "ep4").trim().toLowerCase();
+      const episode = epArg === "ep3" ? EPISODE_3_STANDALONE_RETRY_CACHE : EPISODE_4_AGENTS_SIDEBAR_REPAIR;
+      const out = await runLocalAdapterTournament({
+        repoDir: process.env.SWARM_SELF_REPO || dirname(dirname(fileURLToPath(import.meta.url))),
+        episode,
+        modelPath: process.env.LOCAL_MODEL_PATH || join(homedir(), ".cache", "local-bench-models", "LFM3-1.7B-Q4_K_M.gguf"),
+        loraPath: process.env.LOCAL_LORA_PATH || join(homedir(), ".cache", "local-bench-models", "LFM3-1.7B-harbor-pi-lora-F16.gguf"),
+        modelLabel: process.env.LOCAL_MODEL_LABEL || "LFM3-1.7B-Q4_K_M",
         reportPrefix: epArg,
       });
       console.log(out.markdown);

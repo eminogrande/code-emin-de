@@ -1,0 +1,256 @@
+{
+  "timestamp": "2026-11-19T06:38:15.806Z",
+  "protocol": "human-like-retrospective-v2",
+  "episodeId": "ep4-agents-sidebar-repair",
+  "winner": "local-lfm3-1-7b-q4-k-m-base-pi-durable-swarm",
+  "runs": [
+    {
+      "candidateId": "local-lfm3-1-7b-q4-k-m-base-pi-durable-swarm",
+      "episodeId": "ep4-agents-sidebar-repair",
+      "config": {
+        "harness": "pi-durable-swarm",
+        "label": "LFM3-1.7B-Q4_K_M BASE [pi-durable-swarm] (17.3 tok/s)",
+        "leadModel": "lfm3-1-7b-q4-k-m-base",
+        "coderModel": "lfm3-1-7b-q4-k-m-base",
+        "optmem": false
+      },
+      "metrics": {
+        "testPass": false,
+        "userNudges": 0,
+        "autoResumes": 0,
+        "totalTokens": 5360,
+        "inputTokens": 2874,
+        "cacheReadTokens": 2236,
+        "outputTokens": 250,
+        "reasoningTokens": 0,
+        "replyWords": 1,
+        "codeLoc": 0,
+        "codeAdded": 0,
+        "codeDeleted": 0,
+        "toolCalls": 2,
+        "costUsd": 0,
+        "wallClockSec": 173.29,
+        "genTokPerSec": 17.3,
+        "promptTokPerSec": 322.4
+      },
+      "verifierOutput": "TAP version 13\n# Subtest: history renders with stable entry ids and no duplicates on re-sync\nok 1 - history renders with stable entry ids and no duplicates on re-sync\n  ---\n  duration_ms: 71.675125\n  type: 'test'\n  ...\n# Subtest: new background reply is appended in place while a draft is preserved\nok 2 - new background reply is appended in place while a draft is preserved\n  ---\n  duration_ms: 37.054334\n  type: 'test'\n  ...\n# Subtest: poll backs off on fetch errors and pauses while hidden\nok 3 - poll backs off on fetch errors and pauses while hidden\n  ---\n  duration_ms: 36.865583\n  type: 'test'\n  ...\n# Subtest: no history fetch while a chat request is active\nok 4 - no history fetch while a chat request is active\n  ---\n  duration_ms: 35.6695\n  type: 'test'\n  ...\n# Subtest: reply placeholder survives until the assistant entry lands, then goes\nok 5 - reply placeholder survives until the assistant entry lands, then goes\n  ---\n  duration_ms: 37.372334\n  type: 'test'\n  ...\n1..5\n# tests 5\n# suites 0\n# pass 5\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 1676.380625\nADVERSARIAL EP4 FAIL (code=1):\nnode:internal/modules/run_main:123\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: initial 2 workers must be rendered inside #agents\n\n0 !== 2\n\n    at file:///private/var/folders/_q/02r_1y0n34960z0ghmm0kbvh0000gn/T/harness-bench-pi-durable-swarm-oEOELx/ws/[eval1]:25:14 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: 0,\n  expected: 2,\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v22.21.1\n",
+      "finalReplyPreview": "[TIMEOUT]",
+      "judge": {
+        "protocol": "human-like-retrospective-v2",
+        "blindLabel": "Candidate-D",
+        "meanScore": null,
+        "validVoteCount": 0,
+        "totalVoteCount": 3,
+        "votes": [
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "correctness",
+            "valid": false,
+            "error": "codex exit -1"
+          },
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "readability",
+            "valid": false,
+            "error": "codex exit -1"
+          },
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "maintainability",
+            "valid": false,
+            "error": "codex exit -1"
+          }
+        ]
+      },
+      "compositeRank": -1.44,
+      "patchBytes": 0,
+      "patchPreview": ""
+    },
+    {
+      "candidateId": "local-lfm3-1-7b-q4-k-m-base-pi-cli",
+      "episodeId": "ep4-agents-sidebar-repair",
+      "config": {
+        "harness": "pi-cli",
+        "label": "LFM3-1.7B-Q4_K_M BASE [pi-cli] (17.3 tok/s)",
+        "leadModel": "lfm3-1-7b-q4-k-m-base",
+        "coderModel": "lfm3-1-7b-q4-k-m-base",
+        "optmem": false
+      },
+      "metrics": {
+        "testPass": false,
+        "userNudges": 0,
+        "autoResumes": 0,
+        "totalTokens": 45476,
+        "inputTokens": 20806,
+        "cacheReadTokens": 23381,
+        "outputTokens": 1289,
+        "reasoningTokens": 0,
+        "replyWords": 1,
+        "codeLoc": 0,
+        "codeAdded": 0,
+        "codeDeleted": 0,
+        "toolCalls": 6,
+        "costUsd": 0,
+        "wallClockSec": 180.26,
+        "genTokPerSec": 17.3,
+        "promptTokPerSec": 322.4
+      },
+      "verifierOutput": "TAP version 13\n# Subtest: history renders with stable entry ids and no duplicates on re-sync\nok 1 - history renders with stable entry ids and no duplicates on re-sync\n  ---\n  duration_ms: 88.012791\n  type: 'test'\n  ...\n# Subtest: new background reply is appended in place while a draft is preserved\nok 2 - new background reply is appended in place while a draft is preserved\n  ---\n  duration_ms: 44.669917\n  type: 'test'\n  ...\n# Subtest: poll backs off on fetch errors and pauses while hidden\nok 3 - poll backs off on fetch errors and pauses while hidden\n  ---\n  duration_ms: 42.851167\n  type: 'test'\n  ...\n# Subtest: no history fetch while a chat request is active\nok 4 - no history fetch while a chat request is active\n  ---\n  duration_ms: 40.219417\n  type: 'test'\n  ...\n# Subtest: reply placeholder survives until the assistant entry lands, then goes\nok 5 - reply placeholder survives until the assistant entry lands, then goes\n  ---\n  duration_ms: 39.423\n  type: 'test'\n  ...\n1..5\n# tests 5\n# suites 0\n# pass 5\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 776.554417\nADVERSARIAL EP4 FAIL (code=1):\nnode:internal/modules/run_main:123\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: initial 2 workers must be rendered inside #agents\n\n0 !== 2\n\n    at file:///private/var/folders/_q/02r_1y0n34960z0ghmm0kbvh0000gn/T/harness-bench-pi-cli-na0a1r/ws/[eval1]:25:14 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: 0,\n  expected: 2,\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v22.21.1\n",
+      "finalReplyPreview": "[TIMEOUT] ",
+      "judge": {
+        "protocol": "human-like-retrospective-v2",
+        "blindLabel": "Candidate-A",
+        "meanScore": null,
+        "validVoteCount": 0,
+        "totalVoteCount": 3,
+        "votes": [
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "correctness",
+            "valid": false,
+            "error": "codex exit -1"
+          },
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "readability",
+            "valid": false,
+            "error": "codex exit -1"
+          },
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "maintainability",
+            "valid": false,
+            "error": "codex exit -1"
+          }
+        ]
+      },
+      "compositeRank": -1.5,
+      "patchBytes": 0,
+      "patchPreview": ""
+    },
+    {
+      "candidateId": "local-lfm3-1-7b-q4-k-m-pi-lora-pi-cli",
+      "episodeId": "ep4-agents-sidebar-repair",
+      "config": {
+        "harness": "pi-cli",
+        "label": "LFM3-1.7B-Q4_K_M +HF-pi-LoRA [pi-cli] (13.2 tok/s)",
+        "leadModel": "lfm3-1-7b-q4-k-m-pi-lora",
+        "coderModel": "lfm3-1-7b-q4-k-m-pi-lora",
+        "optmem": false
+      },
+      "metrics": {
+        "testPass": false,
+        "userNudges": 0,
+        "autoResumes": 0,
+        "totalTokens": 5391,
+        "inputTokens": 3679,
+        "cacheReadTokens": 1401,
+        "outputTokens": 311,
+        "reasoningTokens": 0,
+        "replyWords": 1,
+        "codeLoc": 0,
+        "codeAdded": 0,
+        "codeDeleted": 0,
+        "toolCalls": 4,
+        "costUsd": 0,
+        "wallClockSec": 213.86,
+        "genTokPerSec": 13.2,
+        "promptTokPerSec": 61.7
+      },
+      "verifierOutput": "TAP version 13\n# Subtest: history renders with stable entry ids and no duplicates on re-sync\nok 1 - history renders with stable entry ids and no duplicates on re-sync\n  ---\n  duration_ms: 59.088791\n  type: 'test'\n  ...\n# Subtest: new background reply is appended in place while a draft is preserved\nok 2 - new background reply is appended in place while a draft is preserved\n  ---\n  duration_ms: 36.819292\n  type: 'test'\n  ...\n# Subtest: poll backs off on fetch errors and pauses while hidden\nok 3 - poll backs off on fetch errors and pauses while hidden\n  ---\n  duration_ms: 37.000458\n  type: 'test'\n  ...\n# Subtest: no history fetch while a chat request is active\nok 4 - no history fetch while a chat request is active\n  ---\n  duration_ms: 36.505125\n  type: 'test'\n  ...\n# Subtest: reply placeholder survives until the assistant entry lands, then goes\nok 5 - reply placeholder survives until the assistant entry lands, then goes\n  ---\n  duration_ms: 34.10325\n  type: 'test'\n  ...\n1..5\n# tests 5\n# suites 0\n# pass 5\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 577.946542\nADVERSARIAL EP4 FAIL (code=1):\nnode:internal/modules/run_main:123\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: initial 2 workers must be rendered inside #agents\n\n0 !== 2\n\n    at file:///private/var/folders/_q/02r_1y0n34960z0ghmm0kbvh0000gn/T/harness-bench-pi-cli-ko2vNA/ws/[eval1]:25:14 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: 0,\n  expected: 2,\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v22.21.1\n",
+      "finalReplyPreview": "[TIMEOUT] ",
+      "judge": {
+        "protocol": "human-like-retrospective-v2",
+        "blindLabel": "Candidate-C",
+        "meanScore": null,
+        "validVoteCount": 0,
+        "totalVoteCount": 3,
+        "votes": [
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "correctness",
+            "valid": false,
+            "error": "codex exit -1"
+          },
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "readability",
+            "valid": false,
+            "error": "codex exit -1"
+          },
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "maintainability",
+            "valid": false,
+            "error": "codex exit -1"
+          }
+        ]
+      },
+      "compositeRank": -1.78,
+      "patchBytes": 0,
+      "patchPreview": ""
+    },
+    {
+      "candidateId": "local-lfm3-1-7b-q4-k-m-pi-lora-pi-durable-swarm",
+      "episodeId": "ep4-agents-sidebar-repair",
+      "config": {
+        "harness": "pi-durable-swarm",
+        "label": "LFM3-1.7B-Q4_K_M +HF-pi-LoRA [pi-durable-swarm] (13.2 tok/s)",
+        "leadModel": "lfm3-1-7b-q4-k-m-pi-lora",
+        "coderModel": "lfm3-1-7b-q4-k-m-pi-lora",
+        "optmem": false
+      },
+      "metrics": {
+        "testPass": false,
+        "userNudges": 0,
+        "autoResumes": 0,
+        "totalTokens": 0,
+        "inputTokens": 0,
+        "cacheReadTokens": 0,
+        "outputTokens": 0,
+        "reasoningTokens": 0,
+        "replyWords": 1,
+        "codeLoc": 0,
+        "codeAdded": 0,
+        "codeDeleted": 0,
+        "toolCalls": 0,
+        "costUsd": 0,
+        "wallClockSec": 403.84,
+        "genTokPerSec": 13.2,
+        "promptTokPerSec": 61.7
+      },
+      "verifierOutput": "TAP version 13\n# Subtest: history renders with stable entry ids and no duplicates on re-sync\nok 1 - history renders with stable entry ids and no duplicates on re-sync\n  ---\n  duration_ms: 56.552958\n  type: 'test'\n  ...\n# Subtest: new background reply is appended in place while a draft is preserved\nok 2 - new background reply is appended in place while a draft is preserved\n  ---\n  duration_ms: 35.173541\n  type: 'test'\n  ...\n# Subtest: poll backs off on fetch errors and pauses while hidden\nok 3 - poll backs off on fetch errors and pauses while hidden\n  ---\n  duration_ms: 35.767583\n  type: 'test'\n  ...\n# Subtest: no history fetch while a chat request is active\nok 4 - no history fetch while a chat request is active\n  ---\n  duration_ms: 33.434584\n  type: 'test'\n  ...\n# Subtest: reply placeholder survives until the assistant entry lands, then goes\nok 5 - reply placeholder survives until the assistant entry lands, then goes\n  ---\n  duration_ms: 36.361417\n  type: 'test'\n  ...\n1..5\n# tests 5\n# suites 0\n# pass 5\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 534.287625\nADVERSARIAL EP4 FAIL (code=1):\nnode:internal/modules/run_main:123\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: initial 2 workers must be rendered inside #agents\n\n0 !== 2\n\n    at file:///private/var/folders/_q/02r_1y0n34960z0ghmm0kbvh0000gn/T/harness-bench-pi-durable-swarm-OSXWh9/ws/[eval1]:25:14 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: 0,\n  expected: 2,\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v22.21.1\n",
+      "finalReplyPreview": "[TIMEOUT]",
+      "judge": {
+        "protocol": "human-like-retrospective-v2",
+        "blindLabel": "Candidate-B",
+        "meanScore": null,
+        "validVoteCount": 0,
+        "totalVoteCount": 3,
+        "votes": [
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "correctness",
+            "valid": false,
+            "error": "codex exit -1"
+          },
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "readability",
+            "valid": false,
+            "error": "codex exit -1"
+          },
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "maintainability",
+            "valid": false,
+            "error": "codex exit -1"
+          }
+        ]
+      },
+      "compositeRank": -3.37,
+      "patchBytes": 0,
+      "patchPreview": ""
+    }
+  ]
+}

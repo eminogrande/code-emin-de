@@ -1,0 +1,134 @@
+{
+  "timestamp": "2026-11-19T06:01:04.742Z",
+  "protocol": "human-like-retrospective-v2",
+  "episodeId": "ep4-agents-sidebar-repair",
+  "winner": "harness-pi-durable-swarm-k31",
+  "runs": [
+    {
+      "candidateId": "harness-pi-durable-swarm-k31",
+      "episodeId": "ep4-agents-sidebar-repair",
+      "config": {
+        "harness": "pi-durable-swarm",
+        "label": "pi-durable Swarm Harness (our upgraded Lead+Coder)",
+        "leadModel": "k3.1-pro",
+        "coderModel": "k3.1-pro",
+        "optmem": false
+      },
+      "metrics": {
+        "testPass": false,
+        "userNudges": 0,
+        "autoResumes": 0,
+        "totalTokens": 33451,
+        "inputTokens": 10380,
+        "cacheReadTokens": 20992,
+        "outputTokens": 2079,
+        "reasoningTokens": 373,
+        "replyWords": 11,
+        "codeLoc": 16,
+        "codeAdded": 14,
+        "codeDeleted": 2,
+        "toolCalls": 9,
+        "costUsd": 0.04575,
+        "wallClockSec": 173.14
+      },
+      "verifierOutput": "SELF TEST FAIL (code=1, timedOut=true)\nghmm0kbvh0000gn/T/harness-bench-pi-durable-swarm-3KOT7d/ws/test/chat-client.test.mjs:35:10)\n    async Test.run (node:internal/test_runner/test:1054:7)\n    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)\n  ...\n# Subtest: history renders with stable entry ids and no duplicates on re-sync\nok 2 - history renders with stable entry ids and no duplicates on re-sync\n  ---\n  duration_ms: 37.249958\n  type: 'test'\n  ...\n# Subtest: new background reply is appended in place while a draft is preserved\nok 3 - new background reply is appended in place while a draft is preserved\n  ---\n  duration_ms: 37.206417\n  type: 'test'\n  ...\n# Subtest: poll backs off on fetch errors and pauses while hidden\nok 4 - poll backs off on fetch errors and pauses while hidden\n  ---\n  duration_ms: 35.32975\n  type: 'test'\n  ...\n# Subtest: no history fetch while a chat request is active\nok 5 - no history fetch while a chat request is active\n  ---\n  duration_ms: 36.262375\n  type: 'test'\n  ...\n# Subtest: reply placeholder survives until the assistant entry lands, then goes\nok 6 - reply placeholder survives until the assistant entry lands, then goes\n  ---\n  duration_ms: 38.3215\n  type: 'test'\n  ...\nADVERSARIAL EP4: PASS (initial 2 workers + 3rd live worker render cleanly in #agents)",
+      "finalReplyPreview": "Spawned `fix-agents-sidebar` to fix, test, and deploy the `#agents` sidebar regression.",
+      "judge": {
+        "protocol": "human-like-retrospective-v2",
+        "blindLabel": "Candidate-B",
+        "meanScore": 70.67,
+        "validVoteCount": 3,
+        "totalVoteCount": 3,
+        "votes": [
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "correctness",
+            "valid": true,
+            "score": 68,
+            "rationale": "The minimal source fix and focused regression test address the reported rendering bug, but the required test command fails and times out, so the solution is not fully validated or high quality."
+          },
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "readability",
+            "valid": true,
+            "score": 76,
+            "rationale": "The fix is minimal, readable, and directly addresses the blank sidebar with a focused regression test, but the required test command failed and timed out, so the submission is not fully validated."
+          },
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "maintainability",
+            "valid": true,
+            "score": 68,
+            "rationale": "The minimal source fix appears correct and the regression test covers the reported behavior, but the required test command fails and times out, so the submission is not fully validated or high quality."
+          }
+        ]
+      },
+      "compositeRank": 139.44,
+      "patchBytes": 3030,
+      "patchPreview": "diff --git a/src/web.mjs b/src/web.mjs\nindex 79b72a2..d756203 100755\n--- a/src/web.mjs\n+++ b/src/web.mjs\n@@ -518,6 +518,7 @@ function renderAgents(list) {\n       li.dataset.id = w.id;\n       li.innerHTML = '<div class=\"wtop\"><span class=\"dot\"></span><span class=\"wrole\"></span></div><span class=\"wsub\"></span><span class=\"wsub werr\"></span>';\n       li.querySelector('.wrole').textContent = w.role || w.id;\n+      agentsUl.appendChild(li);\n     }\n     li.className = 'wk s-' + (w.state || 'idle');\n     li.querySelector('.wrole').textContent = (w.role || 'worker') + ' · ' + w.id;\ndiff --git a/test/chat-client.test.mjs b/test/chat-client.test.mjs\nindex dbf34e3..44b32e2 100644\n--- a/test/chat-client.test.mjs\n+++ b/test/chat-client.test.mjs\n@@ -8,7 +8,7 @@ import { JSDOM } from \"jsdom\";\n const src = readFileSync(new URL(\"../src/web.mjs\", import.meta.url), \"utf8\");\n const clientScript = [...src.matchAll(/<script>\\n([\\s\\S]*?)\\n<\\/script>/g)].pop()[1];\n \n-function boot(history) {\n+function boot(history, workers = []) {\n   const dom = new JSDOM(\n     `<!doctype html><body><div id=\"topbar\"><button id=\"tLeft\"></button><button id=\"tRight\"></button></div><div id=\"backdrop\" hidden></div><aside id=\"leftCol\"><div id=\"targets\"></div></aside><main><div id=\"log\"></div><div id=\"sshBar\"><span id=\"sshDesc\"></span><button id=\"sshApprove\"></button><button id=\"sshDeny\"></button></div><form id=\"f\"><textarea id=\"q\"></textarea></form></main><aside id=\"rightCol\"><ul id=\"agents\"></ul><p id=\"agentsEmpty\"></p></aside></body>`,\n     { runScripts: \"outside-only\", pretendToBeVisual: true },\n@@ -19,7 +19,7 @@ function boot(history) {\n     calls.push(url);\n     if (String(url).startsWith(\"/api/history\")) return { ok: true, status: 200, json: async () => ({ entries: history.slice() }) };\n     if (String(url).startsWith(\"/api/render\")) return { ok: true, status: 200, json: async () => ({ html: \"\" }) };\n-    if (String(url).startsWith(\"/api/workers\")) return { ok: true, status: 200, json: async () => ({ workers: [] }) };\n+    if (String(url).startsWith(\"/api/workers\")) return { ok: true, status: 200, json: async () => ({ workers }) };\n     return { ok: true, status: 200, json: async () => ({ pending: [] }) };\n   };\n   w.eval(clientScript);\n@@ -28,6 +28,17 @@ function boot(history) {\n \n const flush = () => new Promise((r) => setTimeout(r, 30));\n \n+test(\"workers returned by the API render in the agents sidebar\", async () => {\n+  const { w } = boot([], [{ id: \"worker-1\", role: \"coder\", state: \"running\", createdAt: Date.now() }]);\n+  await flush();\n+  const agents = w.document.getElementById(\"agents\");\n+  assert.equal(agents.children.length, 1);\n+  assert.equal(agents.children[0].dataset.id, \"worker-1\");\n+  assert.match(agents.children[0].textContent, /coder/);\n+  assert.equal(w.document.getElementById(\"agentsEmpty\").hidden, true);\n+  w.close();\n+});\n+\n test(\"history renders with stable entry ids and no duplicates on re-sync\", async () => {\n   const history = [\n     { id: 7, role: \"user\", text: \"hi\", html: \"<p>hi</p>\" },\n"
+    },
+    {
+      "candidateId": "harness-pi-cli-k31",
+      "episodeId": "ep4-agents-sidebar-repair",
+      "config": {
+        "harness": "pi-cli",
+        "label": "Pi Coding Agent CLI v1.5.2",
+        "leadModel": "k3.1-pro",
+        "coderModel": "k3.1-pro",
+        "optmem": false
+      },
+      "metrics": {
+        "testPass": false,
+        "userNudges": 0,
+        "autoResumes": 0,
+        "totalTokens": 26151,
+        "inputTokens": 6673,
+        "cacheReadTokens": 18176,
+        "outputTokens": 1302,
+        "reasoningTokens": 253,
+        "replyWords": 1,
+        "codeLoc": 16,
+        "codeAdded": 14,
+        "codeDeleted": 2,
+        "toolCalls": 8,
+        "costUsd": 0.03,
+        "wallClockSec": 180.03
+      },
+      "verifierOutput": "SELF TEST FAIL (code=1, timedOut=true)\nr_1y0n34960z0ghmm0kbvh0000gn/T/harness-bench-pi-cli-PG1lFB/ws/test/chat-client.test.mjs:35:10)\n    async Test.run (node:internal/test_runner/test:1054:7)\n    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)\n  ...\n# Subtest: history renders with stable entry ids and no duplicates on re-sync\nok 2 - history renders with stable entry ids and no duplicates on re-sync\n  ---\n  duration_ms: 38.01925\n  type: 'test'\n  ...\n# Subtest: new background reply is appended in place while a draft is preserved\nok 3 - new background reply is appended in place while a draft is preserved\n  ---\n  duration_ms: 34.343\n  type: 'test'\n  ...\n# Subtest: poll backs off on fetch errors and pauses while hidden\nok 4 - poll backs off on fetch errors and pauses while hidden\n  ---\n  duration_ms: 36.763584\n  type: 'test'\n  ...\n# Subtest: no history fetch while a chat request is active\nok 5 - no history fetch while a chat request is active\n  ---\n  duration_ms: 36.992459\n  type: 'test'\n  ...\n# Subtest: reply placeholder survives until the assistant entry lands, then goes\nok 6 - reply placeholder survives until the assistant entry lands, then goes\n  ---\n  duration_ms: 38.0215\n  type: 'test'\n  ...\nADVERSARIAL EP4: PASS (initial 2 workers + 3rd live worker render cleanly in #agents)",
+      "finalReplyPreview": "[TIMEOUT] ",
+      "judge": {
+        "protocol": "human-like-retrospective-v2",
+        "blindLabel": "Candidate-A",
+        "meanScore": 61.67,
+        "validVoteCount": 3,
+        "totalVoteCount": 3,
+        "votes": [
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "correctness",
+            "valid": true,
+            "score": 45,
+            "rationale": "The fix is minimal and plausibly addresses the missing append, but the required test does not pass cleanly or terminate, making the submission incomplete despite the adversarial render result."
+          },
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "readability",
+            "valid": true,
+            "score": 72,
+            "rationale": "The fix and regression test are minimal and readable, but the required test run failed and timed out, so the solution is not fully validated."
+          },
+          {
+            "judgeModel": "openai/gpt-reserve",
+            "persona": "maintainability",
+            "valid": true,
+            "score": 68,
+            "rationale": "The root-cause fix and focused regression test are minimal and maintainable, but the reported test run failed and timed out, so the required verification was not achieved."
+          }
+        ]
+      },
+      "compositeRank": 121.54,
+      "patchBytes": 2976,
+      "patchPreview": "diff --git a/src/web.mjs b/src/web.mjs\nindex 79b72a2..22c4002 100755\n--- a/src/web.mjs\n+++ b/src/web.mjs\n@@ -517,6 +517,7 @@ function renderAgents(list) {\n       li = document.createElement('li');\n       li.dataset.id = w.id;\n       li.innerHTML = '<div class=\"wtop\"><span class=\"dot\"></span><span class=\"wrole\"></span></div><span class=\"wsub\"></span><span class=\"wsub werr\"></span>';\n+      agentsUl.appendChild(li);\n       li.querySelector('.wrole').textContent = w.role || w.id;\n     }\n     li.className = 'wk s-' + (w.state || 'idle');\ndiff --git a/test/chat-client.test.mjs b/test/chat-client.test.mjs\nindex dbf34e3..4d52701 100644\n--- a/test/chat-client.test.mjs\n+++ b/test/chat-client.test.mjs\n@@ -8,7 +8,7 @@ import { JSDOM } from \"jsdom\";\n const src = readFileSync(new URL(\"../src/web.mjs\", import.meta.url), \"utf8\");\n const clientScript = [...src.matchAll(/<script>\\n([\\s\\S]*?)\\n<\\/script>/g)].pop()[1];\n \n-function boot(history) {\n+function boot(history, workers = []) {\n   const dom = new JSDOM(\n     `<!doctype html><body><div id=\"topbar\"><button id=\"tLeft\"></button><button id=\"tRight\"></button></div><div id=\"backdrop\" hidden></div><aside id=\"leftCol\"><div id=\"targets\"></div></aside><main><div id=\"log\"></div><div id=\"sshBar\"><span id=\"sshDesc\"></span><button id=\"sshApprove\"></button><button id=\"sshDeny\"></button></div><form id=\"f\"><textarea id=\"q\"></textarea></form></main><aside id=\"rightCol\"><ul id=\"agents\"></ul><p id=\"agentsEmpty\"></p></aside></body>`,\n     { runScripts: \"outside-only\", pretendToBeVisual: true },\n@@ -19,7 +19,7 @@ function boot(history) {\n     calls.push(url);\n     if (String(url).startsWith(\"/api/history\")) return { ok: true, status: 200, json: async () => ({ entries: history.slice() }) };\n     if (String(url).startsWith(\"/api/render\")) return { ok: true, status: 200, json: async () => ({ html: \"\" }) };\n-    if (String(url).startsWith(\"/api/workers\")) return { ok: true, status: 200, json: async () => ({ workers: [] }) };\n+    if (String(url).startsWith(\"/api/workers\")) return { ok: true, status: 200, json: async () => ({ workers }) };\n     return { ok: true, status: 200, json: async () => ({ pending: [] }) };\n   };\n   w.eval(clientScript);\n@@ -28,6 +28,17 @@ function boot(history) {\n \n const flush = () => new Promise((r) => setTimeout(r, 30));\n \n+test(\"workers render in the agents sidebar and hide its empty state\", async () => {\n+  const { w } = boot([], [{ id: \"worker-1\", role: \"reviewer\", state: \"running\" }]);\n+  await flush();\n+  const agents = w.document.getElementById(\"agents\");\n+  assert.equal(agents.children.length, 1);\n+  assert.equal(agents.children[0].dataset.id, \"worker-1\");\n+  assert.match(agents.children[0].textContent, /reviewer/);\n+  assert.equal(w.document.getElementById(\"agentsEmpty\").hidden, true);\n+  w.close();\n+});\n+\n test(\"history renders with stable entry ids and no duplicates on re-sync\", async () => {\n   const history = [\n     { id: 7, role: \"user\", text: \"hi\", html: \"<p>hi</p>\" },\n"
+    }
+  ]
+}

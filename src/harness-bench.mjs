@@ -74,6 +74,25 @@ export const EPISODE_3_STANDALONE_RETRY_CACHE = {
     "Write thorough deterministic tests in `test/singleflight-cache.test.mjs` using injected fake `now`/`sleep` (must run in <2s with `node --test test/singleflight-cache.test.mjs` and 0 hanging timers).",
   ].join("\n"),
 };
+
+/**
+ * Episode #4: Real single-file repair mined directly from commit `eb803b4` -> `2ec75a8`
+ * (`Repo2RLEnvs`-style): detached `<li>` bug keeps right `AGENTS` sidebar blank forever.
+ */
+export const EPISODE_4_AGENTS_SIDEBAR_REPAIR = {
+  id: "ep4-agents-sidebar-repair",
+  title: "Repair: Fix Blank Right AGENTS Sidebar DOM Insertion Bug (`eb803b4`)",
+  baseCommit: "eb803b4",
+  prompt: [
+    "Bug report: On `code.emin.de`, the right `AGENTS` sidebar (`#agents`) stays completely blank even when `/api/workers` returns workers (while the left `SEND TO` sidebar renders them normally).",
+    "",
+    "1. Find and fix the root cause in `src/web.mjs` (keep the fix minimal and clean; do not touch unrelated code).",
+    "2. Add a deterministic regression test in `test/chat-client.test.mjs` verifying that workers returned by `/api/workers` are inserted into `#agents` and hide `#agentsEmpty`.",
+    "3. Run `node --test test/chat-client.test.mjs` and ensure all tests exit 0 cleanly.",
+    "",
+    "Constraints: do NOT run `npm install` or add dependencies (`./node_modules` is already symlinked).",
+  ].join("\n"),
+};
 // so cross-harness cost comparison reflects actual token efficiency rather than subscription vs API billing artifacts.
 export const K31_PRO_PRICING_PER_M = {
   input: 2.0,
@@ -399,6 +418,56 @@ export async function verifyHarnessWorkspace(wsDir, episode = EPISODE_2_SUPERVIS
     return { pass, verifierOutput: logs.join("\n") };
   }
 
+  if (episode.id === "ep4-agents-sidebar-repair") {
+    const selfTest = await runProcessWithTimeout("node", ["--test", "test/chat-client.test.mjs"], { cwd: wsDir, timeoutMs: 12_000 });
+    if (selfTest.code !== 0 || selfTest.timedOut) {
+      pass = false;
+      logs.push(`SELF TEST FAIL (code=${selfTest.code}, timedOut=${selfTest.timedOut})`);
+    }
+    logs.push((selfTest.stdout + "\n" + selfTest.stderr).trim().slice(-1200));
+
+    const advScript = `
+      import assert from "node:assert/strict";
+      import { readFileSync } from "node:fs";
+      import { JSDOM } from "jsdom";
+      const src = readFileSync("./src/web.mjs", "utf8");
+      const clientScript = [...src.matchAll(/<script>\\n([\\s\\S]*?)\\n<\\/script>/g)].pop()[1];
+      const dom = new JSDOM(
+        '<!doctype html><body><div id="topbar"><button id="tLeft"></button><button id="tRight"></button></div><div id="backdrop" hidden></div><aside id="leftCol"><div id="targets"></div></aside><main><div id="log"></div><div id="sshBar"><span id="sshDesc"></span><button id="sshApprove"></button><button id="sshDeny"></button></div><form id="f"><textarea id="q"></textarea></form></main><aside id="rightCol"><ul id="agents"></ul><p id="agentsEmpty"></p></aside></body>',
+        { runScripts: "outside-only", pretendToBeVisual: true },
+      );
+      const w = dom.window;
+      if (!w.CSS) w.CSS = { escape: (s) => String(s).replace(/([^a-zA-Z0-9_-])/g, "\\\\$1") };
+      let workers = [
+        { id: "w-1", role: "coder", state: "running", createdAt: Date.now() - 2000, lastError: null },
+        { id: "w-2", role: "btw", state: "idle_done", createdAt: Date.now() - 9000, lastError: null },
+      ];
+      w.fetch = async (url) => {
+        if (String(url).startsWith("/api/workers")) return { ok: true, status: 200, json: async () => ({ workers: workers.slice() }) };
+        if (String(url).startsWith("/api/history")) return { ok: true, status: 200, json: async () => ({ entries: [] }) };
+        return { ok: true, status: 200, json: async () => ({ pending: [] }) };
+      };
+      w.eval(clientScript);
+      await new Promise((r) => setTimeout(r, 40));
+      const ul = w.document.getElementById("agents");
+      assert.equal(ul.children.length, 2, "initial 2 workers must be rendered inside #agents");
+      assert.equal(w.document.getElementById("agentsEmpty").hidden, true);
+      workers.push({ id: "w-3", role: "watcher", state: "running", createdAt: Date.now(), lastError: null });
+      await w.eval("pollWorkers()");
+      assert.equal(ul.children.length, 3, "3rd newly-arriving worker must append without duplicates");
+      w.close();
+      console.log("ADVERSARIAL_EP4_PASS");
+    `;
+    const adv = await runProcessWithTimeout("node", ["--input-type=module", "-e", advScript], { cwd: wsDir, timeoutMs: 10_000 });
+    if (adv.code !== 0 || adv.timedOut || !adv.stdout.includes("ADVERSARIAL_EP4_PASS")) {
+      pass = false;
+      logs.push(`ADVERSARIAL EP4 FAIL (code=${adv.code}):\n${adv.stderr || adv.stdout}`);
+    } else {
+      logs.push("ADVERSARIAL EP4: PASS (initial 2 workers + 3rd live worker render cleanly in #agents)");
+    }
+    return { pass, verifierOutput: logs.join("\n") };
+  }
+
   // 2. Episode #2: Run target + regression test suite with hard 22s wall-clock cap
   const suite = [
     "test/chat-client.test.mjs",
@@ -459,6 +528,40 @@ export async function runSingleHarnessCandidate({
       if (res.timedOut) telemetry.finalReply = `[TIMEOUT] ${telemetry.finalReply}`;
     } else if (candidate.harness === "pi-cli") {
       const piBin = join(homedir(), ".local", "bin", "pi");
+      const piEnv = { ...env };
+      if (candidate.baseUrl) {
+        const agentDir = join(sandbox, "pi-agent");
+        await mkdir(agentDir, { recursive: true });
+        await writeFile(join(agentDir, "APPEND_SYSTEM.md"), V3_CAVEMAN_ADHD + "\n");
+        await writeFile(
+          join(agentDir, "models.json"),
+          JSON.stringify(
+            {
+              providers: {
+                [candidate.provider || "local-llama"]: {
+                  baseUrl: candidate.baseUrl,
+                  api: "openai-completions",
+                  apiKey: candidate.apiKey || "local-llama",
+                  models: [
+                    {
+                      id: candidate.modelId,
+                      name: candidate.label || candidate.modelId,
+                      reasoning: Boolean(candidate.reasoning),
+                      input: ["text"],
+                      contextWindow: candidate.contextWindow || 32768,
+                      maxTokens: candidate.maxTokens || 4096,
+                      compat: { supportsDeveloperRole: false, supportsStore: false, maxTokensField: "max_tokens" },
+                    },
+                  ],
+                },
+              },
+            },
+            null,
+            2,
+          ),
+        );
+        piEnv.PI_CODING_AGENT_DIR = agentDir;
+      }
       const res = await runProcessWithTimeout(
         piBin,
         [
@@ -467,7 +570,7 @@ export async function runSingleHarnessCandidate({
           "--model",
           candidate.modelId,
           "--thinking",
-          "high",
+          candidate.reasoning === false ? "off" : "high",
           "--no-session",
           "--no-skills",
           "--no-prompt-templates",
@@ -476,11 +579,12 @@ export async function runSingleHarnessCandidate({
           "--mode",
           "json",
           "-p",
-          episode.prompt, // ~/.pi/agent/APPEND_SYSTEM.md already injects exact 486B V3_CAVEMAN_ADHD!
+          episode.prompt, // APPEND_SYSTEM.md injects exact 486B V3_CAVEMAN_ADHD!
         ],
-        { cwd: wsDir, env, timeoutMs },
+        { cwd: wsDir, env: piEnv, timeoutMs },
       );
       telemetry = parsePiCliTelemetry(res.stdout);
+      if (candidate.zeroCost) telemetry.costUsd = 0;
       if (res.timedOut) telemetry.finalReply = `[TIMEOUT] ${telemetry.finalReply}`;
     } else if (candidate.harness === "opencode") {
       const ocBin = join(homedir(), ".local", "bin", "opencode");
@@ -495,6 +599,13 @@ export async function runSingleHarnessCandidate({
       // Run our upgraded pi-durable swarm harness inside an isolated child Node process so `daemon.close()`
       // can never hang the parent tournament if an in-flight worker tool/generation exceeds `timeoutMs`!
       const innerOut = join(sandbox, "durable-telemetry.json");
+      const provId = candidate.provider || "paymentrequired";
+      const baseUrl = candidate.baseUrl || "https://router.paymentrequired.com/v1/internal";
+      const modelId = candidate.modelId || "k3.1-pro";
+      const staticApiKey = candidate.apiKey || "";
+      const ctxWin = candidate.contextWindow || 1048576;
+      const maxTok = candidate.maxTokens || 65536;
+      const isReasoning = candidate.reasoning !== false;
       const childScript = `
         import { writeFile } from "node:fs/promises";
         import { createModels, createProvider } from "@earendil-works/pi-ai";
@@ -506,37 +617,37 @@ export async function runSingleHarnessCandidate({
         const models = createModels();
         models.setProvider(
           createProvider({
-            id: "paymentrequired",
-            name: "PaymentRequired Router",
-            baseUrl: "https://router.paymentrequired.com/v1/internal",
+            id: ${JSON.stringify(provId)},
+            name: ${JSON.stringify(provId)},
+            baseUrl: ${JSON.stringify(baseUrl)},
             auth: {
               apiKey: {
                 async resolve() {
-                  const k = process.env.ROUTER_INTERNAL_KEY;
+                  const k = ${JSON.stringify(staticApiKey)} || process.env.ROUTER_INTERNAL_KEY;
                   return k ? { auth: { apiKey: k }, source: "env" } : undefined;
                 },
               },
             },
             models: [
               {
-                id: "k3.1-pro",
-                name: "Kimi K3.1 Pro",
+                id: ${JSON.stringify(modelId)},
+                name: ${JSON.stringify(candidate.label || modelId)},
                 api: "openai-completions",
-                provider: "paymentrequired",
-                baseUrl: "https://router.paymentrequired.com/v1/internal",
+                provider: ${JSON.stringify(provId)},
+                baseUrl: ${JSON.stringify(baseUrl)},
                 type: "chat",
-                contextWindow: 1048576,
-                maxTokens: 65536,
-                reasoning: true,
+                contextWindow: ${ctxWin},
+                maxTokens: ${maxTok},
+                reasoning: ${isReasoning},
                 input: ["text"],
-                cost: { input: 2.0, output: 10.0, cacheRead: 0.2, cacheWrite: 0 },
+                cost: ${candidate.zeroCost ? "{ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }" : "{ input: 2.0, output: 10.0, cacheRead: 0.2, cacheWrite: 0 }"},
                 compat: { supportsDeveloperRole: false, supportsStore: false, maxTokensField: "max_tokens", thinkingFormat: "openrouter" },
               },
             ],
             api: openAICompletionsApi(),
           }),
         );
-        const kRef = { provider: "paymentrequired", modelId: "k3.1-pro" };
+        const kRef = { provider: ${JSON.stringify(provId)}, modelId: ${JSON.stringify(modelId)} };
         const roleModels = { lead: kRef, coder: kRef, coderFast: kRef, reviewer: kRef, reviewerDeep: kRef, planner: kRef, support: kRef, social: kRef, watcher: kRef, btw: kRef };
         const daemon = await openSwarmDaemon({
           dataDir: ${JSON.stringify(join(sandbox, "durable-data"))},
@@ -599,7 +710,7 @@ export async function runSingleHarnessCandidate({
         const rawT = JSON.parse(await readFile(innerOut, "utf8"));
         telemetry = {
           ...rawT,
-          costUsd: computeStandardizedKimiCost(rawT),
+          costUsd: candidate.zeroCost ? 0 : computeStandardizedKimiCost(rawT),
         };
       } catch {
         telemetry = {
@@ -696,13 +807,13 @@ export async function callCodexOpenAIJudge({ personaName, personaPrompt, blindLa
   }
 }
 
-export function renderHarnessBenchmarkMarkdown({ episode, runs }) {
+export function renderHarnessBenchmarkMarkdown({ episode, runs, title = null, controlledDesc = null }) {
   const sorted = [...runs].sort((a, b) => b.compositeRank - a.compositeRank);
   const lines = [
-    `# Cross-Harness Coding Benchmark — Same Model (\`Kimi K3.1 Pro\`), 4 Different Harnesses`,
+    title || `# Cross-Harness Coding Benchmark — Same Model (\`Kimi K3.1 Pro\`), 4 Different Harnesses`,
     "",
     `- **Episode ID:** \`${episode.id}\` (pre-fix commit \`${episode.baseCommit}\`)`,
-    `- **Controlled Variable:** All 4 harnesses run **\`Kimi K3.1 Pro\`** (\`thinking=high\`) with the exact \`486\`-byte \`V3_CAVEMAN_ADHD\` prompt discipline, \`0\` external skills, and standardized K3.1 Pro token pricing (\`$2.00 / $0.20 cache / $10.00\` per 1M tokens).`,
+    `- **Controlled Variable:** ${controlledDesc || "All 4 harnesses run **`Kimi K3.1 Pro`** (`thinking=high`) with the exact `486`-byte `V3_CAVEMAN_ADHD` prompt discipline, `0` external skills, and standardized K3.1 Pro token pricing (`$2.00 / $0.20 cache / $10.00` per 1M tokens)."}`,
     `- **Judge Protocol:** \`${JUDGE_PROTOCOL}\` — blinded labels (\`Candidate-A..D\`), 3 personas (\`correctness\`, \`readability\`, \`maintainability\`), scored by OpenAI Frontier Judge (\`openai/gpt-reserve\`).`,
     "",
     "## Head-to-Head Harness Results (Sorted by Composite Rank)",
@@ -823,5 +934,176 @@ export async function runHarnessTournament({
     );
   }
 
+  return { winner: runs[0] || null, runs, markdown };
+}
+
+/** Boot a temporary `llama-server` (with optional `--lora`), probe raw tok/s, run `fn`, and tear down cleanly. */
+export async function withLlamaServer(
+  { modelPath, loraPath = null, alias = "local-model", port = 18088, ctxSize = 32768 },
+  fn,
+) {
+  const args = ["-m", modelPath, "-ngl", "99", "-np", "1", "-c", String(ctxSize), "--port", String(port), "--alias", alias, "--jinja"];
+  if (loraPath) args.push("--lora", loraPath);
+  const child = spawn("llama-server", args, { stdio: ["ignore", "pipe", "pipe"] });
+  let errTail = "";
+  child.stderr.on("data", (d) => {
+    errTail = (errTail + d.toString()).slice(-1500);
+  });
+  const baseUrl = `http://127.0.0.1:${port}/v1`;
+  try {
+    const deadline = Date.now() + 60_000;
+    let ready = false;
+    while (Date.now() < deadline) {
+      if (child.exitCode !== null) throw new Error(`llama-server exited early (${child.exitCode}): ${errTail}`);
+      try {
+        const r = await fetch(`http://127.0.0.1:${port}/health`);
+        if (r.ok) {
+          ready = true;
+          break;
+        }
+      } catch {}
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    if (!ready) throw new Error(`llama-server health timeout: ${errTail}`);
+
+    // Measure raw generation & prefill speed on this hardware
+    let genTokPerSec = 0;
+    let promptTokPerSec = 0;
+    try {
+      const pr = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: alias,
+          max_tokens: 48,
+          temperature: 0,
+          messages: [{ role: "user", content: "Write a 3-line JS function sum(a,b) returning a+b." }],
+        }),
+      });
+      if (pr.ok) {
+        const j = await pr.json();
+        genTokPerSec = +(j?.timings?.predicted_per_second || 0).toFixed(1);
+        promptTokPerSec = +(j?.timings?.prompt_per_second || 0).toFixed(1);
+      }
+    } catch {}
+
+    return await fn({ baseUrl, alias, genTokPerSec, promptTokPerSec });
+  } finally {
+    child.kill("SIGTERM");
+    await new Promise((resolve) => {
+      const t = setTimeout(() => {
+        child.kill("SIGKILL");
+        resolve();
+      }, 3000);
+      t.unref?.();
+      child.once("close", () => {
+        clearTimeout(t);
+        resolve();
+      });
+    });
+  }
+}
+
+/**
+ * Local Open-Weights + HF Harness-Adapter LoRA A/B Benchmark (`base` vs `+pi-lora` across `pi-cli` & `pi-durable-swarm`).
+ * Reuses the exact blinded `human-like-retrospective-v2` frontier judge (`openai/gpt-reserve`) + external adversarial verifiers.
+ */
+export async function runLocalAdapterTournament({
+  repoDir,
+  episode = EPISODE_4_AGENTS_SIDEBAR_REPAIR,
+  modelPath,
+  loraPath = null,
+  modelLabel = "LFM3-1.7B-Q4_K_M",
+  ctxSize = 32768,
+  reportDir = join(repoDir, "docs"),
+  reportPrefix = null,
+  timeoutMs = 180_000,
+}) {
+  const runs = [];
+  const variants = [{ key: "base", lora: null, suffix: "BASE" }];
+  if (loraPath) variants.push({ key: "pi-lora", lora: loraPath, suffix: "+HF-pi-LoRA" });
+
+  let port = 18088;
+  for (const v of variants) {
+    const alias = `${modelLabel.toLowerCase().replace(/[^a-z0-9-]+/g, "-")}-${v.key}`;
+    await withLlamaServer({ modelPath, loraPath: v.lora, alias, port: port++, ctxSize }, async ({ baseUrl, genTokPerSec, promptTokPerSec }) => {
+      for (const harness of ["pi-cli", "pi-durable-swarm"]) {
+        const candidate = {
+          id: `local-${alias}-${harness}`,
+          harness,
+          label: `${modelLabel} ${v.suffix} [${harness}] (${genTokPerSec} tok/s)`,
+          provider: "local-llama",
+          baseUrl,
+          apiKey: "local-llama",
+          modelId: alias,
+          contextWindow: ctxSize,
+          maxTokens: 8192,
+          reasoning: true,
+          zeroCost: true,
+        };
+        const r = await runSingleHarnessCandidate({ repoDir, episode, candidate, timeoutMs });
+        r.metrics.genTokPerSec = genTokPerSec;
+        r.metrics.promptTokPerSec = promptTokPerSec;
+        runs.push(r);
+      }
+    });
+  }
+
+  const { toBlind } = buildBlindMap(runs.map((r) => r.candidateId), "local-adapter-v1");
+  for (const r of runs) {
+    const blindLabel = toBlind[r.candidateId];
+    if (!r.patch || !r.patch.trim()) {
+      r.judge = {
+        protocol: JUDGE_PROTOCOL,
+        blindLabel,
+        meanScore: 0,
+        validVoteCount: JUDGE_PERSONAS.length,
+        totalVoteCount: JUDGE_PERSONAS.length,
+        votes: JUDGE_PERSONAS.map(([pName]) => ({ judgeModel: "deterministic-empty-diff", persona: pName, valid: true, score: 0, rationale: "Empty patch (0 LOC changed)." })),
+      };
+      r.compositeRank = computeCompositeRank(r);
+      continue;
+    }
+    const verifierSummary = `testPass=${r.metrics.testPass}; codeLoc=${r.metrics.codeLoc}; toolCalls=${r.metrics.toolCalls}; wallClockSec=${r.metrics.wallClockSec}; genTokPerSec=${r.metrics.genTokPerSec}\n${r.verifierOutput || ""}`;
+    const votes = await Promise.all(
+      JUDGE_PERSONAS.map(([pName, pPrompt]) =>
+        callCodexOpenAIJudge({
+          personaName: pName,
+          personaPrompt: pPrompt,
+          blindLabel,
+          issue: episode.prompt,
+          verifierSummary,
+          patch: r.patch,
+        }),
+      ),
+    );
+    const valid = votes.filter((v) => v.valid);
+    const meanScore = valid.length ? +(valid.reduce((a, b) => a + b.score, 0) / valid.length).toFixed(2) : null;
+    r.judge = { protocol: JUDGE_PROTOCOL, blindLabel, meanScore, validVoteCount: valid.length, totalVoteCount: votes.length, votes };
+    r.compositeRank = computeCompositeRank(r);
+  }
+
+  runs.sort((a, b) => b.compositeRank - a.compositeRank);
+  const markdown = renderHarnessBenchmarkMarkdown({
+    episode,
+    runs,
+    title: `# Local Self-Hosted Coding Benchmark — \`${modelLabel}\` BASE vs HF \`pi\` LoRA`,
+    controlledDesc: `Local \`llama-server\` (\`${modelLabel}\`, \`$0\` inference) with and without HF \`harness-hub\` \`pi\` LoRA adapter across \`pi-cli\` and \`pi-durable-swarm\`, exact \`486\`-byte \`V3_CAVEMAN_ADHD\` prompt, \`0\` external skills.`,
+  });
+
+  if (reportDir) {
+    await mkdir(reportDir, { recursive: true });
+    const receiptRuns = runs.map(({ patch, ...rest }) => ({
+      ...rest,
+      patchBytes: Buffer.byteLength(patch || "", "utf8"),
+      patchPreview: String(patch || "").slice(0, 40_000),
+    }));
+    const prefix = reportPrefix || episode.id;
+    await writeFile(join(reportDir, `LOCAL_ADAPTER_BENCHMARK_${prefix}.md`), markdown + "\n");
+    await writeFile(
+      join(reportDir, `local-adapter-${prefix}-receipt.json`),
+      JSON.stringify({ timestamp: new Date().toISOString(), protocol: JUDGE_PROTOCOL, episodeId: episode.id, winner: runs[0]?.candidateId, runs: receiptRuns }, null, 2) + "\n",
+    );
+  }
   return { winner: runs[0] || null, runs, markdown };
 }

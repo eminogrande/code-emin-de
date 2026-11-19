@@ -10,6 +10,7 @@ import {
   parsePiCliTelemetry,
   renderHarnessBenchmarkMarkdown,
   EPISODE_2_SUPERVISOR_AND_CLIENT_BUGFIX,
+  EPISODE_4_AGENTS_SIDEBAR_REPAIR,
 } from "../src/harness-bench.mjs";
 
 test("1. computeStandardizedKimiCost applies exact K3.1 Pro pricing across uncached, cached, and output tokens", () => {
@@ -104,4 +105,5 @@ test("3. renderHarnessBenchmarkMarkdown formats ranked cross-harness table clean
   assert.match(md, /Kimi Code CLI/);
   assert.match(md, /91/);
   assert.match(md, /Minimal root-cause fix/);
+  assert.equal(EPISODE_4_AGENTS_SIDEBAR_REPAIR.baseCommit, "eb803b4");
 });
