@@ -105,3 +105,70 @@ test("3. attachOpenWeightsFailover downgrades to cheaper allmodels open-weights 
     else process.env.LLMGATEWAY_API_KEY = prevLlm;
   }
 });
+
+test("4. attachOpenWeightsFailover falls over to Tier-3 local-llama with explicit warning banner when all cloud providers fail", async () => {
+  const prevAll = process.env.ALLMODELS_API_KEY;
+  const prevLlm = process.env.LLMGATEWAY_API_KEY;
+  process.env.ALLMODELS_API_KEY = "test-allmodels-key";
+  process.env.LLMGATEWAY_API_KEY = "test-llmgateway-key";
+  try {
+    const mappedId = LLMGATEWAY_TO_ALLMODELS_MAP["kimi-k3.1-pro"];
+    const llmFaux = fauxProvider({ provider: "llmgateway", models: [{ id: "kimi-k3.1-pro" }] });
+    llmFaux.setResponses([
+      () =>
+        fauxAssistantMessage([], {
+          stopReason: "error",
+          errorMessage: "402 billing_error: insufficient credits",
+        }),
+    ]);
+
+    const allFaux = fauxProvider({
+      provider: "allmodels",
+      models: [
+        { id: mappedId },
+        { id: "z-ai/glm-5.3-abliterated" },
+        { id: "deepseek/deepseek-v4.1-flash-abliterated" },
+      ],
+    });
+    allFaux.setResponses([
+      () => fauxAssistantMessage([], { stopReason: "error", errorMessage: "402 insufficient_balance" }),
+      () => fauxAssistantMessage([], { stopReason: "error", errorMessage: "402 insufficient_balance" }),
+      () => fauxAssistantMessage([], { stopReason: "error", errorMessage: "402 insufficient_balance" }),
+    ]);
+
+    const localFaux = fauxProvider({ provider: "local-llama", models: [{ id: "LFM3-1.7B-Q4_K_M" }] });
+    localFaux.setResponses([
+      () => fauxAssistantMessage([fauxText("I am the local failsafe agent; cloud credits ran out.")]),
+    ]);
+
+    const models = createModels();
+    models.setProvider(llmFaux.provider);
+    models.setProvider(allFaux.provider);
+    models.setProvider(localFaux.provider);
+    const seenContexts = [];
+    const origLocalStream = models.streamSimple.bind(models);
+    models.streamSimple = (m, ctx, opts) => {
+      if (m?.provider === "local-llama") seenContexts.push(String(ctx?.systemPrompt || ""));
+      return origLocalStream(m, ctx, opts);
+    };
+    attachOpenWeightsFailover(models, { localModelId: "LFM3-1.7B-Q4_K_M" });
+
+    const msg = await models.completeSimple(models.getModel("llmgateway", "kimi-k3.1-pro"), {
+      systemPrompt: "Base prompt",
+      messages: [{ role: "user", content: "hi", timestamp: Date.now() }],
+    });
+    assert.equal(msg.stopReason, "stop");
+    assert.equal(msg.provider, "local-llama");
+    assert.equal(msg.model, "LFM3-1.7B-Q4_K_M");
+    assert.match(msg.content[0].text, /LOCAL FAILSAFE ACTIVE: `local-llama\/LFM3-1\.7B-Q4_K_M`/);
+    assert.match(msg.content[0].text, /402 billing_error/);
+    assert.match(msg.content[0].text, /I am the local failsafe agent/);
+    assert.equal(seenContexts.length, 1);
+    assert.match(seenContexts[0], /EMERGENCY FAILSAFE MODE/);
+  } finally {
+    if (prevAll === undefined) delete process.env.ALLMODELS_API_KEY;
+    else process.env.ALLMODELS_API_KEY = prevAll;
+    if (prevLlm === undefined) delete process.env.LLMGATEWAY_API_KEY;
+    else process.env.LLMGATEWAY_API_KEY = prevLlm;
+  }
+});

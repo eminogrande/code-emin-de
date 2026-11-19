@@ -28,6 +28,21 @@ const ALLMODELS_OPEN_MODELS = [
   { id: "qwen/qwen3.8-27b-abliterated", name: "Qwen3.8 27B Abliterated (open-weights)", contextWindow: 262144, maxTokens: 8192, reasoning: true, input: ["text"], cost: { input: 0.2, output: 0.6, cacheRead: 0.02, cacheWrite: 0 } },
 ];
 
+export const DEFAULT_LOCAL_LLAMA_MODEL = process.env.LOCAL_LLAMA_MODEL || "local-failsafe";
+
+/**
+ * Format an explicit user-facing banner prepended to Tier-3 local failsafe replies
+ * so cloud billing/API outages are never silent.
+ */
+export function formatLocalFailsafeBanner({ failedAttempts = [], localModelId = DEFAULT_LOCAL_LLAMA_MODEL } = {}) {
+  const summary = failedAttempts.length
+    ? failedAttempts
+        .map((a) => `${a.provider}/${a.model}: ${String(a.error || "failed").replace(/\s+/g, " ").slice(0, 140)}`)
+        .join(" | ")
+    : "all cloud providers failed";
+  return `⚠️ **[LOCAL FAILSAFE ACTIVE: \`local-llama/${localModelId}\`]** Cloud APIs unavailable (${summary}). Top up credits / check provider keys to restore full cloud frontier models.\n\n`;
+}
+
 /**
  * Equivalent open-weights failover map from `llmgateway` -> `allmodels` when LLMGateway
  * hits HTTP 402 billing/credit exhaustion, missing key, or 5xx gateway outage.
@@ -89,9 +104,23 @@ function wrapApiWithPayload(payloadPatch) {
  * failover from `llmgateway` -> `allmodels` (with a 5-minute circuit-breaker cooldown once
  * `llmgateway` returns a billing/credit error so subsequent turns skip the dead hop).
  */
-export function attachOpenWeightsFailover(models, { cooldownMs = 5 * 60_000 } = {}) {
+export function attachOpenWeightsFailover(models, { cooldownMs = 5 * 60_000, localModelId = process.env.LOCAL_LLAMA_MODEL || DEFAULT_LOCAL_LLAMA_MODEL } = {}) {
   const origStreamSimple = models.streamSimple.bind(models);
   let llmgatewayTrippedUntil = 0;
+
+  function prependBannerToMessage(msg, banner) {
+    if (!msg || !banner) return msg;
+    const content = Array.isArray(msg.content) ? msg.content.map((c) => ({ ...c })) : [];
+    const textIdx = content.findIndex((c) => c && c.type === "text" && typeof c.text === "string");
+    if (textIdx >= 0) {
+      if (!content[textIdx].text.startsWith(banner)) {
+        content[textIdx] = { ...content[textIdx], text: banner + content[textIdx].text };
+      }
+    } else {
+      content.unshift({ type: "text", text: banner.trimEnd() });
+    }
+    return { ...msg, content };
+  }
 
   function buildFailoverChain(model) {
     const chain = [];
@@ -119,6 +148,13 @@ export function attachOpenWeightsFailover(models, { cooldownMs = 5 * 60_000 } = 
         push(models.getModel("allmodels", "deepseek/deepseek-v4.1-flash-abliterated"));
       }
     }
+    // Tier-3 emergency local failsafe (`local-llama` via local llama-server)
+    if (model?.provider !== "local-llama") {
+      const localModel =
+        models.getModel("local-llama", localModelId) ||
+        models.getModel("local-llama", DEFAULT_LOCAL_LLAMA_MODEL);
+      if (localModel) push(localModel);
+    }
     return chain;
   }
 
@@ -131,20 +167,52 @@ export function attachOpenWeightsFailover(models, { cooldownMs = 5 * 60_000 } = 
     const outer = new AssistantMessageEventStream();
     (async () => {
       let lastError = null;
+      const failedAttempts = [];
       for (let idx = 0; idx < chain.length; idx++) {
         const candidate = chain[idx];
         const hasNext = idx < chain.length - 1;
-        const stream = origStreamSimple(candidate, context, options);
+        const isLocalFailsafeHop = candidate.provider === "local-llama" && failedAttempts.length > 0;
+        const failsafeBanner = isLocalFailsafeHop
+          ? formatLocalFailsafeBanner({ failedAttempts, localModelId: candidate.id })
+          : "";
+        const callContext = isLocalFailsafeHop
+          ? {
+              ...context,
+              systemPrompt: `${context?.systemPrompt ? `${context.systemPrompt}\n\n` : ""}EMERGENCY FAILSAFE MODE: All cloud APIs just failed (${failedAttempts.map((a) => `${a.provider}: ${String(a.error || "").slice(0, 80)}`).join("; ")}). Tell the user clearly that you are the local failsafe agent, summarize the outage briefly, and help as best you can without pretending to be the cloud frontier model.`,
+            }
+          : context;
+        const stream = origStreamSimple(candidate, callContext, options);
         const buffered = [];
         let emittedContent = false;
         let terminalError = null;
         let doneMessage = null;
+        let bannerEmitted = false;
 
-        for await (const ev of stream) {
-          if (ev.type === "error") {
-            terminalError = ev.error;
+        const transformEvent = (ev) => {
+          if (!failsafeBanner) return ev;
+          if (ev.type === "done" && ev.message) {
+            return { ...ev, message: prependBannerToMessage(ev.message, failsafeBanner) };
+          }
+          if (ev.type === "text_delta" && !bannerEmitted) {
+            bannerEmitted = true;
+            return {
+              ...ev,
+              delta: failsafeBanner + (ev.delta || ""),
+              partial: ev.partial ? prependBannerToMessage(ev.partial, failsafeBanner) : ev.partial,
+            };
+          }
+          if (ev.partial) {
+            return { ...ev, partial: prependBannerToMessage(ev.partial, failsafeBanner) };
+          }
+          return ev;
+        };
+
+        for await (const rawEv of stream) {
+          if (rawEv.type === "error") {
+            terminalError = rawEv.error;
             break;
           }
+          const ev = transformEvent(rawEv);
           if (ev.type === "done") {
             doneMessage = ev.message;
             buffered.push(ev);
@@ -160,6 +228,11 @@ export function attachOpenWeightsFailover(models, { cooldownMs = 5 * 60_000 } = 
         }
 
         if (!emittedContent && terminalError && hasNext && isFailoverEligibleError(terminalError.errorMessage) && !options?.signal?.aborted) {
+          failedAttempts.push({
+            provider: candidate.provider,
+            model: candidate.id,
+            error: terminalError.errorMessage || "error",
+          });
           if (
             candidate.provider === "llmgateway" &&
             /402|billing_error|insufficient_balance|insufficient_quota|insufficient credits|Insufficient Balance|No API key set/i.test(
@@ -174,10 +247,21 @@ export function attachOpenWeightsFailover(models, { cooldownMs = 5 * 60_000 } = 
 
         while (buffered.length > 0) outer.push(buffered.shift());
         if (terminalError) {
-          outer.push({ type: "error", reason: options?.signal?.aborted ? "aborted" : "error", error: terminalError });
-          outer.end(terminalError);
+          // If local failsafe ALSO failed after cloud failures, report the full chain so failure is never silent
+          const enrichedError =
+            failedAttempts.length > 0
+              ? {
+                  ...terminalError,
+                  errorMessage: `All cloud + local failsafe models failed: ${failedAttempts
+                    .map((a) => `${a.provider}/${a.model} (${String(a.error).slice(0, 90)})`)
+                    .join("; ")}; ${candidate.provider}/${candidate.id} (${String(terminalError.errorMessage || "error").slice(0, 90)})`,
+                }
+              : terminalError;
+          outer.push({ type: "error", reason: options?.signal?.aborted ? "aborted" : "error", error: enrichedError });
+          outer.end(enrichedError);
         } else {
-          const res = doneMessage ?? (typeof stream.result === "function" ? await stream.result() : undefined);
+          let res = doneMessage ?? (typeof stream.result === "function" ? await stream.result() : undefined);
+          if (failsafeBanner && res) res = prependBannerToMessage(res, failsafeBanner);
           outer.end(res);
         }
         return;
@@ -282,6 +366,48 @@ export function createOpenModels({ enableFailover = true } = {}) {
       }),
     }),
   );
+
+  const localLlamaUrl = (process.env.LOCAL_LLAMA_URL || "").trim().replace(/\/+$/, "");
+  if (localLlamaUrl) {
+    const localModelId = (process.env.LOCAL_LLAMA_MODEL || DEFAULT_LOCAL_LLAMA_MODEL).trim();
+    const localBaseUrl = localLlamaUrl.endsWith("/v1") ? localLlamaUrl : `${localLlamaUrl}/v1`;
+    const localCtx = Number(process.env.LOCAL_LLAMA_CTX || 16384);
+    models.setProvider(
+      createProvider({
+        id: "local-llama",
+        name: "Local llama.cpp Failsafe",
+        baseUrl: localBaseUrl,
+        auth: {
+          apiKey: {
+            description: "Local llama-server key (optional)",
+            resolve: async () => process.env.LOCAL_LLAMA_API_KEY || "local-failsafe",
+          },
+        },
+        models: [
+          {
+            id: localModelId,
+            name: `${localModelId} (local CPU failsafe)`,
+            api: "openai-completions",
+            provider: "local-llama",
+            baseUrl: localBaseUrl,
+            type: "chat",
+            contextWindow: localCtx,
+            maxTokens: 2048,
+            reasoning: false,
+            input: ["text"],
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            compat: {
+              supportsStore: false,
+              supportsDeveloperRole: false,
+              maxTokensField: "max_tokens",
+              supportsStrictMode: false,
+            },
+          },
+        ],
+        api: openAICompletionsApi(),
+      }),
+    );
+  }
 
   return enableFailover ? attachOpenWeightsFailover(models) : models;
 }

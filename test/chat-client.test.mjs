@@ -169,3 +169,42 @@ test("status bar stays hidden without lead or workers", async () => {
   assert.equal(w.document.getElementById("statusBar").hidden, true);
   w.close();
 });
+
+test("send() renders user message synchronously BEFORE pending assistant placeholder (never '…' above 'hi')", async () => {
+  const { w } = boot([]);
+  await flush();
+  let resolveChat;
+  const origFetch = w.fetch;
+  w.fetch = (url, init) => {
+    const s = String(url);
+    if (s === "/api/render") {
+      return new Promise((res) =>
+        setTimeout(() => res({ ok: true, status: 200, json: async () => ({ html: "<p>hi</p>" }) }), 25),
+      );
+    }
+    if (s === "/api/chat") {
+      return new Promise((res) => {
+        resolveChat = () => res({ ok: true, status: 200, json: async () => ({ text: "pong", html: "<p>pong</p>" }) });
+      });
+    }
+    return origFetch(url, init);
+  };
+  const q = w.document.getElementById("q");
+  q.value = "hi";
+  w.eval("send(false)");
+  const nodes = [...w.document.querySelectorAll("#log .m")];
+  assert.equal(nodes.length, 2);
+  assert.ok(nodes[0].classList.contains("u"), "first bubble must be user message");
+  assert.equal(nodes[0].textContent, "hi");
+  assert.ok(nodes[1].classList.contains("a"), "second bubble must be assistant placeholder");
+  assert.equal(nodes[1].textContent, "…");
+  await new Promise((r) => setTimeout(r, 40));
+  const afterMd = [...w.document.querySelectorAll("#log .m")];
+  assert.equal(afterMd.length, 2, "async markdown upgrade must update user bubble in-place without reordering");
+  assert.ok(afterMd[0].classList.contains("u"));
+  assert.equal(afterMd[0].innerHTML, "<p>hi</p>");
+  assert.ok(afterMd[1].classList.contains("a"));
+  resolveChat();
+  await flush();
+  w.close();
+});

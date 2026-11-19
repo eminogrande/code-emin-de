@@ -765,7 +765,14 @@ async function send(steer = false) {
   if (!text) return;
   q.value = '';
   fit();
-  renderMd(text).then((h) => { const n = addHtml('u', h, text); if (n) n.dataset.raw = text; });
+  const userNode = addHtml('u', '', text);
+  if (userNode) userNode.dataset.raw = text;
+  renderMd(text).then((h) => {
+    if (h && userNode && userNode.isConnected) {
+      userNode.innerHTML = h;
+      if (window.chatRender) window.chatRender(userNode);
+    }
+  });
   const pending = addHtml('a', '', '…');
   busy = true;
   clearTimeout(pollTimer);
