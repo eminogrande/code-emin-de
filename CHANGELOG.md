@@ -44,6 +44,7 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
   Tests: `test/images.test.mjs` (sniff/caps/dimensions/store), `test/chat-images.test.mjs` (paste,
   text passthrough, rejections, remove/clear, history links), `test/chat-images-api.test.mjs`
   (auth, body caps, daemon payload, error surfacing, traversal).
+- images (fix): defer loaded client hooks after the inline boot, allowing a fast early send to drop the screenshot while preserving text. Scripts now execute in HTML order at the end of `body`; full-page real-script E2E confirms byte-identical paste and MIME rejection (`test/chat-images-e2e.test.mjs`). A real end-user probe produced a saved PNG and a vision-aware model response.
 - UI undo: drop the whole-page Rare UI restyle. `src/chat-theme.css` and its `<link>`/route are
   removed, so the original inline Solarized chat layout is the base again (no rail grid, no
   gradients, no page-wide type/spacing overrides); images, models and sidebar behaviour unchanged.
