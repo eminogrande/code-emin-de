@@ -1,0 +1,11 @@
+import { readFileSync } from "node:fs";
+import { JSDOM } from "jsdom";
+const src = readFileSync("/opt/pi-durable-swarm/src/web.mjs","utf8");
+const script=[...src.matchAll(/<script>\n([\s\S]*?)\n<\/script>/g)].pop()[1];
+const dom=new JSDOM(`<!doctype html><body><div id="topbar"><button id="tLeft"></button><button id="tRight"></button></div><div id="backdrop" hidden></div><aside id="leftCol"><div id="targets"></div></aside><main><div id="log"></div><div id="sshBar"><span id="sshDesc"></span><button id="sshApprove"></button><button id="sshDeny"></button></div><div id="statusBar"></div><form id="f"><textarea id="q"></textarea></form></main><aside id="rightCol"><ul id="agents"></ul><p id="agentsEmpty"></p></aside></body>`,{runScripts:"outside-only",pretendToBeVisual:true});
+const w=dom.window; w.CSS={escape:s=>s};
+const status={lead:{model:"m",contextTokens:800,contextWindow:1000}};
+w.fetch=async(u)=>{console.log("URL",u);return {ok:true,status:200,json:async()=>String(u).startsWith("/api/workers")?{workers:[{id:"a",state:"failed_turn_limit"},{id:"b",state:"running"}],status}:{entries:[]}}};
+w.eval(script);
+await new Promise(r=>setTimeout(r,50));
+console.log(JSON.stringify(w.document.getElementById("statusBar").innerHTML));
