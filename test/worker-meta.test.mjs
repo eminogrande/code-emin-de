@@ -58,3 +58,43 @@ test("worker-meta: sorting puts running first then newest, stable by id", () => 
   );
   assert.deepEqual(sortWorkers(list).map((w) => w.id), sortWorkers(list).map((w) => w.id));
 });
+
+test("daemon CoT helpers: extractAssistantThinking, extractAssistantToolCalls, and summarizeLiveProgress", async () => {
+  const { extractAssistantThinking, extractAssistantToolCalls, summarizeLiveProgress } = await import("../src/daemon.mjs");
+  const entry = {
+    model: [
+      {
+        content: [
+          { type: "thinking", thinking: "Step 1: check config" },
+          { type: "toolCall", id: "tc1", name: "bash", arguments: { command: "ls -la" } },
+          { type: "text", text: "Done." },
+        ],
+      },
+    ],
+  };
+  assert.equal(extractAssistantThinking(entry), "Step 1: check config");
+  assert.deepEqual(extractAssistantToolCalls(entry), ['bash({"command":"ls -la"})']);
+
+  const live = summarizeLiveProgress({
+    run: { taskId: 1, turns: 2 },
+    generation: {
+      attempt: 1,
+      message: {
+        content: [
+          { type: "thinking", thinking: "Streaming reasoning..." },
+          { type: "text", text: "Partial answer" },
+        ],
+      },
+    },
+    tools: [{ callId: "tc1", name: "bash", status: "running", output: "stdout line" }],
+  });
+  assert.deepEqual(live, {
+    running: true,
+    turns: 2,
+    thinking: "Streaming reasoning...",
+    text: "Partial answer",
+    tools: [{ callId: "tc1", name: "bash", status: "running", output: "stdout line" }],
+  });
+  assert.equal(summarizeLiveProgress(null), null);
+  assert.equal(summarizeLiveProgress({}), null);
+});

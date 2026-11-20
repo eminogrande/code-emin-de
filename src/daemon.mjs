@@ -86,6 +86,46 @@ export function extractAssistantText(entryOrMsg) {
     .trim();
 }
 
+export function extractAssistantThinking(entryOrMsg) {
+  const msg = Array.isArray(entryOrMsg?.model) ? entryOrMsg.model[0] : entryOrMsg;
+  if (!msg || !Array.isArray(msg.content)) return "";
+  return msg.content
+    .filter((b) => b && b.type === "thinking" && typeof b.thinking === "string")
+    .map((b) => b.thinking)
+    .join("\n")
+    .trim();
+}
+
+export function extractAssistantToolCalls(entryOrMsg) {
+  const msg = Array.isArray(entryOrMsg?.model) ? entryOrMsg.model[0] : entryOrMsg;
+  if (!msg || !Array.isArray(msg.content)) return [];
+  return msg.content
+    .filter((b) => b && b.type === "toolCall")
+    .map((b) => `${b.name}(${JSON.stringify(b.arguments || {})})`);
+}
+
+export function summarizeLiveProgress(live) {
+  if (!live || (!live.run && !live.generation && !live.tools?.length)) return null;
+  const msg = live.generation?.message;
+  const thinking = extractAssistantThinking(msg);
+  const text = extractAssistantText(msg);
+  const toolCalls = extractAssistantToolCalls(msg);
+  const tools = (live.tools || []).map((t) => ({
+    callId: String(t.callId || ""),
+    name: String(t.name || ""),
+    status: String(t.status || "pending"),
+    ...(t.output ? { output: String(t.output).slice(-1200) } : {}),
+  }));
+  return {
+    running: Boolean(live.run),
+    turns: Number(live.run?.turns) || 0,
+    ...(thinking ? { thinking } : {}),
+    ...(text ? { text } : {}),
+    ...(toolCalls.length ? { toolCalls } : {}),
+    ...(tools.length ? { tools } : {}),
+  };
+}
+
 function roleToolSet(role) {
   return roleToolNames(role).map((name) => ({ name }));
 }
@@ -321,11 +361,13 @@ export async function openSwarmDaemon({
       }
       if (m.role === "assistant") {
         const texts = (m.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
-        const calls = (m.content || []).filter((b) => b.type === "toolCall").map((b) => `${b.name}(${JSON.stringify(b.arguments)})`);
+        const thinking = extractAssistantThinking(m);
+        const calls = extractAssistantToolCalls(m);
         return {
           id: e.id,
           role: "assistant",
           text: texts,
+          ...(thinking ? { thinking } : {}),
           toolCalls: calls,
           ...(m.stopReason ? { stopReason: m.stopReason } : {}),
           ...(m.errorMessage ? { errorMessage: m.errorMessage } : {}),
@@ -1129,9 +1171,16 @@ export async function openSwarmDaemon({
       if (!w) continue;
       const convId = w.convId ?? w.conversationId;
       const live = convId ? await harness.snapshot(LiveDoc, convId, BACKGROUND_CONTEXT) : null;
-      out.push({ ...describeWorker(w, live), nextRunAt: nextRunAt(w) });
+      const liveProgress = summarizeLiveProgress(live);
+      out.push({ ...describeWorker(w, live), nextRunAt: nextRunAt(w), ...(liveProgress ? { live: liveProgress } : {}) });
     }
     return sortWorkers(out);
+  }
+
+  async function readLiveConversationSnapshot(convId) {
+    if (!harnessRef) return null;
+    const live = await harnessRef.snapshot(LiveDoc, convId, BACKGROUND_CONTEXT).catch(() => null);
+    return summarizeLiveProgress(live);
   }
 
   async function listOrchestrationsSnapshot() {
@@ -1245,11 +1294,15 @@ export async function openSwarmDaemon({
             ? await side.commit((tx) => tx.entry(AssistantEntry, settled.answer), BACKGROUND_CONTEXT)
             : null;
         const errMsg = settled.status !== "done" ? settled.detail || settled.reason || settled.status : undefined;
+        const thinking = extractAssistantThinking(entry);
+        const toolCalls = extractAssistantToolCalls(entry);
         return {
           route: "btw",
           conversationId: side.id,
           status: settled.status,
           text: extractAssistantText(entry),
+          ...(thinking ? { thinking } : {}),
+          ...(toolCalls.length ? { toolCalls } : {}),
           ...(errMsg ? { error: errMsg } : {}),
         };
       }
@@ -1296,11 +1349,15 @@ export async function openSwarmDaemon({
           ? await targetConv.commit((tx) => tx.entry(AssistantEntry, settled.answer), BACKGROUND_CONTEXT)
           : null;
       const errMsg = settled.status !== "done" ? settled.detail || settled.reason || settled.status : undefined;
+      const thinking = extractAssistantThinking(entry);
+      const toolCalls = extractAssistantToolCalls(entry);
       return {
         route: routeInfo.route,
         conversationId: targetConv.id,
         status: settled.status,
         text: extractAssistantText(entry),
+        ...(thinking ? { thinking } : {}),
+        ...(toolCalls.length ? { toolCalls } : {}),
         ...(errMsg ? { error: errMsg } : {}),
       };
     },
@@ -1420,6 +1477,7 @@ export async function openSwarmDaemon({
     },
 
     readTranscript: readConversationTranscript,
+    readLiveConversation: readLiveConversationSnapshot,
 
     async close() {
       supervisor.stop();

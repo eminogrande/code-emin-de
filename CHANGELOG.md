@@ -9,6 +9,11 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ### Features
 
+- **Live & Collapsible Chain of Thought (CoT) for Chat and Agents (`src/daemon.mjs`, `src/cli.mjs`, `src/web.mjs`, `test/chat-client.test.mjs`, `test/worker-meta.test.mjs`):**
+  - Added `extractAssistantThinking`, `extractAssistantToolCalls`, `summarizeLiveProgress`, and `readLiveConversationSnapshot` in `src/daemon.mjs` to surface both persisted `{ type: 'thinking' }` / `{ type: 'toolCall' }` blocks and live in-flight `LiveDoc` generation reasoning + active tool slots (`live.generation.message` and `live.tools`).
+  - Exposed `live` progress and per-entry `thinking` / `toolCalls` on `GET /transcript` (`GET /api/history`) and per-worker `live` / `lastThinking` / `lastToolCalls` on `GET /workers` (`GET /api/workers`).
+  - Rendered collapsible Solarized `<details class="cot">` drawers on chat messages (auto-opened while streaming live at 1s busy poll intervals, defaulting to collapsed once completed so the transcript stays clean, and preserving the user's open/closed toggle state across live polls) and `<details class="wcot">` drawers on right-sidebar agent cards.
+
 - **Fixed pinned optimistic chat messages (`src/web.mjs`, `test/chat-client.test.mjs`):** optimistic `.pending` user and assistant bubbles no longer remain permanently pinned at the bottom of `#log` after `/api/chat` settles. Persisted turns mark their optimistic bubbles settled and reconcile immediately with `/api/history` (even if server text normalization differs from raw input or trailing roles vary), while non-transcript turns (`/status`, `/workers`, `/hooks`, `/credits`, `/help`, `/model`, `/btw`, `/reinforce`, or errors) remain visible until the next message or new transcript entry arrives and are then cleanly retired.
 
 - **Removed RareUI completely:** deleted the `About · Credits` link, stylesheet/route, copied component

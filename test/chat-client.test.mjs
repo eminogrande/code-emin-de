@@ -76,13 +76,14 @@ test("poll backs off on fetch errors and pauses while hidden", async () => {
   w.close();
 });
 
-test("no history fetch while a chat request is active", async () => {
+test("history poll continues at faster BUSY_POLL_MS while a chat request is active so live CoT streams", async () => {
   const { w, calls } = boot([{ id: 1, role: "user", text: "q", html: "<p>q</p>" }]);
   await flush();
   const n = calls.filter((u) => String(u).startsWith("/api/history")).length;
   w.eval("busy = true");
-  await w.eval("tick()");
-  assert.equal(calls.filter((u) => String(u).startsWith("/api/history")).length, n);
+  const nextInterval = await w.eval("tick().then(function(){return backoff})");
+  assert.equal(calls.filter((u) => String(u).startsWith("/api/history")).length, n + 1);
+  assert.equal(nextInterval, 1000);
   w.close();
 });
 
@@ -313,5 +314,100 @@ test("settled optimistic user/assistant nodes never stay pinned at bottom after 
   await w.eval("send(false)");
   assert.equal(log.querySelectorAll(".pending").length, 0, "persisted turn leaves zero pinned .pending nodes even if server text was normalized");
   assert.deepEqual([...log.children].map((n) => n.dataset.id), ["1", "2", "3", "4", "5", "6"]);
+  w.close();
+});
+
+test("collapsible Chain of Thought (CoT) renders live and on completed chat turns and workers, preserving user open/close state", async () => {
+  const history = [
+    { id: 1, role: "user", text: "deploy fix", html: "<p>deploy fix</p>" },
+  ];
+  let liveState = {
+    running: true,
+    turns: 1,
+    thinking: "Inspecting daemon socket and checking test output...",
+    tools: [{ callId: "c1", name: "bash", status: "running", output: "TAP version 13" }],
+  };
+  const workers = [
+    {
+      id: "w-audit",
+      name: "Security Auditor",
+      role: "reviewer",
+      state: "running",
+      mode: "recurring",
+      everyMs: 300000,
+      runCount: 2,
+      live: {
+        running: true,
+        thinking: "Checking open ports and passkey session cookies...",
+        tools: [{ callId: "t9", name: "bash", status: "running", output: "127.0.0.1:3001" }],
+      },
+    },
+  ];
+  const { w, log } = boot(history, workers);
+  const origFetch = w.fetch;
+  w.fetch = async (url, init) => {
+    if (String(url).startsWith("/api/history")) {
+      return { ok: true, status: 200, json: async () => ({ entries: history.slice(), ...(liveState ? { live: liveState } : {}) }) };
+    }
+    return origFetch(url, init);
+  };
+  await w.eval("syncHistory()");
+  await w.eval("pollWorkers()");
+
+  // 1) Live CoT in main chat log defaults to open while live
+  const liveDet = log.querySelector("details.cot");
+  assert.ok(liveDet, "live CoT details element rendered in chat log");
+  assert.equal(liveDet.open, true, "live CoT defaults to open while working");
+  assert.equal(liveDet.dataset.live, "1");
+  assert.match(liveDet.querySelector("summary").textContent, /Working live · Chain of thought \(bash\)/);
+  assert.match(liveDet.querySelector(".cot-think").textContent, /Inspecting daemon socket/);
+  assert.match(liveDet.querySelector(".cot-tools").textContent, /bash \[running\]: TAP version 13/);
+
+  // User closes the live CoT drawer; next live poll must respect user's closed state
+  liveDet.open = false;
+  liveDet.dataset.userToggled = "1";
+  liveState = {
+    running: true,
+    turns: 1,
+    thinking: "Inspecting daemon socket and checking test output... step 2",
+    tools: [{ callId: "c1", name: "bash", status: "done", output: "all pass" }],
+  };
+  await w.eval("syncHistory()");
+  const liveDetAfter = log.querySelector("details.cot");
+  assert.equal(liveDetAfter.open, false, "user-closed CoT stays closed across live polls");
+  assert.match(liveDetAfter.querySelector(".cot-think").textContent, /step 2/);
+
+  // 2) Turn finishes and lands in transcript with thinking + toolCalls
+  liveState = null;
+  history.push({
+    id: 2,
+    role: "assistant",
+    text: "All tests pass.",
+    html: "<p>All tests pass.</p>",
+    thinking: "Verified socket and ran test suite.",
+    toolCalls: ['bash({"command":"npm test"})'],
+  });
+  await w.eval("syncHistory()");
+  assert.equal(log.querySelectorAll(".m.a.live-stream").length, 0, "ephemeral live-stream node removed once entry lands");
+  const entryNode = log.querySelector('[data-id="2"]');
+  const entryCot = entryNode.querySelector("details.cot");
+  assert.ok(entryCot, "completed assistant turn has collapsible CoT drawer");
+  assert.equal(entryCot.open, false, "completed turn CoT defaults to collapsed so chat stays clean");
+  assert.match(entryCot.querySelector("summary").textContent, /Chain of thought \(1 tool\)/);
+  assert.match(entryCot.querySelector(".cot-think").textContent, /Verified socket and ran test suite/);
+  // User opens completed CoT; re-sync preserves open state
+  entryCot.open = true;
+  entryCot.dataset.userToggled = "1";
+  await w.eval("syncHistory()");
+  assert.equal(entryNode.querySelector("details.cot").open, true, "completed CoT open state preserved across polls");
+
+  // 3) Right-sidebar agent card renders collapsible live CoT (`details.wcot`)
+  const agentCard = w.document.querySelector('#agents li[data-id="w-audit"]');
+  assert.ok(agentCard, "worker card rendered in right sidebar");
+  const wcot = agentCard.querySelector("details.wcot");
+  assert.ok(wcot, "worker card has collapsible CoT details.wcot");
+  assert.equal(wcot.open, true, "running worker CoT defaults to open");
+  assert.match(wcot.querySelector("summary").textContent, /Working live · CoT \(bash\)/);
+  assert.match(wcot.querySelector(".cot-think").textContent, /Checking open ports/);
   w.close();
 });

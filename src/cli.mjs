@@ -79,7 +79,11 @@ export async function startUnixSocketServer({
       if (req.method === "GET" && url.pathname === "/transcript") {
         const convId = Number(url.searchParams.get("convId") || "1");
         const max = Number(url.searchParams.get("max") || "30");
-        return send(200, { conversationId: convId, entries: await daemon.readTranscript(convId, max) });
+        const [entries, live] = await Promise.all([
+          daemon.readTranscript(convId, max),
+          daemon.readLiveConversation(convId),
+        ]);
+        return send(200, { conversationId: convId, entries, ...(live ? { live } : {}) });
       }
       if (req.method === "POST" && url.pathname === "/chat") {
         const body = await readJsonBody(req);

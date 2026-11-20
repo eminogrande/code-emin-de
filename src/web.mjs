@@ -326,6 +326,14 @@ pre{padding:.75rem .9rem;overflow-x:auto;border-left:2px solid var(--rule);margi
 .mini-form label input{width:4.5rem;margin:0 .25rem}
 .wk .wactions{display:flex;gap:.35rem;margin-top:.35rem}
 .wk .wgoal{font-size:.72rem;color:var(--muted);margin-top:.25rem;white-space:pre-wrap}
+.cot,.wcot{border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:3px;background:var(--paper-2);margin:0 0 .5rem;font-size:.82rem;color:var(--muted)}
+.wcot{margin:.35rem 0 0;font-size:.74rem}
+.cot summary,.wcot summary{cursor:pointer;padding:.28rem .5rem;font-weight:600;color:var(--heading);user-select:none}
+.cot[data-live="1"],.wcot[data-live="1"]{border-left-color:#859900}
+.cot-body{padding:.25rem .55rem .45rem;border-top:1px solid var(--rule);white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;max-height:16rem;overflow-y:auto}
+.wcot .cot-body{max-height:10rem;padding:.2rem .4rem .35rem}
+.cot-tools{margin:0 0 .35rem;padding-left:1.1rem;font-size:.94em;color:var(--ink)}
+.cot-tools li{margin:.12rem 0;word-break:break-all}
 #archived summary{cursor:pointer;color:var(--muted);font-size:.75rem;letter-spacing:.06em;text-transform:uppercase}
 #archive{list-style:none;margin:.4rem 0 0;padding:0;display:flex;flex-direction:column;gap:.3rem}
 #archive .wsub{color:var(--muted);font-size:.75rem;display:block}
@@ -483,6 +491,58 @@ function addHtml(cls, html, fallback, id) {
 // id -> html last applied, so a re-fetch never rebuilds unchanged entries
 const rendered = new Map();
 
+function applyCot(node, opts) {
+  if (!node) return;
+  const thinking = String((opts && opts.thinking) || '').trim();
+  const toolCalls = Array.isArray(opts && opts.toolCalls) ? opts.toolCalls.filter(Boolean) : [];
+  const tools = Array.isArray(opts && opts.tools) ? opts.tools.filter(Boolean) : [];
+  const isLive = Boolean(opts && opts.live);
+  let det = node.querySelector(':scope > details.cot');
+  if (!thinking && !toolCalls.length && !tools.length && !isLive) {
+    if (det) det.remove();
+    return;
+  }
+  const wasOpen = det ? det.open : isLive;
+  const userToggled = det && det.dataset.userToggled === '1';
+  if (!det) {
+    det = document.createElement('details');
+    det.className = 'cot';
+    const sum = document.createElement('summary');
+    const body = document.createElement('div');
+    body.className = 'cot-body';
+    det.append(sum, body);
+    det.addEventListener('toggle', () => { det.dataset.userToggled = '1'; });
+    node.insertBefore(det, node.firstChild);
+  }
+  det.open = userToggled ? det.open : wasOpen;
+  if (isLive) det.dataset.live = '1'; else delete det.dataset.live;
+  const sum = det.querySelector('summary');
+  const activeTools = tools.filter((t) => t && t.status !== 'done').map((t) => t.name).filter(Boolean);
+  let label = isLive ? 'Working live \u00b7 Chain of thought' : 'Chain of thought';
+  if (activeTools.length) label += ' (' + activeTools.join(', ') + ')';
+  else if (toolCalls.length) label += ' (' + toolCalls.length + (toolCalls.length === 1 ? ' tool)' : ' tools)');
+  sum.textContent = label;
+  const body = det.querySelector('.cot-body');
+  body.replaceChildren();
+  if (tools.length || toolCalls.length) {
+    const ul = document.createElement('ul');
+    ul.className = 'cot-tools';
+    const items = tools.length
+      ? tools.map((t) => (t.name || 'tool') + ' [' + (t.status || 'running') + ']' + (t.output ? ': ' + String(t.output).slice(0, 160) : ''))
+      : toolCalls;
+    for (const item of items) {
+      const li = document.createElement('li');
+      li.textContent = String(item);
+      ul.appendChild(li);
+    }
+    body.appendChild(ul);
+  }
+  const pre = document.createElement('div');
+  pre.className = 'cot-think';
+  pre.textContent = thinking || (isLive ? 'Thinking\u2026' : '');
+  if (pre.textContent) body.appendChild(pre);
+}
+
 // Reconcile rendered log against transcript order: reuse by id, insert new, drop vanished.
 // An unsent-input draft, selection and scroll stay untouched unless the log was at the bottom.
 async function syncHistory() {
@@ -502,14 +562,26 @@ async function syncHistory() {
   let after = null;
   for (const e of entries) {
     const html = e.html || '';
+    const sig = html + '\n--cot--\n' + (e.thinking || '') + '\n' + ((e.toolCalls || []).join('|'));
     const cls = e.role === 'user' ? 'u' : (e.isError ? 'a err' : 'a');
     let node = known.has(String(e.id)) ? log.querySelector('[data-id="' + e.id + '"]') : null;
     if (!node) {
       node = addHtml(cls, html, e.text, e.id);
-    } else if (html && rendered.get(e.id) !== html) {
+    } else if (rendered.get(e.id) !== sig) {
+      const oldDet = node.querySelector(':scope > details.cot');
+      const keepOpen = oldDet ? oldDet.open : false;
+      const keepToggled = oldDet ? oldDet.dataset.userToggled : '';
       node.className = 'm ' + cls;
       node.innerHTML = html;
+      if (oldDet) {
+        oldDet.open = keepOpen;
+        if (keepToggled) oldDet.dataset.userToggled = keepToggled;
+        node.insertBefore(oldDet, node.firstChild);
+      }
       if (window.chatRender) window.chatRender(node);
+    }
+    if (e.role === 'assistant') {
+      applyCot(node, { thinking: e.thinking, toolCalls: e.toolCalls, live: false });
     }
     // Attachment history: ids only, images streamed by the authenticated /api/image endpoint.
     const imgsSig = (e.images || []).join(',');
@@ -517,13 +589,15 @@ async function syncHistory() {
       window.chatImages.renderHistory(node, e.images);
       node.dataset.images = imgsSig;
     }
-    rendered.set(e.id, html);
+    rendered.set(e.id, sig);
     const want = after ? after.nextElementSibling : log.firstElementChild;
     if (node !== want) log.insertBefore(node, want);
     after = node;
   }
+  // Live Chain-of-Thought & partial output on active conversation or pending assistant bubble
+  const live = d.live && (d.live.running || d.live.thinking || (d.live.tools && d.live.tools.length) || (d.live.toolCalls && d.live.toolCalls.length)) ? d.live : null;
   // Optimistic nodes (no data-id) go as soon as their real counterpart landed. The reply
-  // placeholder survives until the last transcript entry is the assistant reply.
+  // placeholder survives until the last transcript entry is the assistant reply (and not still running).
   const lastRole = entries.length ? entries[entries.length - 1].role : '';
   const userTexts = new Set(entries.filter((e) => e.role === 'user').map((e) => (e.text || '').trim()));
   for (const p of Array.from(log.querySelectorAll('.pending'))) {
@@ -536,13 +610,38 @@ async function syncHistory() {
       if (entries.length) p.remove();
       continue;
     }
-    if (p.classList.contains('u') ? (userTexts.has((p.dataset.raw || '').trim()) || p.querySelector('.himages')) : lastRole === 'assistant') p.remove();
+    if (p.classList.contains('u')) {
+      if (userTexts.has((p.dataset.raw || '').trim()) || p.querySelector('.himages')) p.remove();
+    } else if (lastRole === 'assistant' && !live) {
+      p.remove();
+    }
+  }
+  let liveNode = log.querySelector('.pending.a:not([data-settled="1"])') || log.querySelector('.m.a.live-stream');
+  if (live) {
+    if (!liveNode) {
+      liveNode = addHtml('a live-stream', '', '');
+    }
+    const oldDet = liveNode.querySelector(':scope > details.cot');
+    const bodyHtml = live.html || '';
+    if (bodyHtml && liveNode.dataset.liveHtml !== bodyHtml) {
+      liveNode.dataset.liveHtml = bodyHtml;
+      liveNode.innerHTML = bodyHtml;
+      if (oldDet) liveNode.insertBefore(oldDet, liveNode.firstChild);
+      if (window.chatRender) window.chatRender(liveNode);
+    } else if (!bodyHtml && !oldDet && liveNode.textContent === '\u2026') {
+      liveNode.textContent = '';
+    }
+    applyCot(liveNode, { thinking: live.thinking, toolCalls: live.toolCalls, tools: live.tools, live: true });
+  } else {
+    const staleLive = log.querySelector('.m.a.live-stream');
+    if (staleLive) staleLive.remove();
   }
   if (keep) log.scrollTop = log.scrollHeight; else log.scrollTop = prevTop;
 }
 
-// Poll history only while no chat request is active; back off on errors; pause when hidden.
+// Poll history faster while a chat request is active so live Chain of Thought streams in real time.
 const POLL_MS = 3000;
+const BUSY_POLL_MS = 1000;
 var pollTimer = null;
 var backoff = POLL_MS;
 
@@ -552,10 +651,10 @@ function schedulePoll(ms) {
 }
 
 async function tick() {
-  if (document.hidden || busy) return schedulePoll(POLL_MS);
+  if (document.hidden) return schedulePoll(POLL_MS);
   try {
     await syncHistory();
-    backoff = POLL_MS;
+    backoff = busy ? BUSY_POLL_MS : POLL_MS;
   } catch {
     backoff = Math.min(backoff * 2, 15000);
   }
@@ -790,6 +889,62 @@ function elapsed(ms) {
   return Math.floor(m / 60) + 'h ' + (m % 60) + 'm';
 }
 
+function applyWorkerCot(li, w) {
+  if (!li) return;
+  const live = w && w.live ? w.live : null;
+  const thinking = String((live && live.thinking) || (w && w.lastThinking) || '').trim();
+  const toolCalls = Array.isArray(live && live.toolCalls) && live.toolCalls.length
+    ? live.toolCalls
+    : (Array.isArray(w && w.lastToolCalls) ? w.lastToolCalls : []);
+  const tools = Array.isArray(live && live.tools) ? live.tools : [];
+  const active = isRunning(w) || Boolean(live && live.running);
+  let det = li.querySelector(':scope > details.wcot');
+  if (!thinking && !toolCalls.length && !tools.length && !active) {
+    if (det) det.remove();
+    return;
+  }
+  const wasOpen = det ? det.open : active;
+  const userToggled = det && det.dataset.userToggled === '1';
+  if (!det) {
+    det = document.createElement('details');
+    det.className = 'wcot';
+    const sum = document.createElement('summary');
+    const body = document.createElement('div');
+    body.className = 'cot-body';
+    det.append(sum, body);
+    det.addEventListener('toggle', () => { det.dataset.userToggled = '1'; });
+    const actions = li.querySelector('.wactions');
+    if (actions) li.insertBefore(det, actions); else li.appendChild(det);
+  }
+  det.open = userToggled ? det.open : wasOpen;
+  if (active) det.dataset.live = '1'; else delete det.dataset.live;
+  const sum = det.querySelector('summary');
+  const activeTools = tools.filter((t) => t && t.status !== 'done').map((t) => t.name).filter(Boolean);
+  let label = active ? 'Working live \u00b7 CoT' : 'Chain of thought';
+  if (activeTools.length) label += ' (' + activeTools.join(', ') + ')';
+  else if (toolCalls.length) label += ' (' + toolCalls.length + ')';
+  sum.textContent = label;
+  const body = det.querySelector('.cot-body');
+  body.replaceChildren();
+  if (tools.length || toolCalls.length) {
+    const ul = document.createElement('ul');
+    ul.className = 'cot-tools';
+    const items = tools.length
+      ? tools.map((t) => (t.name || 'tool') + ' [' + (t.status || 'running') + ']' + (t.output ? ': ' + String(t.output).slice(0, 140) : ''))
+      : toolCalls;
+    for (const item of items) {
+      const liItem = document.createElement('li');
+      liItem.textContent = String(item);
+      ul.appendChild(liItem);
+    }
+    body.appendChild(ul);
+  }
+  const pre = document.createElement('div');
+  pre.className = 'cot-think';
+  pre.textContent = thinking || (live && live.text ? String(live.text).slice(0, 400) : '') || (active ? 'Thinking\u2026' : '');
+  if (pre.textContent) body.appendChild(pre);
+}
+
 // Reconcile one <ul> against a worker list (running-first order comes from the server).
 function fillList(ul, list, withDot) {
   const known = new Set(list.map((w) => w.id));
@@ -810,6 +965,7 @@ function fillList(ul, list, withDot) {
     li.querySelector('.wsub').textContent =
       (w.enabled === false ? 'paused' : (STATE_LABEL[w.state] || String(w.state || 'idle'))) + schedule + ' · ' + (w.runCount || 0) + ' runs';
     li.querySelector('.werr').textContent = w.lastError ? String(w.lastError).slice(0, 120) : '';
+    applyWorkerCot(li, w);
     const runBtn = li.querySelector('[data-worker-action="run"]');
     runBtn.dataset.workerId = w.id;
     runBtn.disabled = w.enabled === false || isRunning(w);
@@ -1070,7 +1226,7 @@ async function send(steer = false) {
   }
   const pending = addHtml('a', '', '…');
   busy = true;
-  clearTimeout(pollTimer);
+  schedulePoll(BUSY_POLL_MS);
   try {
     const r = await fetch('/api/chat', {
       method: 'POST',
@@ -1099,10 +1255,18 @@ async function send(steer = false) {
       pending.textContent = 'Error: ' + d.error +
         (payloadImages.length ? ' — the current model may not accept images; switch to a vision model.' : '');
     } else if (d.html) {
+      const oldDet = pending.querySelector(':scope > details.cot');
       pending.innerHTML = d.html;
+      if (oldDet) pending.insertBefore(oldDet, pending.firstChild);
       if (window.chatRender) window.chatRender(pending);
+      if (d.thinking || (d.toolCalls && d.toolCalls.length)) {
+        applyCot(pending, { thinking: d.thinking, toolCalls: d.toolCalls, live: false });
+      }
     } else {
       pending.textContent = d.text || '(done)';
+      if (d && (d.thinking || (d.toolCalls && d.toolCalls.length))) {
+        applyCot(pending, { thinking: d.thinking, toolCalls: d.toolCalls, live: false });
+      }
     }
     // Attachments only leave the deck once the message actually landed.
     if (d && !d.error && imgs.length) window.chatImages.clear();
@@ -1423,19 +1587,33 @@ export async function startWebServer({
         const entries = [];
         for (const e of out?.entries || []) {
           const text = String(e.text || "");
+          const thinking = String(e.thinking || "").trim();
+          const toolCalls = Array.isArray(e.toolCalls) ? e.toolCalls.filter(Boolean).map(String) : [];
           if (e.role === "user") {
             const clean = text.replace(/^\[ROUTER_HINT:[^\]]+\]\n/, "");
             entries.push({ id: e.id, role: "user", text: clean, html: renderMarkdown(clean), ...(e.images?.length ? { images: e.images } : {}) });
           } else if (e.role === "assistant") {
+            const cot = {
+              ...(thinking ? { thinking } : {}),
+              ...(toolCalls.length ? { toolCalls } : {}),
+            };
             if (text) {
-              entries.push({ id: e.id, role: "assistant", text, html: renderMarkdown(text) });
+              entries.push({ id: e.id, role: "assistant", text, html: renderMarkdown(text), ...cot });
             } else if (e.errorMessage) {
               const errText = `Error: ${e.errorMessage}`;
-              entries.push({ id: e.id, role: "assistant", isError: true, text: errText, html: renderMarkdown(errText) });
+              entries.push({ id: e.id, role: "assistant", isError: true, text: errText, html: renderMarkdown(errText), ...cot });
+            } else if (thinking || toolCalls.length) {
+              entries.push({ id: e.id, role: "assistant", text: "", html: "", ...cot });
             }
           }
         }
-        return sendJson(200, { conversationId: out?.conversationId || 1, entries });
+        const live = out?.live
+          ? {
+              ...out.live,
+              ...(out.live.text ? { html: renderMarkdown(String(out.live.text)) } : {}),
+            }
+          : null;
+        return sendJson(200, { conversationId: out?.conversationId || 1, entries, ...(live ? { live } : {}) });
       }
 
       if (req.method === "POST" && url.pathname === "/api/chat") {

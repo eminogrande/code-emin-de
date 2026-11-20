@@ -340,6 +340,9 @@ button implemented in `src/markdown.mjs`, `src/chat-client.js`, and inline CSS i
 Optimistic `.pending` chat bubbles reconcile deterministically against `/api/history` as soon as
 `/api/chat` settles so sent user messages and ephemeral slash-command outputs never stay pinned
 below newer transcript entries.
+Collapsible Chain-of-Thought (`<details class="cot">` in `#log` and `<details class="wcot">` on agent cards in `#agents`)
+streams live reasoning (`thinking`) and active tool executions from `LiveDoc` at 1-second busy-poll intervals while
+defaulting to collapsed on completed turns and preserving manual open/close toggle state across polls.
 Images, models, orchestrations, and workers keep their existing behavior and selectors.
 Tests: `test/ui-theme.test.mjs`, `test/markdown.test.mjs`, `test/chat-client.test.mjs`, and browser E2E coverage.
 
