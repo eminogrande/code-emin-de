@@ -1,34 +1,93 @@
-// Composer image attachments: paste, file picker, thumbnails, per-image remove.
-// Plain script (CSP: script-src 'self'); exposes window.chatImages. Server re-validates everything.
+// Composer attachments: paste & drag-and-drop for images AND files (no Attach button).
+// Plain script (CSP: script-src 'self'); exposes window.chatImages. Server re-validates images.
 (function () {
   'use strict';
   var MAX_IMAGES = 3;
+  var MAX_FILES = 5;
   var MAX_BYTES = 4 * 1024 * 1024;
+  var MAX_FILE_BYTES = 1 * 1024 * 1024;
   var MAX_EVENT_B64 = 6 * 1024 * 1024;
   var MAX_DIM = 4096;
-  var TYPES = { 'image/png': true, 'image/jpeg': true, 'image/webp': true, 'image/gif': true };
+  var IMAGE_TYPES = { 'image/png': true, 'image/jpeg': true, 'image/webp': true, 'image/gif': true };
+  var IMAGE_EXT_RE = /\.(png|jpe?g|webp|gif)$/i;
+  var TEXT_EXT_RE = /\.(txt|md|markdown|json|jsonl|csv|tsv|ya?ml|toml|xml|html?|css|scss|less|m?[jt]sx?|py|sh|bash|zsh|go|rs|c|h|cc|cpp|hpp|java|kt|swift|rb|php|sql|graphql|proto|dockerfile|env|ini|conf|cfg|log|diff|patch|svg)$/i;
 
   var deck = null;
-  var input = null;
   var statusEl = null;
-  var pending = []; // {file, url, name}
+  var pending = []; // {kind: 'image'|'file', file, url, name, mimeType}
   var sending = false;
+  var dragDepth = 0;
 
   function boot() {
     deck = document.getElementById('pending-images');
-    input = document.getElementById('attach-input');
     statusEl = document.getElementById('attach-status');
-    if (!deck || !input) return;
+    if (!deck) return;
     if (deck.dataset.wired) return;
     deck.dataset.wired = '1';
-    input.addEventListener('change', function () {
-      addFiles(input.files);
-      input.value = '';
-    });
     document.addEventListener('paste', onPaste);
+    document.addEventListener('dragenter', onDragEnter);
+    document.addEventListener('dragover', onDragOver);
+    document.addEventListener('dragleave', onDragLeave);
+    document.addEventListener('drop', onDrop);
     document.addEventListener('keydown', function (ev) {
       if (ev.key === 'Escape' && pending.length && !sending) clear();
     });
+  }
+
+  function hasDraggedFiles(dt) {
+    if (!dt) return false;
+    if (dt.types) {
+      for (var i = 0; i < dt.types.length; i++) {
+        if (dt.types[i] === 'Files') return true;
+      }
+    }
+    return Boolean(dt.files && dt.files.length);
+  }
+
+  function setDropActive(active) {
+    var f = document.getElementById('f');
+    if (f) f.classList.toggle('drop-active', !!active);
+  }
+
+  function onDragEnter(ev) {
+    if (!hasDraggedFiles(ev.dataTransfer)) return;
+    ev.preventDefault();
+    dragDepth++;
+    setDropActive(true);
+  }
+
+  function onDragOver(ev) {
+    if (!hasDraggedFiles(ev.dataTransfer)) return;
+    ev.preventDefault();
+    if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'copy';
+    setDropActive(true);
+  }
+
+  function onDragLeave(ev) {
+    if (!hasDraggedFiles(ev.dataTransfer)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) setDropActive(false);
+  }
+
+  function onDrop(ev) {
+    var dt = ev.dataTransfer;
+    if (!dt) return;
+    var files = [];
+    if (dt.files && dt.files.length) {
+      for (var i = 0; i < dt.files.length; i++) files.push(dt.files[i]);
+    } else if (dt.items && dt.items.length) {
+      for (var j = 0; j < dt.items.length; j++) {
+        if (dt.items[j].kind === 'file') {
+          var f = dt.items[j].getAsFile();
+          if (f) files.push(f);
+        }
+      }
+    }
+    if (!files.length) return;
+    ev.preventDefault();
+    dragDepth = 0;
+    setDropActive(false);
+    addFiles(files);
   }
 
   function note(msg, bad) {
@@ -44,18 +103,22 @@
 
   function onPaste(ev) {
     var cd = ev.clipboardData;
-    if (!cd || !cd.items) return;
+    if (!cd) return;
     var files = [];
-    for (var i = 0; i < cd.items.length; i++) {
-      var it = cd.items[i];
-      if (it.kind !== 'file') continue;
-      var f = it.getAsFile();
-      if (f) files.push(f); // keep wrong types so they get a visible rejection
+    if (cd.items && cd.items.length) {
+      for (var i = 0; i < cd.items.length; i++) {
+        var it = cd.items[i];
+        if (it.kind !== 'file') continue;
+        var f = it.getAsFile();
+        if (f) files.push(f);
+      }
+    } else if (cd.files && cd.files.length) {
+      for (var j = 0; j < cd.files.length; j++) files.push(cd.files[j]);
     }
     if (!files.length) return; // plain text paste untouched
     ev.preventDefault();
     addFiles(files);
-    // Text that arrived alongside the image still lands in a focused composer.
+    // Text that arrived alongside the attachment still lands in a focused composer.
     var txt = cd.getData ? cd.getData('text/plain') : '';
     if (txt && editableFocused()) insertText(txt);
   }
@@ -69,16 +132,56 @@
     a.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
+  function inferImageMime(f, name) {
+    if (f && IMAGE_TYPES[f.type]) return f.type;
+    var m = String(name || '').toLowerCase().match(IMAGE_EXT_RE);
+    if (!m) return '';
+    var ext = m[1];
+    return ext === 'png' ? 'image/png' : (ext === 'jpg' || ext === 'jpeg') ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : ext === 'gif' ? 'image/gif' : '';
+  }
+
+  function isTextLikeFile(f, name) {
+    var t = String((f && f.type) || '').toLowerCase();
+    if (t.indexOf('text/') === 0) return true;
+    if (t === 'application/json' || t === 'application/ld+json' || t === 'application/xml' ||
+        t === 'application/javascript' || t === 'application/x-javascript' || t === 'application/typescript' ||
+        t === 'application/x-yaml' || t === 'application/yaml' || t === 'application/toml' ||
+        t === 'application/x-sh' || t === 'application/sql' || t === 'application/graphql') {
+      return true;
+    }
+    if (!t || t === 'application/octet-stream') {
+      return TEXT_EXT_RE.test(String(name || ''));
+    }
+    return TEXT_EXT_RE.test(String(name || ''));
+  }
+
+  function countKind(kind) {
+    var n = 0;
+    for (var i = 0; i < pending.length; i++) if (pending[i].kind === kind) n++;
+    return n;
+  }
+
   function addFiles(list) {
     var arr = Array.prototype.slice.call(list || []);
     var msgs = [];
     for (var i = 0; i < arr.length; i++) {
       var f = arr[i];
+      if (!f) continue;
       var name = f.name || ('pasted-' + Date.now() + guessExt(f.type));
-      if (!TYPES[f.type]) { msgs.push('Rejected ' + name + ': unsupported type (png/jpeg/webp/gif only)'); continue; }
-      if (f.size > MAX_BYTES) { msgs.push('Rejected ' + name + ': too large (' + mb(f.size) + 'MB, max 4MB)'); continue; }
-      if (pending.length >= MAX_IMAGES) { msgs.push('Rejected ' + name + ': max ' + MAX_IMAGES + ' images'); break; }
-      pending.push({ file: f, url: URL.createObjectURL(f), name: name });
+      var imgMime = inferImageMime(f, name);
+      if (imgMime) {
+        if (f.size > MAX_BYTES) { msgs.push('Rejected ' + name + ': too large (' + mb(f.size) + 'MB, max 4MB)'); continue; }
+        if (countKind('image') >= MAX_IMAGES) { msgs.push('Rejected ' + name + ': max ' + MAX_IMAGES + ' images'); continue; }
+        pending.push({ kind: 'image', file: f, url: URL.createObjectURL(f), name: name, mimeType: imgMime });
+        continue;
+      }
+      if (isTextLikeFile(f, name)) {
+        if (f.size > MAX_FILE_BYTES) { msgs.push('Rejected ' + name + ': file too large (' + mb(f.size) + 'MB, max 1MB)'); continue; }
+        if (countKind('file') >= MAX_FILES) { msgs.push('Rejected ' + name + ': max ' + MAX_FILES + ' files'); continue; }
+        pending.push({ kind: 'file', file: f, url: '', name: name, mimeType: f.type || 'text/plain' });
+        continue;
+      }
+      msgs.push('Rejected ' + name + ': unsupported type (png/jpeg/webp/gif or text/code files only)');
     }
     render(msgs);
   }
@@ -87,6 +190,16 @@
     return t === 'image/png' ? '.png' : t === 'image/jpeg' ? '.jpg' : t === 'image/webp' ? '.webp' : t === 'image/gif' ? '.gif' : '';
   }
   function mb(n) { return (n / 1048576).toFixed(1); }
+  function kb(n) { return n < 1024 ? (n + 'B') : ((n / 1024).toFixed(1) + 'KB'); }
+
+  function statusSummary() {
+    var imgs = countKind('image');
+    var files = countKind('file');
+    var parts = [];
+    if (imgs) parts.push(imgs + ' image' + (imgs > 1 ? 's' : ''));
+    if (files) parts.push(files + ' file' + (files > 1 ? 's' : ''));
+    return parts.length ? parts.join(' + ') + ' attached' : '';
+  }
 
   function render(msgs) {
     if (!deck) return;
@@ -94,9 +207,18 @@
     deck.hidden = pending.length === 0;
     pending.forEach(function (p, idx) {
       var fig = document.createElement('figure');
-      var img = document.createElement('img');
-      img.src = p.url;
-      img.alt = p.name;
+      if (p.kind === 'image') {
+        var img = document.createElement('img');
+        img.src = p.url;
+        img.alt = p.name;
+        fig.appendChild(img);
+      } else {
+        fig.className = 'file-chip';
+        var badge = document.createElement('div');
+        badge.className = 'file-badge';
+        badge.textContent = 'FILE \u00b7 ' + kb(p.file.size || 0);
+        fig.appendChild(badge);
+      }
       var cap = document.createElement('figcaption');
       cap.textContent = p.name;
       var btn = document.createElement('button');
@@ -105,26 +227,25 @@
       btn.textContent = '\u00d7';
       btn.setAttribute('aria-label', 'Remove ' + p.name);
       btn.onclick = function () { remove(idx); };
-      fig.appendChild(img);
       fig.appendChild(cap);
       fig.appendChild(btn);
       deck.appendChild(fig);
     });
     if (msgs && msgs.length) note(msgs.join(' \u00b7 '), true);
-    else if (pending.length) note(pending.length + ' image' + (pending.length > 1 ? 's' : '') + ' attached');
+    else if (pending.length) note(statusSummary());
     else note('');
   }
 
   function remove(idx) {
     var p = pending[idx];
     if (!p) return;
-    URL.revokeObjectURL(p.url);
+    if (p.url) URL.revokeObjectURL(p.url);
     pending.splice(idx, 1);
     render();
   }
 
   function clear() {
-    pending.forEach(function (p) { URL.revokeObjectURL(p.url); });
+    pending.forEach(function (p) { if (p.url) URL.revokeObjectURL(p.url); });
     pending = [];
     if (statusEl) statusEl.textContent = '';
     render();
@@ -132,7 +253,9 @@
 
   // Snapshot for one send; deck survives until clear() on success.
   function take() {
-    return pending.map(function (p) { return { name: p.name, mimeType: p.file.type, file: p.file }; });
+    return pending.map(function (p) {
+      return { kind: p.kind, name: p.name, mimeType: p.mimeType || p.file.type, file: p.file };
+    });
   }
 
   // Decode real bytes in the browser: rejects corrupt files, applies EXIF rotation,
@@ -201,15 +324,36 @@
     });
   }
 
+  function readTextFile(file, name) {
+    if (file && typeof file.text === 'function') {
+      return file.text().then(function (t) { return { name: name, text: String(t || '') }; });
+    }
+    return new Promise(function (resolve, reject) {
+      var fr = new FileReader();
+      fr.onload = function () { resolve({ name: name, text: String(fr.result || '') }); };
+      fr.onerror = function () { reject(new Error('could not read ' + name)); };
+      fr.readAsText(file);
+    });
+  }
+
   function toDataUrls(entries) {
     sending = true;
-    return Promise.all(entries.map(function (e) {
+    var imgs = (entries || []).filter(function (e) { return !e.kind || e.kind === 'image'; });
+    return Promise.all(imgs.map(function (e) {
       return normalize(e).then(function (r) {
         return toDataUrl(r.blob, e.name).then(function (dataUrl) {
           return { dataUrl: dataUrl, name: e.name, mimeType: r.mimeType };
         });
       });
     })).then(function (out) { sending = false; return out; }, function (err) { sending = false; throw err; });
+  }
+
+  function toTextBlocks(entries) {
+    var files = (entries || []).filter(function (e) { return e.kind === 'file'; });
+    if (!files.length) return Promise.resolve([]);
+    return Promise.all(files.map(function (e) {
+      return readTextFile(e.file, e.name);
+    }));
   }
 
   /** Thumbnails for a replayed history entry (ids only, lazily fetched by the browser). */
@@ -235,6 +379,7 @@
   window.chatImages = {
     take: take,
     toDataUrls: toDataUrls,
+    toTextBlocks: toTextBlocks,
     clear: clear,
     renderHistory: renderHistory,
     count: function () { return pending.length; },

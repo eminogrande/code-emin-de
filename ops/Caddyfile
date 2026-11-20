@@ -19,7 +19,7 @@ code.emin.de {
 		-Server
 	}
 	request_body {
-		max_size 64KB
+		max_size 25MB
 	}
 	reverse_proxy 127.0.0.1:3001 {
 		header_up X-Real-IP {remote_host}

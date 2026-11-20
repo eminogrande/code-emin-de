@@ -323,27 +323,21 @@ and workers. The right sidebar creates and controls that orchestration's workers
 “Permanent” means durable identity, history, ownership, and schedule—not an infinite generation loop.
 Each recurring run is bounded and returns, keeping cost and concurrency explicit.
 
-### Chat Composer Images (Paste / Attach)
+### Chat Composer Attachments (Drag-and-Drop / Copy-and-Paste Images & Files)
 
-Images first, no generic files: `Ctrl/Cmd+V` anywhere (plain-text paste untouched) or the `Attach` button
-accepts `image/png|jpeg|webp|gif`, max 3 × 4 MB, with thumbnails + per-image remove. Images travel as
-real model content blocks (vision providers see the bytes); history replays ids only and renders via the
-authenticated image endpoint. Non-vision models reject the turn and the composer keeps the files.
-Tests: `test/images.test.mjs` (sniff/caps/dimensions/store), `test/chat-images.test.mjs` (paste,
-passthrough, rejections, clear), `test/chat-images-api.test.mjs` (auth, caps, payload, traversal).
+There is no `Attach` button: simply **paste (`Ctrl/Cmd+V`)** or **drag-and-drop** anywhere on the page or composer:
+- **Images (`image/png|jpeg|webp|gif`, max 3 × 4 MB):** decoded in-browser via canvas and normalized to PNG (or JPEG `0.92` fallback if PNG > 4 MB), rendered as removable thumbnails in `#pending-images`, and sent as real vision content blocks (Caddy `request_body.max_size 25MB` + `MAX_BODY_BYTES = 20MB` in `src/web.mjs`). History replays content-addressed IDs only and renders via the authenticated `/api/image/:id` endpoint.
+- **Text, code & config files (`.md`, `.txt`, `.json`, `.yaml`, `.toml`, `.csv`, `.js`, `.mjs`, `.ts`, `.py`, `.sh`, `.go`, `.rs`, `.sql`, `.html`, `.css`, `.diff`, `.patch`, `.log`, `.svg`, etc., max 5 × 1 MB):** rendered as removable `FILE` chips in `#pending-images` and appended as fenced file blocks to the prompt on send.
+Tests: `test/images.test.mjs` (sniff/caps/dimensions/store), `test/chat-images.test.mjs` (paste, drag-and-drop, text files, rejections, clear), `test/chat-images-api.test.mjs` (auth, caps, payload, traversal), `test/chat-images-e2e.test.mjs`.
 
-### Native Solarized UI & Copy Button
+### Native Solarized UI, Single-Line Status Bar & Automatic Worker Archiving
 
 The chat uses only its native Solarized layout and controls. No external component library, theme,
 stylesheet, framework, or credit link is loaded. Code blocks have a small local **Copy / Copied**
 button implemented in `src/markdown.mjs`, `src/chat-client.js`, and inline CSS in `src/web.mjs`.
-Optimistic `.pending` chat bubbles reconcile deterministically against `/api/history` as soon as
-`/api/chat` settles so sent user messages and ephemeral slash-command outputs never stay pinned
-below newer transcript entries.
-Collapsible Chain-of-Thought (`<details class="cot">` in `#log` and `<details class="wcot">` on agent cards in `#agents`)
-streams live reasoning (`thinking`) and active tool executions from `LiveDoc` at 1-second busy-poll intervals while
-defaulting to collapsed on completed turns and preserving manual open/close toggle state across polls.
-Images, models, orchestrations, and workers keep their existing behavior and selectors.
+- **Single-line `#statusBar`:** renders the Lead model selector, context free %, and active worker count on one single line (`flex-wrap: nowrap; white-space: nowrap; overflow-x: auto`).
+- **Automatic archiving of finished one-shot workers:** only currently running workers (`state === 'running'`) and permanent recurring workers (`mode === 'recurring'`) remain in the active `#agents` list and status bar total (`isActiveWorker`). Finished or stopped one-shot workers (`mode !== 'recurring'`) automatically move into the collapsible `<details id="archived"><summary>Archived workers (N)</summary><ul id="archive"></ul></details>` drawer so old completed tasks never clutter the active count.
+- **Optimistic bubble reconciliation & Live CoT:** Optimistic `.pending` chat bubbles reconcile deterministically against `/api/history` as soon as `/api/chat` settles so sent user messages and ephemeral slash-command outputs never stay pinned below newer transcript entries. Collapsible Chain-of-Thought (`<details class="cot">` in `#log` and `<details class="wcot">` on agent cards in `#agents`) streams live reasoning (`thinking`) and active tool executions from `LiveDoc` at 1-second busy-poll intervals while defaulting to collapsed on completed turns and preserving manual open/close toggle state across polls.
 Tests: `test/ui-theme.test.mjs`, `test/markdown.test.mjs`, `test/chat-client.test.mjs`, and browser E2E coverage.
 
 ### Run the Full Deterministic Unit & Integration Test Suite (84 Tests, Zero Live API Keys Required)

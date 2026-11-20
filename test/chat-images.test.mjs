@@ -8,7 +8,7 @@ const script = readFileSync(new URL("../src/chat-images.js", import.meta.url), "
 
 function boot() {
   const dom = new JSDOM(
-    `<!doctype html><body><main><div id="log"></div><form id="f"><div id="pending-images" hidden></div><div id="composer-row"><button id="attach-btn" type="button"></button><input id="attach-input" type="file" hidden><textarea id="q"></textarea></div><p id="attach-status"></p></form></main></body>`,
+    `<!doctype html><body><main><div id="log"></div><form id="f"><div id="pending-images" hidden></div><div id="composer-row"><textarea id="q"></textarea></div><p id="attach-status"></p></form></main></body>`,
     { runScripts: "outside-only", pretendToBeVisual: true },
   );
   const w = dom.window;
@@ -28,6 +28,21 @@ function paste(w, files, text = "") {
     items: files.map((f) => ({ kind: "file", type: f.type, getAsFile: () => f })),
     getData: () => text,
   };
+  w.document.dispatchEvent(ev);
+  return ev;
+}
+
+function drop(w, files) {
+  const dt = {
+    types: ["Files"],
+    files,
+    items: files.map((f) => ({ kind: "file", type: f.type, getAsFile: () => f })),
+  };
+  const over = new w.Event("dragover", { bubbles: true, cancelable: true });
+  over.dataTransfer = dt;
+  w.document.dispatchEvent(over);
+  const ev = new w.Event("drop", { bubbles: true, cancelable: true });
+  ev.dataTransfer = dt;
   w.document.dispatchEvent(ev);
   return ev;
 }
@@ -67,11 +82,25 @@ test("image+text paste into focused composer keeps the text in place", () => {
 
 test("paste outside the composer still captures the image", () => {
   const { w } = boot();
-  w.document.getElementById("attach-btn").focus();
+  w.document.body.focus();
   const ev = paste(w, [png("c.png")]);
   assert.equal(ev.defaultPrevented, true);
   assert.equal(w.chatImages.count(), 1);
   assert.equal(w.document.getElementById("q").value, "");
+});
+
+test("drag-and-drop attaches both images and text/code files", async () => {
+  const { w, deck, status } = boot();
+  const mdFile = new File(["# Title\nhello"], "notes.md", { type: "text/markdown" });
+  const ev = drop(w, [png("shot.png"), mdFile]);
+  assert.equal(ev.defaultPrevented, true);
+  assert.equal(w.chatImages.count(), 2);
+  assert.match(status.textContent, /1 image \+ 1 file attached/);
+  assert.equal(deck.querySelectorAll("figure").length, 2);
+  const blocks = await w.chatImages.toTextBlocks(w.chatImages.take());
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].name, "notes.md");
+  assert.equal(blocks[0].text, "# Title\nhello");
 });
 
 test("wrong type, oversize and more than three images are rejected with a reason", () => {
@@ -99,7 +128,7 @@ test("history replay renders authenticated image links, not inline base64", () =
 
 test("take() snapshots attachments and clear() drops them after a successful send", () => {
   const { w, deck } = boot();
-  w.document.getElementById("attach-btn").focus();
+  w.document.body.focus();
   paste(w, [png("a.png")]);
   const snap = w.chatImages.take();
   assert.equal(snap.length, 1);

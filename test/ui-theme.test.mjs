@@ -33,9 +33,11 @@ test("inline Solarized base and layout remain intact", () => {
 
 test("orchestration, chat, image and drawer contracts survive", () => {
   const d = doc();
-  for (const id of ["log", "q", "statusBar", "agents", "targets", "leftCol", "rightCol", "backdrop", "tLeft", "tRight", "agentsEmpty", "archive", "attach-input", "new-orch", "new-worker"]) {
+  for (const id of ["log", "q", "statusBar", "agents", "targets", "leftCol", "rightCol", "backdrop", "tLeft", "tRight", "agentsEmpty", "archive", "pending-images", "new-orch", "new-worker"]) {
     assert.ok(d.getElementById(id), "missing #" + id);
   }
+  assert.equal(d.getElementById("attach-btn"), null, "Attach button removed in favor of drag-and-drop and paste");
+  assert.equal(d.getElementById("attach-input"), null, "Attach file input removed");
   assert.ok(d.querySelector('[data-target="lead"].tgt[aria-current="true"]'));
   assert.match(src, /el\.classList\.add\('open'\)/);
   assert.match(src, /el\.classList\.remove\('open'\)/);

@@ -102,11 +102,13 @@ test("reply placeholder survives until the assistant entry lands, then goes", as
   w.close();
 });
 
-test("right sidebar shows all persistent workers for the selected orchestration", async () => {
+test("right sidebar shows active/recurring workers and archives finished one-shot workers", async () => {
   const workers = [
     { id: "w-coder", role: "coder", state: "running", createdAt: Date.now() - 5000, lastError: null },
+    { id: "w-recur", role: "watcher", state: "idle_done", mode: "recurring", everyMs: 300000, createdAt: Date.now() - 10000, lastError: null },
     { id: "btw-sidechat", role: "btw", state: "idle_done", createdAt: Date.now() - 120000, lastError: null },
-    { id: "w-fail", role: "coder", state: "stopped:aborted", createdAt: Date.now() - 9000, lastError: "aborted: user stop" },
+    { id: "w-fail", role: "coder", state: "stopped:aborted", mode: "once", createdAt: Date.now() - 9000, lastError: "aborted: user stop" },
+    { id: "w-done", role: "coder", state: "idle_done", mode: "once", createdAt: Date.now() - 20000, lastError: null },
     { id: "cron-1", role: "cron", state: "running", createdAt: Date.now(), lastError: null },
   ];
   const status = {
@@ -116,12 +118,16 @@ test("right sidebar shows all persistent workers for the selected orchestration"
   const { w } = boot([], workers, status);
   await flush();
   const agentsUl = w.document.getElementById("agents");
-  assert.equal(agentsUl.children.length, 2, "running and idle workers stay visible; btw/cron excluded: " + [...agentsUl.children].map((n) => n.dataset.id).join(","));
+  assert.equal(agentsUl.children.length, 2, "running and recurring workers stay in active list; finished one-shot workers move to archive: " + [...agentsUl.children].map((n) => n.dataset.id).join(","));
   assert.match(agentsUl.children[0].textContent, /w-coder/);
-  assert.match(agentsUl.textContent, /aborted: user stop/);
+  assert.match(agentsUl.children[1].textContent, /w-recur/);
   assert.equal(w.document.getElementById("agentsEmpty").hidden, true);
   const box = w.document.getElementById("archived");
-  assert.equal(box.hidden, true);
+  assert.equal(box.hidden, false, "archived box becomes visible when finished one-shot workers exist");
+  assert.match(box.querySelector("summary").textContent, /Archived workers \(2\)/);
+  const archiveUl = w.document.getElementById("archive");
+  assert.equal(archiveUl.children.length, 2);
+  assert.match(archiveUl.textContent, /aborted: user stop/);
   const bar = w.document.getElementById("statusBar").textContent;
   assert.match(bar, /kimi-k3\.1-pro-abliterated/);
   assert.match(bar, /42k\/1\.05M/);
@@ -185,7 +191,7 @@ test("pure status formatting helpers: free %, budget level, worker count, id tru
   assert.equal(w.eval("budgetLevel(24)"), "warn");
   assert.equal(w.eval("budgetLevel(9)"), "bad");
   assert.equal(w.eval("budgetLevel(null)"), "");
-  assert.equal(w.eval("workerCountText([{state:'running'},{state:'idle_done'},{state:'running'}])"), "2 running / 3 total");
+  assert.equal(w.eval("workerCountText([{state:'running'},{state:'idle_done',mode:'once'},{state:'idle_done',mode:'recurring'},{state:'running'}])"), "2 running / 3 total");
   assert.equal(w.eval("workerCountText(null)"), "0 running / 0 total");
   assert.equal(w.eval("truncId('short')"), "short");
   const long = w.eval("truncId('a'.repeat(80), 10)");
@@ -210,7 +216,7 @@ test("status bar marks low context amber/red and colours badge by worst worker s
   assert.ok(sel.hidden === false);
   ctx.w.close();
 
-  ctx = boot([], [{ id: "w-fail", state: "failed:turn_limit" }, { id: "w-run", state: "running" }], lead(800));
+  ctx = boot([], [{ id: "w-fail", state: "failed:turn_limit", mode: "recurring" }, { id: "w-run", state: "running" }], lead(800));
   await flush();
   bar = ctx.w.document.getElementById("statusBar");
   assert.ok(bar.querySelector(".sb-ctx").classList.contains("warn"));

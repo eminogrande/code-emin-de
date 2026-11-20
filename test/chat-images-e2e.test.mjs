@@ -186,7 +186,7 @@ test("pasted screenshot survives to /api/chat as an image block and is persisted
 test("wrong mime paste is rejected client-side and the text still sends", async () => {
   const t = await bootPage();
   try {
-    const ev = paste(t.w, [new t.w.File(["<svg/>"], "a.svg", { type: "image/svg+xml" })]);
+    const ev = paste(t.w, [new t.w.File(["%PDF-1.4"], "a.pdf", { type: "application/pdf" })]);
     await flush(150);
     assert.equal(ev.defaultPrevented, true);
     assert.equal(t.w.chatImages.count(), 0);

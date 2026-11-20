@@ -311,10 +311,10 @@ pre{padding:.75rem .9rem;overflow-x:auto;border-left:2px solid var(--rule);margi
 #sshBar button{appearance:none;background:var(--paper);color:var(--heading);border:1px solid var(--rule);padding:.32rem .75rem;font:inherit;cursor:pointer;border-radius:3px}
 #sshBar button:hover{border-color:var(--accent)}
 .m.err{color:#dc322f;font-size:.9rem}
-#statusBar{display:flex;flex-wrap:wrap;gap:.35rem .7rem;align-items:center;padding:.3rem 0;border-top:1px solid var(--rule);font-size:.75rem;color:var(--muted)}
+#statusBar{display:flex;flex-wrap:nowrap;white-space:nowrap;overflow-x:auto;gap:.35rem .65rem;align-items:center;padding:.3rem 0;border-top:1px solid var(--rule);font-size:.75rem;color:var(--muted)}
 #statusBar[hidden]{display:none}
-#statusBar .sb-model{max-width:24rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--heading);font-weight:600}
-#statusBar select.sb-model{appearance:none;background:var(--paper);border:1px solid var(--rule);border-radius:2px;font:inherit;color:var(--heading);font-weight:600;padding:0 .2rem;max-width:24rem}
+#statusBar .sb-model{flex:0 1 auto;min-width:0;max-width:19rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--heading);font-weight:600}
+#statusBar select.sb-model{appearance:none;background:var(--paper);border:1px solid var(--rule);border-radius:2px;font:inherit;color:var(--heading);font-weight:600;padding:0 .2rem;max-width:19rem;min-width:0}
 #archived{margin-top:.6rem}
 .cb .copy{position:absolute;top:.35rem;right:.4rem;appearance:none;border:1px solid var(--rule);border-radius:3px;background:var(--paper);color:var(--muted);font:inherit;font-size:.72rem;padding:.2rem .45rem;cursor:pointer}
 .cb .copy:hover,.cb .copy:focus-visible{color:var(--heading);border-color:var(--accent)}
@@ -343,19 +343,20 @@ pre{padding:.75rem .9rem;overflow-x:auto;border-left:2px solid var(--rule);margi
 #statusBar .sb-num{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
 #statusBar .warn{color:var(--accent)}
 #statusBar .bad{color:#dc322f}
-#statusBar .sb-workers{border:1px solid var(--rule);border-radius:2px;padding:0 .35rem}
+#statusBar .sb-workers{flex:none;border:1px solid var(--rule);border-radius:2px;padding:0 .35rem}
 #statusBar .sb-workers.live{border-color:#2aa198;color:#2aa198}
 #statusBar .sb-workers.bad{border-color:#dc322f}
-form{padding:.75rem 0 1.25rem;border-top:1px solid var(--rule)}
+form{padding:.75rem 0 1.25rem;border-top:1px solid var(--rule);transition:border-color .15s ease,background-color .15s ease}
+form.drop-active{border-top-color:#2aa198;background:var(--paper-2)}
 textarea{width:100%;border:0;outline:0;background:transparent;color:var(--heading);font:inherit;resize:none;max-height:12rem;padding:0;margin:0}
 textarea::placeholder{color:var(--muted);opacity:.65}
 #composer-row{display:flex;gap:.5rem;align-items:flex-start}
 #composer-row textarea{flex:1}
-#attach-btn{flex:none;border:1px solid var(--rule);border-radius:.4rem;background:transparent;color:var(--muted);font:inherit;font-size:.8rem;padding:.1rem .45rem;cursor:pointer}
-#attach-btn:hover,#attach-btn:focus-visible{color:var(--heading);border-color:#2aa198}
 #pending-images{display:flex;gap:.5rem;flex-wrap:wrap;padding-bottom:.5rem}
 #pending-images[hidden]{display:none}
 #pending-images figure{margin:0;position:relative;width:5rem;text-align:center}
+#pending-images figure.file-chip{width:auto;min-width:5rem;max-width:10rem;padding:.35rem .5rem;border:1px solid var(--rule);border-radius:.35rem;background:var(--paper-2)}
+#pending-images .file-badge{font:600 .58rem/1.2 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--heading)}
 #pending-images img{width:5rem;height:4rem;object-fit:cover;border-radius:.35rem;border:1px solid var(--rule);display:block}
 #pending-images figcaption{font-size:.6rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #pending-images .rm{position:absolute;top:-.35rem;right:-.35rem;width:1.15rem;height:1.15rem;line-height:1;border-radius:50%;border:1px solid var(--rule);background:var(--paper);color:var(--heading);cursor:pointer;font-size:.85rem;padding:0}
@@ -400,9 +401,7 @@ textarea::placeholder{color:var(--muted);opacity:.65}
   <form id="f">
     <div id="pending-images" hidden></div>
     <div id="composer-row">
-      <button type="button" id="attach-btn" aria-label="Attach images" title="Attach images (images only, max 3 × 4MB)">Attach</button>
-      <input type="file" id="attach-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
-      <textarea id="q" rows="1" placeholder="Ask…" autofocus></textarea>
+      <textarea id="q" rows="1" placeholder="Ask… (paste or drop images & files)" autofocus></textarea>
     </div>
     <p id="attach-status" aria-live="polite"></p>
   </form>
@@ -711,15 +710,20 @@ function budgetLevel(free) {
   return free < 10 ? 'bad' : free < 25 ? 'warn' : '';
 }
 
+// Finished one-shot workers archive automatically so active count & sidebar stay clean.
+function isActiveWorker(w) {
+  return Boolean(w) && (isRunning(w) || w.mode === 'recurring');
+}
+
 function workerCountText(list) {
-  const l = list || [];
+  const l = (list || []).filter(isActiveWorker);
   const running = l.filter(isRunning).length;
   return running + ' running / ' + l.length + ' total';
 }
 
-// Badge level by worst worker state: 'bad' on failures, 'live' while something runs.
+// Badge level by worst active worker state: 'bad' on failures, 'live' while something runs.
 function workerLevel(list) {
-  const l = list || [];
+  const l = (list || []).filter(isActiveWorker);
   if (l.some((w) => w && /fail/i.test(String(w.state || '')))) return 'bad';
   return l.some(isRunning) ? 'live' : '';
 }
@@ -849,10 +853,13 @@ function renderStatus(st, list) {
     sbCtx.title = free === null ? '' : free + '% context free';
   }
   if (sbWorkers) {
-    const has = workers.length > 0;
+    const activeWorkers = workers.filter(isActiveWorker);
+    const archivedCount = workers.length - activeWorkers.length;
+    const has = activeWorkers.length > 0 || archivedCount > 0;
     sbWorkers.hidden = !has;
-    sbWorkers.textContent = has ? workerCountText(workers) : '';
-    sbWorkers.className = 'sb sb-workers sb-num ' + workerLevel(workers);
+    sbWorkers.textContent = has ? workerCountText(activeWorkers) : '';
+    sbWorkers.title = archivedCount > 0 ? (archivedCount + ' finished one-shot worker' + (archivedCount > 1 ? 's' : '') + ' archived') : '';
+    sbWorkers.className = 'sb sb-workers sb-num ' + workerLevel(activeWorkers);
   }
   statusBar.hidden = !lead && workers.length === 0;
 }
@@ -980,13 +987,20 @@ function fillList(ul, list, withDot) {
   }
 }
 
-// Right sidebar: running agents live; everything else collapses into Archived workers.
+// Right sidebar: running and recurring agents stay in the active list; finished one-shot workers collapse into Archived workers.
 function renderAgents(list) {
   const workers = list.filter(isWorker).filter((w) => (w.orchestrationId || 'general') === currentOrchestration);
-  fillList(agentsUl, workers, true);
+  const active = workers.filter(isActiveWorker);
+  const archived = workers.filter((w) => !isActiveWorker(w));
+  fillList(agentsUl, active, true);
   agentsEmpty.hidden = agentsUl.children.length > 0;
-  agentsEmpty.textContent = 'No workers in this orchestration.';
-  if (archiveBox) archiveBox.hidden = true;
+  agentsEmpty.textContent = 'No running agents.';
+  if (archiveUl) fillList(archiveUl, archived, false);
+  if (archiveBox) {
+    archiveBox.hidden = archived.length === 0;
+    const sum = archiveBox.querySelector('summary');
+    if (sum) sum.textContent = 'Archived workers (' + archived.length + ')';
+  }
 }
 
 // Left sidebar lists durable named orchestrations, each backed by its own Lead conversation.
@@ -1183,17 +1197,26 @@ function fit() {
 q.addEventListener('input', fit);
 
 async function send(steer = false) {
-  const text = q.value.trim();
+  let text = q.value.trim();
   const imgs = window.chatImages ? window.chatImages.take() : [];
   if (!text && !imgs.length) return;
   let payloadImages = [];
+  let fileBlocks = [];
   if (imgs.length) {
     try {
       payloadImages = await window.chatImages.toDataUrls(imgs);
+      if (window.chatImages.toTextBlocks) {
+        fileBlocks = await window.chatImages.toTextBlocks(imgs);
+      }
     } catch (e) {
-      window.chatImages.note(e.message || 'Image read failed', true);
+      window.chatImages.note(e.message || 'Attachment read failed', true);
       return;
     }
+  }
+  if (fileBlocks.length) {
+    const fence = '\\u0060\\u0060\\u0060';
+    const appendix = fileBlocks.map((fb) => 'File: ' + fb.name + '\\n' + fence + '\\n' + fb.text + '\\n' + fence).join('\\n\\n');
+    text = text ? (text + '\\n\\n' + appendix) : appendix;
   }
   q.value = '';
   fit();
@@ -1245,7 +1268,11 @@ async function send(steer = false) {
       }
     };
     let waitForBackend = false;
-    if (!d || d._nonJson || r.status === 502 || r.status === 503 || r.status === 504) {
+    if (r.status === 413) {
+      markSettled(true);
+      pending.classList.add('err');
+      pending.textContent = 'Error: Payload too large (max 4MB per image, 20MB total).';
+    } else if (!d || d._nonJson || r.status === 502 || r.status === 503 || r.status === 504) {
       waitForBackend = true;
       pending.textContent = 'Swarm reloading — syncing reply…';
       setTimeout(() => { syncHistory().catch(() => {}); }, 2000);
