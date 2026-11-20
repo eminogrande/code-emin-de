@@ -337,8 +337,11 @@ passthrough, rejections, clear), `test/chat-images-api.test.mjs` (auth, caps, pa
 The chat uses only its native Solarized layout and controls. No external component library, theme,
 stylesheet, framework, or credit link is loaded. Code blocks have a small local **Copy / Copied**
 button implemented in `src/markdown.mjs`, `src/chat-client.js`, and inline CSS in `src/web.mjs`.
+Optimistic `.pending` chat bubbles reconcile deterministically against `/api/history` as soon as
+`/api/chat` settles so sent user messages and ephemeral slash-command outputs never stay pinned
+below newer transcript entries.
 Images, models, orchestrations, and workers keep their existing behavior and selectors.
-Tests: `test/ui-theme.test.mjs`, `test/markdown.test.mjs`, and browser E2E coverage.
+Tests: `test/ui-theme.test.mjs`, `test/markdown.test.mjs`, `test/chat-client.test.mjs`, and browser E2E coverage.
 
 ### Run the Full Deterministic Unit & Integration Test Suite (84 Tests, Zero Live API Keys Required)
 

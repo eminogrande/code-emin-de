@@ -9,6 +9,8 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ### Features
 
+- **Fixed pinned optimistic chat messages (`src/web.mjs`, `test/chat-client.test.mjs`):** optimistic `.pending` user and assistant bubbles no longer remain permanently pinned at the bottom of `#log` after `/api/chat` settles. Persisted turns mark their optimistic bubbles settled and reconcile immediately with `/api/history` (even if server text normalization differs from raw input or trailing roles vary), while non-transcript turns (`/status`, `/workers`, `/hooks`, `/credits`, `/help`, `/model`, `/btw`, `/reinforce`, or errors) remain visible until the next message or new transcript entry arrives and are then cleanly retired.
+
 - **Removed RareUI completely:** deleted the `About · Credits` link, stylesheet/route, copied component
   markup, and attribution requirement. Replaced it with a local Solarized `Copy / Copied` button;
   orchestration, image, model, and chat behavior is unchanged. Updated UI/Markdown regression tests.

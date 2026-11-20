@@ -527,6 +527,15 @@ async function syncHistory() {
   const lastRole = entries.length ? entries[entries.length - 1].role : '';
   const userTexts = new Set(entries.filter((e) => e.role === 'user').map((e) => (e.text || '').trim()));
   for (const p of Array.from(log.querySelectorAll('.pending'))) {
+    if (p.dataset.settled === '1') {
+      if (p.dataset.local === '1') {
+        const latestId = entries.length ? String(entries[entries.length - 1].id) : '';
+        if (latestId && latestId !== (p.dataset.anchorId || '')) p.remove();
+        continue;
+      }
+      if (entries.length) p.remove();
+      continue;
+    }
     if (p.classList.contains('u') ? (userTexts.has((p.dataset.raw || '').trim()) || p.querySelector('.himages')) : lastRole === 'assistant') p.remove();
   }
   if (keep) log.scrollTop = log.scrollHeight; else log.scrollTop = prevTop;
@@ -1056,6 +1065,9 @@ async function send(steer = false) {
       }
     });
   }
+  for (const old of Array.from(log.querySelectorAll('.pending'))) {
+    if (old !== userNode && old.dataset.settled === '1') old.remove();
+  }
   const pending = addHtml('a', '', '…');
   busy = true;
   clearTimeout(pollTimer);
@@ -1067,10 +1079,22 @@ async function send(steer = false) {
     });
     if (r.status === 401) { location.reload(); return; }
     const d = await safeJson(r);
+    const anchorNodes = log.querySelectorAll('[data-id]');
+    const anchorId = anchorNodes.length ? (anchorNodes[anchorNodes.length - 1].dataset.id || '') : '';
+    const markSettled = (local) => {
+      for (const n of [userNode, pending]) {
+        if (!n) continue;
+        n.dataset.settled = '1';
+        if (local) { n.dataset.local = '1'; n.dataset.anchorId = anchorId; }
+      }
+    };
+    let waitForBackend = false;
     if (!d || d._nonJson || r.status === 502 || r.status === 503 || r.status === 504) {
+      waitForBackend = true;
       pending.textContent = 'Swarm reloading — syncing reply…';
       setTimeout(() => { syncHistory().catch(() => {}); }, 2000);
     } else if (d.error) {
+      markSettled(true);
       pending.classList.add('err');
       pending.textContent = 'Error: ' + d.error +
         (payloadImages.length ? ' — the current model may not accept images; switch to a vision model.' : '');
@@ -1082,6 +1106,14 @@ async function send(steer = false) {
     }
     // Attachments only leave the deck once the message actually landed.
     if (d && !d.error && imgs.length) window.chatImages.clear();
+    if (!waitForBackend && d && !d.error) {
+      const localOnly = d.route === 'command' || d.route === 'btw' || d.route === 'reinforce' || d.route === 'invalid' ||
+        (d.conversationId && Number(d.conversationId) !== Number(currentConv));
+      markSettled(localOnly);
+      if (!localOnly) {
+        await syncHistory().catch(() => {});
+      }
+    }
   } catch (e) {
     pending.textContent = 'Swarm reconnecting — syncing reply…';
     setTimeout(() => { syncHistory().catch(() => {}); }, 2000);

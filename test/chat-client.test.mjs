@@ -262,3 +262,56 @@ test("send() renders user message synchronously BEFORE pending assistant placeho
   await flush();
   w.close();
 });
+
+test("settled optimistic user/assistant nodes never stay pinned at bottom after new transcript entries or local commands", async () => {
+  const history = [
+    { id: 1, role: "user", text: "first", html: "<p>first</p>" },
+    { id: 2, role: "assistant", text: "first reply", html: "<p>first reply</p>" },
+  ];
+  const { w, log } = boot(history);
+  await flush();
+  const origFetch = w.fetch;
+
+  // 1) Ephemeral slash command (/status) returns route='command' without writing to transcript.
+  // It should stay visible right after send(), and be cleaned up as soon as a new transcript entry or next send() arrives.
+  w.fetch = async (url, init) => {
+    if (String(url) === "/api/chat") {
+      return { ok: true, status: 200, json: async () => ({ route: "command", conversationId: 1, text: "status ok", html: "<p>status ok</p>" }) };
+    }
+    return origFetch(url, init);
+  };
+  const q = w.document.getElementById("q");
+  q.value = "/status";
+  await w.eval("send(false)");
+  assert.equal(log.querySelectorAll(".pending").length, 2, "ephemeral command output remains visible until new transcript activity");
+  // Unchanged history poll keeps the ephemeral command output readable:
+  await w.eval("syncHistory()");
+  assert.equal(log.querySelectorAll(".pending").length, 2);
+
+  // 2) Now a real conversation turn lands in history (even if text differs or ends on a user turn):
+  // the old settled pending nodes must be purged and never pinned below the new entries.
+  history.push(
+    { id: 3, role: "user", text: "test", html: "<p>test</p>" },
+    { id: 4, role: "assistant", text: "real answer", html: "<p>real answer</p>" },
+  );
+  await w.eval("syncHistory()");
+  assert.equal(log.querySelectorAll(".pending").length, 0, "ephemeral pending nodes removed once new transcript entries land");
+  assert.deepEqual([...log.children].map((n) => n.dataset.id), ["1", "2", "3", "4"]);
+
+  // 3) Normal persisted send() reconciles immediately against /api/history and leaves zero pinned .pending nodes.
+  w.fetch = async (url, init) => {
+    if (String(url) === "/api/chat") {
+      history.push(
+        { id: 5, role: "user", text: "normalized on server", html: "<p>normalized on server</p>" },
+        { id: 6, role: "assistant", text: "done", html: "<p>done</p>" },
+      );
+      return { ok: true, status: 200, json: async () => ({ route: "direct", conversationId: 1, text: "done", html: "<p>done</p>" }) };
+    }
+    return origFetch(url, init);
+  };
+  q.value = "raw client text";
+  await w.eval("send(false)");
+  assert.equal(log.querySelectorAll(".pending").length, 0, "persisted turn leaves zero pinned .pending nodes even if server text was normalized");
+  assert.deepEqual([...log.children].map((n) => n.dataset.id), ["1", "2", "3", "4", "5", "6"]);
+  w.close();
+});
