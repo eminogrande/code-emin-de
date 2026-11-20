@@ -9,6 +9,12 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ### Features
 
+- **Fixed persistent `prepare image failed error` HTTP 400 in General chat (`src/image-util.mjs`, `src/daemon.mjs`, `src/web.mjs`, `test/images.test.mjs`, `test/chat-images-daemon.test.mjs`):**
+  - Root cause: historic entry `6231` (`e2e image probe`) in `conversation_id = 1` stored a 67-byte base64 PNG whose `IDAT` chunk declared length `13` for a 10-byte zlib payload (and lacked valid chunk framing), which passed 8-byte magic sniffing at the time and was replayed to upstream vision models on every turn in `General`, causing `failed to decode image: invalid or unsupported image format` even on plain text prompts.
+  - Hardened `verifyPngStructure` and `decodeImage` in `src/image-util.mjs` (and `daemon.chat()`) to walk all PNG chunks (`IHDR`, `IDAT`, `IEND`), verify chunk bounds, and inflate the `IDAT` zlib stream (`inflateSync`) before accepting or persisting any PNG.
+  - Added startup `sanitizeCorruptDurableImages(dbPath)` in `openSwarmDaemon` so any legacy corrupt image blocks in `durable.sqlite` `entries` are automatically repaired in-place with a valid 1x1 PNG (`VALID_1X1_PNG_BASE64`).
+  - Escaped `\n` inside `renderMinimalChat`'s inline script template literal (`src/web.mjs`) so `node --check` on the inline boot script passes cleanly.
+
 - **Live & Collapsible Chain of Thought (CoT) for Chat and Agents (`src/daemon.mjs`, `src/cli.mjs`, `src/web.mjs`, `test/chat-client.test.mjs`, `test/worker-meta.test.mjs`):**
   - Added `extractAssistantThinking`, `extractAssistantToolCalls`, `summarizeLiveProgress`, and `readLiveConversationSnapshot` in `src/daemon.mjs` to surface both persisted `{ type: 'thinking' }` / `{ type: 'toolCall' }` blocks and live in-flight `LiveDoc` generation reasoning + active tool slots (`live.generation.message` and `live.tools`).
   - Exposed `live` progress and per-entry `thinking` / `toolCalls` on `GET /transcript` (`GET /api/history`) and per-worker `live` / `lastThinking` / `lastToolCalls` on `GET /workers` (`GET /api/workers`).

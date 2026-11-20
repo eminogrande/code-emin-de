@@ -1,13 +1,18 @@
 // Strict image sniffing/decoding for chat attachments. No dependencies, no /tmp.
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { inflateSync } from "node:zlib";
 
 export const MAX_IMAGES = 3;
 export const MAX_BYTES = 4 * 1024 * 1024; // decoded per image
 export const MAX_BODY_BYTES = 20 * 1024 * 1024; // whole /api/chat JSON body
 export const MAX_SIDE = 16_000;
 export const MAX_PIXELS = 40_000_000;
+export const VALID_1X1_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=";
 
 const MIME_EXT = {
   "image/png": "png",
@@ -61,6 +66,41 @@ export function dimensions(buf, mime) {
   return null;
 }
 
+/** Validate PNG chunk framing (IHDR, IDAT, IEND) and zlib stream integrity. */
+export function verifyPngStructure(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length < 33) throw new Error("corrupt PNG: too short");
+  let off = 8;
+  let sawIhdr = false;
+  let sawIend = false;
+  const idats = [];
+  while (off < buf.length) {
+    if (off + 8 > buf.length) throw new Error("corrupt PNG: truncated chunk header");
+    const len = buf.readUInt32BE(off);
+    const type = buf.toString("latin1", off + 4, off + 8);
+    if (off + 12 + len > buf.length) throw new Error(`corrupt PNG: ${type} chunk exceeds buffer`);
+    if (type === "IHDR") {
+      if (sawIhdr || len !== 13) throw new Error("corrupt PNG: invalid IHDR");
+      sawIhdr = true;
+    } else if (type === "IDAT") {
+      idats.push(buf.subarray(off + 8, off + 8 + len));
+    } else if (type === "IEND") {
+      if (len !== 0) throw new Error("corrupt PNG: non-empty IEND");
+      sawIend = true;
+      off += 12;
+      break;
+    }
+    off += 12 + len;
+  }
+  if (!sawIhdr || !sawIend || !idats.length || off !== buf.length) {
+    throw new Error("corrupt PNG: missing IHDR/IDAT/IEND or trailing bytes");
+  }
+  try {
+    inflateSync(Buffer.concat(idats));
+  } catch {
+    throw new Error("corrupt PNG: invalid IDAT deflate stream");
+  }
+}
+
 /** Validate one `{dataUrl}` / `{data,mimeType}` item. Returns {buf,mimeType} or throws. */
 export function decodeImage(item) {
   if (!item || typeof item !== "object") throw new Error("bad image item");
@@ -81,8 +121,12 @@ export function decodeImage(item) {
   if (buf.length > MAX_BYTES) throw new Error("image too large (max 4MB)");
   const mimeType = sniffMime(buf);
   if (!mimeType) throw new Error("unsupported image type (png/jpeg/webp/gif only)");
+  if (mimeType === "image/png") verifyPngStructure(buf);
   const dim = dimensions(buf, mimeType);
-  if (dim && (dim.w > MAX_SIDE || dim.h > MAX_SIDE || dim.w * dim.h > MAX_PIXELS)) {
+  if (!dim || dim.w <= 0 || dim.h <= 0) {
+    throw new Error("corrupt image dimensions");
+  }
+  if (dim.w > MAX_SIDE || dim.h > MAX_SIDE || dim.w * dim.h > MAX_PIXELS) {
     throw new Error(`image dimensions too large (${dim.w}x${dim.h})`);
   }
   return { buf, mimeType };
@@ -108,4 +152,56 @@ export async function storeImages(dataDir, items) {
     out.push({ id, mimeType });
   }
   return out;
+}
+
+/**
+ * Scan durable.sqlite `entries` for corrupt image blocks (e.g. malformed PNG chunks)
+ * that would cause upstream vision providers to fail every turn in that conversation
+ * with `prepare image failed error / failed to decode image`, and replace them in-place
+ * with a valid 1x1 PNG placeholder. Returns the number of repaired entries.
+ */
+export function sanitizeCorruptDurableImages(dbPath) {
+  if (!dbPath || !existsSync(dbPath)) return 0;
+  const db = new DatabaseSync(dbPath);
+  try {
+    const tbl = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'entries'")
+      .get();
+    if (!tbl) return 0;
+    const rows = db
+      .prepare("SELECT id, record FROM entries WHERE record LIKE ?")
+      .all('%"type":"image"%');
+    let repaired = 0;
+    const update = db.prepare("UPDATE entries SET record = ? WHERE id = ?");
+    for (const row of rows) {
+      let rec;
+      try {
+        rec = JSON.parse(row.record);
+      } catch {
+        continue;
+      }
+      const msgs = Array.isArray(rec?.model) ? rec.model : [];
+      let changed = false;
+      for (const m of msgs) {
+        if (!Array.isArray(m?.content)) continue;
+        for (const block of m.content) {
+          if (block?.type !== "image" || typeof block.data !== "string") continue;
+          try {
+            decodeImage({ data: block.data, mimeType: block.mimeType });
+          } catch {
+            block.data = VALID_1X1_PNG_BASE64;
+            block.mimeType = "image/png";
+            changed = true;
+          }
+        }
+      }
+      if (changed) {
+        update.run(JSON.stringify(rec), row.id);
+        repaired++;
+      }
+    }
+    return repaired;
+  } finally {
+    db.close();
+  }
 }

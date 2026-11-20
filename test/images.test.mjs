@@ -4,8 +4,19 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { deflateSync } from "node:zlib";
-import { decodeImage, dimensions, ID_RE, imageId, MAX_BYTES, sniffMime, storeImages } from "../src/image-util.mjs";
+import {
+  decodeImage,
+  dimensions,
+  ID_RE,
+  imageId,
+  MAX_BYTES,
+  sanitizeCorruptDurableImages,
+  sniffMime,
+  storeImages,
+  VALID_1X1_PNG_BASE64,
+} from "../src/image-util.mjs";
 
 function crc32(buf) {
   let c = ~0;
@@ -78,6 +89,83 @@ test("storeImages persists content-addressed files and caps the count", async ()
     assert.deepEqual(await readFile(join(dir, "images", `${out[0].id}.png`)), png);
     await assert.rejects(() => storeImages(dir, [{ dataUrl: dataUrl(tinyPng()) }, { dataUrl: dataUrl(tinyPng()) }, { dataUrl: dataUrl(tinyPng()) }, { dataUrl: dataUrl(tinyPng()) }]), /too many/);
     assert.deepEqual(await storeImages(dir, []), []);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("decodeImage rejects malformed PNGs with invalid IDAT chunk length and sanitizeCorruptDurableImages repairs poisoned sqlite entries", async () => {
+  // Exact 67-byte corrupt PNG from entry 6231 (IDAT header declares 13 bytes for a 10-byte zlib stream)
+  const corruptB64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==";
+  assert.throws(() => decodeImage({ data: corruptB64, mimeType: "image/png" }), /corrupt PNG/);
+  assert.doesNotThrow(() => decodeImage({ data: VALID_1X1_PNG_BASE64, mimeType: "image/png" }));
+
+  const dir = await mkdtemp(join(tmpdir(), "img-repair-"));
+  const dbPath = join(dir, "durable.sqlite");
+  try {
+    const db = new DatabaseSync(dbPath);
+    db.exec(`
+      CREATE TABLE entries (
+        id INTEGER PRIMARY KEY,
+        conversation_id INTEGER NOT NULL,
+        head INTEGER,
+        commit_seq INTEGER NOT NULL,
+        record TEXT NOT NULL
+      ) STRICT
+    `);
+    const poisonedRecord = JSON.stringify({
+      model: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "e2e image probe" },
+            { type: "image", data: corruptB64, mimeType: "image/png" },
+          ],
+          timestamp: 1795093334009,
+        },
+      ],
+      kind: "pi.user",
+      id: 6231,
+      conversationId: 1,
+    });
+    const validRecord = JSON.stringify({
+      model: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "real screenshot" },
+            { type: "image", data: VALID_1X1_PNG_BASE64, mimeType: "image/png" },
+          ],
+          timestamp: 1795093335000,
+        },
+      ],
+      kind: "pi.user",
+      id: 6358,
+      conversationId: 1,
+    });
+    db.prepare("INSERT INTO entries (id, conversation_id, head, commit_seq, record) VALUES (?, ?, ?, ?, ?)").run(
+      6231,
+      1,
+      null,
+      1,
+      poisonedRecord,
+    );
+    db.prepare("INSERT INTO entries (id, conversation_id, head, commit_seq, record) VALUES (?, ?, ?, ?, ?)").run(
+      6358,
+      1,
+      null,
+      2,
+      validRecord,
+    );
+    db.close();
+
+    assert.equal(sanitizeCorruptDurableImages(dbPath), 1);
+    assert.equal(sanitizeCorruptDurableImages(dbPath), 0);
+
+    const db2 = new DatabaseSync(dbPath);
+    const repaired = JSON.parse(db2.prepare("SELECT record FROM entries WHERE id = 6231").get().record);
+    assert.equal(repaired.model[0].content[1].data, VALID_1X1_PNG_BASE64);
+    db2.close();
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

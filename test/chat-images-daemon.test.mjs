@@ -10,7 +10,7 @@ import { openSwarmDaemon } from "../src/daemon.mjs";
 import { imageId } from "../src/image-util.mjs";
 
 const PNG_1x1 = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=",
   "base64",
 );
 const DATA = PNG_1x1.toString("base64");

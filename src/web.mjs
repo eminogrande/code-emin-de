@@ -562,7 +562,7 @@ async function syncHistory() {
   let after = null;
   for (const e of entries) {
     const html = e.html || '';
-    const sig = html + '\n--cot--\n' + (e.thinking || '') + '\n' + ((e.toolCalls || []).join('|'));
+    const sig = html + '\\n--cot--\\n' + (e.thinking || '') + '\\n' + ((e.toolCalls || []).join('|'));
     const cls = e.role === 'user' ? 'u' : (e.isError ? 'a err' : 'a');
     let node = known.has(String(e.id)) ? log.querySelector('[data-id="' + e.id + '"]') : null;
     if (!node) {

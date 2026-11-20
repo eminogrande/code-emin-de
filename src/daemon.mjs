@@ -29,7 +29,7 @@ import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { openAgentBus } from "./bus.mjs";
 import { handleDeterministicCommand, probeProviderHealth } from "./commands.mjs";
 import { createBuiltinGuardHooks, HookRegistry } from "./hooks.mjs";
-import { imageId } from "./image-util.mjs";
+import { decodeImage, imageId, sanitizeCorruptDurableImages } from "./image-util.mjs";
 import { createOpenModels, resolveLeadModelChoice, ROLE_MODELS } from "./models.mjs";
 import { createOptMem } from "./optmem.mjs";
 import {
@@ -184,6 +184,7 @@ export async function openSwarmDaemon({
   await mkdir(workspaceDir, { recursive: true });
 
   const dbPath = join(dataDir, "durable.sqlite");
+  sanitizeCorruptDurableImages(dbPath);
   const busPath = join(dataDir, "bus.sqlite");
   const memoryDir = join(dataDir, "optmem");
 
@@ -1327,10 +1328,16 @@ export async function openSwarmDaemon({
           ? `[ROUTER_HINT: fanout_parallel — spawn separate parallel workers via spawn_worker and return immediately]\n${text}`
           : text;
       // Real image content blocks: provider sees the actual bytes, not filenames.
-      const content = hasImages
+      const validatedImages = hasImages
+        ? images.map((i) => {
+            const { buf, mimeType } = decodeImage({ data: String(i?.data || ""), mimeType: String(i?.mimeType || "") });
+            return { type: "image", data: buf.toString("base64"), mimeType };
+          })
+        : [];
+      const content = validatedImages.length
         ? [
             ...(promptText.trim() ? [{ type: "text", text: promptText }] : []),
-            ...images.map((i) => ({ type: "image", data: String(i.data), mimeType: String(i.mimeType) })),
+            ...validatedImages,
           ]
         : promptText;
 
