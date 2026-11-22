@@ -1,4 +1,4 @@
-# `pi-durable-swarm` — Empirically Benchmarked Open-Weights Multi-Agent Coding Daemon
+# `code-emin-de` — Empirically Benchmarked Open-Weights Multi-Agent Coding Daemon
 
 A durable, self-hosting, **open-weights-only** multi-agent coding, review, memory, and operations daemon built on `@earendil-works/pi-durable@1.5.2`, designed around one rule:
 
@@ -492,7 +492,7 @@ The SSH check requires the local smartcard bridge and SSH key to work; the publi
 
 ## 11. Handover & Verified State
 
-**Repository:** <https://github.com/eminogrande/pi-durable-swarm> · **Live UI:** <https://code.emin.de>
+**Repository:** <https://github.com/eminogrande/code-emin-de> · **Live UI:** <https://code.emin.de>
 
 GitHub `main` and live deployment are aligned on the handover documentation commit; use Git history for the exact SHA. Feature baseline: **`49a2abc`** (MCP/Harbor) and **`7cf3b30`** (production dependency fix), followed by handover documentation updates.
 

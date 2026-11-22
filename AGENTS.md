@@ -1,4 +1,4 @@
-# Repository Working Standards (`pi-durable-swarm`)
+# Repository Working Standards (`code-emin-de`)
 
 Follow these mandatory rules on every turn that modifies code, configuration, infrastructure, or docs in this repository:
 

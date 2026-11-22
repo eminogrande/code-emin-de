@@ -113,7 +113,7 @@ Two browser/OS boundaries prevent a raw web tab from directly using a T=0 contac
 
 Production installs must retain `jsdom` as a runtime dependency (`src/markdown.mjs`), and `/opt/pi-durable-swarm` must remain writable by the `swarm` service account for `git pull`, dependency installation, and deploy checks.
 
-- Live repo on VPS: `/opt/pi-durable-swarm` (pushing via single-repo deploy key to `eminogrande/pi-durable-swarm`).
+- Live repo on VPS: `/opt/pi-durable-swarm` (pushing via single-repo deploy key to `eminogrande/code-emin-de`).
 - **No push-event deployment:** no tracked GitHub Actions/workflows or repository webhooks were found. Pushing or merging GitHub `main` does not itself update the VPS.
 - **GitHub `main` → VPS:** run `sudo /usr/local/bin/swarm-ctl pull` on the VPS. This is separate from Lead's self-update flow.
 - **VPS General Lead self-update:** General Lead already owns `code.emin.de` at `/opt/pi-durable-swarm`. The deterministic `lead-auto-backup-gate` (`onYield` hook in `src/hooks.mjs` / `src/daemon.mjs`) runs `sudo /usr/local/bin/swarm-ctl apply` whenever `lead` leaves modified files there, which:
