@@ -175,6 +175,7 @@ export async function openSwarmDaemon({
   triageOpts = {},
   supervisor: supervisorOverride = {},
   retry: retryOverride = { enabled: true, maxRetries: 2, baseDelayMs: 1000 },
+  streamTimeoutMs = 120_000,
   hooks: customHooks = [],
   probeCredits = probeProviderHealth,
 } = {}) {
@@ -229,7 +230,7 @@ export async function openSwarmDaemon({
             await runtime.commit(async (tx) => {
               const doc = await tx.doc(SwarmDoc);
               doc.alerts.push({ jobId, kind, at: now, severity: "critical", summary: rawEvent.slice(0, 500) });
-              doc.cronJobs[jobId] = { ...(doc.cronJobs[jobId] || {}), lastAction: "page_immediately", lastTickAt: now };
+              doc.cronJobs[jobId] = { ...(doc.cronJobs[jobId] || {}), lastAction: "page_immediately", lastEventAction: "page_immediately", lastTickAt: now };
             }, context);
           } else if (decision.action === "draft_only") {
             // Spawn/reuse draft-only worker (never auto-sends!)
@@ -254,7 +255,7 @@ export async function openSwarmDaemon({
               rDoc.requireVerified = false;
               const sDoc = await tx.doc(SwarmDoc);
               sDoc.workers[workerId] = { workerId, role, convId, createdAt: now, status: "running" };
-              sDoc.cronJobs[jobId] = { ...(sDoc.cronJobs[jobId] || {}), lastAction: "draft_only", lastTickAt: now };
+              sDoc.cronJobs[jobId] = { ...(sDoc.cronJobs[jobId] || {}), lastAction: "draft_only", lastEventAction: "draft_only", lastTickAt: now };
             }, context);
             const h = await runtime.conversation(convId, context);
             if (h) {
@@ -269,7 +270,7 @@ export async function openSwarmDaemon({
           } else {
             await runtime.commit(async (tx) => {
               const sDoc = await tx.doc(SwarmDoc);
-              sDoc.cronJobs[jobId] = { ...(sDoc.cronJobs[jobId] || {}), lastAction: "stay_silent", lastTickAt: now };
+              sDoc.cronJobs[jobId] = { ...(sDoc.cronJobs[jobId] || {}), lastAction: "stay_silent", lastEventAction: "stay_silent", lastTickAt: now };
             }, context);
           }
         } else {
@@ -918,7 +919,7 @@ export async function openSwarmDaemon({
                     'elif [ -f pyproject.toml ] || [ -f pytest.ini ]; then pytest -q || exit 1; ran=1; fi; fi; ' +
                     'if [ "$ran" -eq 0 ] && [ "$srcs" -gt 0 ]; then echo "HARD GATE: zero test files found/executed for $srcs source file(s)" >&2; exit 1; fi',
                 ],
-                { cwd: workspaceDir, timeout: 45_000 },
+                { cwd: workspaceDir, timeout: 45_000, env: { ...process.env, NODE_TEST_CONTEXT: undefined } },
               );
               yieldRetries.delete(gateKey);
               yieldRetries.delete(api.conversationId);
@@ -1027,8 +1028,9 @@ export async function openSwarmDaemon({
       settings: {
         toolExecution: "parallel",
         retry: retryOverride,
+        stream: { timeoutMs: streamTimeoutMs },
       },
-      env: ({ cwd }) => new NodeExecutionEnv({ cwd: cwd || workspaceDir }),
+      env: ({ cwd }) => new NodeExecutionEnv({ cwd: cwd || workspaceDir, shellEnv: { NODE_TEST_CONTEXT: undefined } }),
     },
     BACKGROUND_CONTEXT,
   );
@@ -1477,10 +1479,18 @@ export async function openSwarmDaemon({
             timer.unref?.();
           }),
         ]);
+      } catch (error) {
+        const transcript = await readConversationTranscript(w.convId, 30).catch(() => []);
+        const failed = [...transcript].reverse().find((e) => e.role === "assistant" && e.stopReason === "error" && e.errorMessage);
+        if (failed) throw new Error(`${error.message}: ${failed.errorMessage}`, { cause: error });
+        throw error;
       } finally {
         clearTimeout(timer);
       }
-      return readConversationTranscript(w.convId, 30);
+      const transcript = await readConversationTranscript(w.convId, 30);
+      const failed = [...transcript].reverse().find((e) => e.role === "assistant" && e.stopReason === "error" && e.errorMessage);
+      if (failed) throw new Error(`Worker ${workerId} failed: ${failed.errorMessage}`);
+      return transcript;
     },
 
     readTranscript: readConversationTranscript,

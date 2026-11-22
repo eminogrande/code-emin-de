@@ -65,25 +65,53 @@ test("3. OptMem auto-nap drain prevents wake failure & recalls exact entries", a
 });
 
 test("4. System-1 Jev + deterministic fallback triage (stay_silent / draft_only / fanout)", async () => {
-  const t1 = await triageWatcherEvent("logs", "0 new 5xx errors; 2 bot 404 hits on /wp-login.php");
+  const t1 = await triageWatcherEvent("logs", "0 new 5xx errors; 2 bot 404 hits on /wp-login.php", { apiKey: "" });
   assert.equal(t1.action, "stay_silent");
 
-  const t2 = await triageWatcherEvent("logs", "CRITICAL: 42 HTTP 500 errors — SQLITE_FULL database or disk is full");
+  const t2 = await triageWatcherEvent("logs", "CRITICAL: 42 HTTP 500 errors — SQLITE_FULL database or disk is full", { apiKey: "" });
   assert.equal(t2.action, "page_immediately");
 
-  const t3 = await triageWatcherEvent("support", "Hi team, I got billed twice on invoice #912, can you help?");
+  const t3 = await triageWatcherEvent("support", "Hi team, I got billed twice on invoice #912, can you help?", { apiKey: "" });
   assert.equal(t3.action, "draft_only");
 
-  const rBtw = await classifyUserPrompt("/btw why did w-1 pick Map instead of WeakMap?");
+  const rBtw = await classifyUserPrompt("/btw why did w-1 pick Map instead of WeakMap?", { apiKey: "" });
   assert.equal(rBtw.route, "side_chat_readonly");
   assert.equal(rBtw.cleanPrompt, "why did w-1 pick Map instead of WeakMap?");
 
-  const rMulti = await classifyUserPrompt("1. Build slugify.mjs\n2. Build retry.mjs");
+  const rMulti = await classifyUserPrompt("1. Build slugify.mjs\n2. Build retry.mjs", { apiKey: "" });
   assert.equal(rMulti.route, "fanout_parallel");
 });
 
+test("5. Watcher preserves the last real event outcome across empty ticks", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "swarm-watch-event-"));
+  const daemon = await openSwarmDaemon({
+    dataDir: join(rootDir, "data"),
+    workspaceDir: join(rootDir, "workspace"),
+    triageOpts: { apiKey: "" },
+  });
+  daemon.harness.resume();
+  try {
+    const logFile = join(rootDir, "workspace", "nginx.log");
+    await writeFile(logFile, "GET /wp-login.php 404 (0 new 5xx errors)\n");
+    await daemon.scheduleForever({ jobId: "nginx-watch", kind: "logs", sourcePath: logFile, everyMs: 250 });
+    let job = null;
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      const status = await daemon.status();
+      job = status.swarm.cronJobs["nginx-watch"];
+      if (job?.lastEventAction === "stay_silent" && job.lastAction === "idle_empty") break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.equal(job?.lastEventAction, "stay_silent");
+    assert.equal(job?.lastAction, "idle_empty");
+  } finally {
+    await daemon.close();
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
 test(
-  "5. Live Swarm Daemon: multi-task fanout + /btw side-chat + 1-ticket/human support draft + Unix 0600 socket",
+  "6. Live Swarm Daemon: multi-task fanout + /btw side-chat + 1-ticket/human support draft + Unix 0600 socket",
   { skip: !HAS_LIVE_LLM && "LLMGATEWAY_API_KEY not set" },
   async () => {
   const rootDir = await mkdtemp(join(tmpdir(), "swarm-e2e-"));
@@ -116,10 +144,10 @@ test(
       const status = await unixRpc(sockPath, "GET", "/status");
       nginxJob = status.swarm.cronJobs["nginx-watch"];
       drafts = Object.values(status.swarm.drafts || {});
-      if (nginxJob?.lastAction === "stay_silent" && drafts.length >= 1) break;
+      if (nginxJob?.lastEventAction === "stay_silent" && drafts.length >= 1) break;
       await new Promise((r) => setTimeout(r, 1500));
     }
-    assert.equal(nginxJob?.lastAction, "stay_silent", "Routine log noise must stay silent without spawning an LLM");
+    assert.equal(nginxJob?.lastEventAction, "stay_silent", "Routine log noise must stay silent without spawning an LLM");
     assert.equal(drafts.length, 1, "Support forever-agent must save 1 draft without auto-sending");
     assert.equal(drafts[0].status, "draft_pending_human");
 
@@ -137,7 +165,7 @@ test(
     assert.ok(btwReply.text.length > 0);
 
     // Wait for both background coder workers to finish with `Verified: PASS`
-    await Promise.all([srv.daemon.waitForWorker("w-slug", 90_000), srv.daemon.waitForWorker("w-clamp", 90_000)]);
+    await Promise.all([srv.daemon.waitForWorker("w-slug", 180_000), srv.daemon.waitForWorker("w-clamp", 180_000)]);
 
     // Workers may report idle before their files hit disk: poll for real non-empty artifacts.
     const wanted = ["slug.mjs", "clamp.mjs"];
@@ -170,6 +198,30 @@ test(
     assert.equal(slugify("Hello, Caveman World!"), "hello-caveman-world");
     assert.equal(clamp(15, 0, 10), 10);
     assert.ok(leadReply.text.length > 0);
+  } catch (error) {
+    try {
+      const [workerState, status] = await Promise.all([
+        unixRpc(sockPath, "GET", "/workers"),
+        srv.daemon.status(),
+      ]);
+      const workers = workerState?.workers || [];
+      const relevant = workers.filter((w) => ["w-slug", "w-clamp"].includes(w.id) || String(w.id).startsWith("auto-support-watch"));
+      const transcripts = {};
+      for (const w of relevant) {
+        transcripts[w.id] = await srv.daemon.readTranscript(w.conversationId, 8).catch((err) => String(err));
+      }
+      transcripts.lead = await srv.daemon.readTranscript(1, 8).catch((err) => String(err));
+      console.error("LIVE_SWARM_FAILURE_RECEIPT", JSON.stringify({
+        workers: relevant,
+        registry: Object.fromEntries(["w-slug", "w-clamp", "auto-support-watch-1"].map((id) => [id, status.swarm.workers?.[id] || null])),
+        cronJobs: status.swarm.cronJobs,
+        transcripts,
+        workspace: await readdir(workspaceDir).catch(() => []),
+      }, null, 2));
+    } catch (diagnosticError) {
+      console.error("LIVE_SWARM_FAILURE_RECEIPT_FAILED", diagnosticError);
+    }
+    throw error;
   } finally {
     await new Promise((r) => srv.server.close(r));
     await srv.daemon.close();

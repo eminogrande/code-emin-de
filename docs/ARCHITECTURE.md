@@ -27,10 +27,29 @@ Busy workers record `skipped_overlap`; paused workers retain their durable task 
 This avoids token-burning infinite loops and unbounded queued submissions. Creation is capped at 50 named
 orchestrations and 25 workers per orchestration. Role/mode/interval/goal validation is model-free in
 `src/orchestrations.mjs`; authenticated web routes proxy to the existing `0600` Unix socket.
+Watchers distinguish the latest poll (`lastAction`, including `idle_empty`) from the last real event outcome
+(`lastEventAction`), so an empty follow-up tick cannot erase successful triage evidence. Worker shell commands and the
+hard test gate clear inherited `NODE_TEST_CONTEXT`, ensuring nested `node --test` invocations execute rather than skip.
+
+## 1.2 Emin Swarm MCP Adapter (`src/swarm-mcp.mjs`)
+
+**Emin Swarm** names the whole system; **Emin Orchestrator** names the General Lead. The `emin-swarm` MCP namespace keeps these control calls distinct from Kimi's own local sessions and background agents.
+
+```text
+Kimi Code/Desktop
+  └─ local stdio MCP
+       └─ system ssh alias (SWARM_MCP_SSH_HOST, default swarm-host)
+            └─ remote curl --unix-socket (SWARM_MCP_SOCKET, default /home/swarm/.pi-durable/swarm.sock)
+                 └─ existing Pi Durable daemon
+```
+
+The adapter reuses the exact socket contract behind `code.emin.de`: `GET /status`, `/orchestrations`, `/workers`, and `/transcript` for status, live activity, and live CoT; `POST /chat` for prompts and steering. It keeps no duplicate UI or daemon state. Prompt submission is always nonblocking (`wait: false`), steering uses `steer: true` and `wait: false`, and clients poll with `swarm_read`. Requests are serialized per bridge to reuse one cold SSH/smartcard connection instead of triggering parallel signing flows.
+
+The socket remains `0600`; MCP adds no daemon or public TCP port, bearer token, or approval layer. Existing SSH access and prompt-as-authorization remain the security boundary. `orchestration:general` resolves to the General Lead. Cancellation skips aborted queued requests and terminates active request process groups; final tool results are bounded to 4 MiB.
 
 ## 2. 3-Tier Open-Weights Failover & Local Failsafe (`src/models.mjs` + `llama-failsafe.service`)
 
-Cloud billing exhaustion (HTTP `402`) or provider outages (`5xx` / timeouts) must **never** cause a silent shutdown:
+Cloud billing exhaustion (HTTP `402`) or provider outages (`5xx` / timeouts) must **never** cause a silent shutdown. Each model stream is also bounded to **120 seconds per attempt**, so a stalled provider response cannot leave a worker pending indefinitely:
 
 1. **Tier 1 (`llmgateway`):** Primary open-weights API router. On HTTP `402`/billing/5xx/network failure, trips a 5-minute circuit-breaker cooldown so subsequent turns immediately skip the dead hop.
 2. **Tier 2 (`allmodels`):** Transparently retries on the mapped open-weights equivalent (`LLMGATEWAY_TO_ALLMODELS_MAP`), followed by cheaper fallbacks (`z-ai/glm-5.3-abliterated`, `deepseek/deepseek-v4.1-flash-abliterated`) with `max_tokens` capped at `8192` to prevent upstream credit-reservation `402` errors.
@@ -93,8 +112,29 @@ Two browser/OS boundaries prevent a raw web tab from directly using a T=0 contac
 ## 6. VPS-First Self-Improvement + Append-Only GitHub Backup
 
 - Live repo on VPS: `/opt/pi-durable-swarm` (pushing via single-repo deploy key to `eminogrande/pi-durable-swarm`).
-- Deterministic `lead-auto-backup-gate` (`onYield` hook in `src/hooks.mjs` / `src/daemon.mjs`): whenever `lead` leaves modified files in `/opt/pi-durable-swarm`, it automatically runs `sudo /usr/local/bin/swarm-ctl apply`, which:
+- **No push-event deployment:** no tracked GitHub Actions/workflows or repository webhooks were found. Pushing or merging GitHub `main` does not itself update the VPS.
+- **GitHub `main` → VPS:** run `sudo /usr/local/bin/swarm-ctl pull` on the VPS. This is separate from Lead's self-update flow.
+- **VPS General Lead self-update:** General Lead already owns `code.emin.de` at `/opt/pi-durable-swarm`. The deterministic `lead-auto-backup-gate` (`onYield` hook in `src/hooks.mjs` / `src/daemon.mjs`) runs `sudo /usr/local/bin/swarm-ctl apply` whenever `lead` leaves modified files there, which:
   1. Runs `node --check` on `src/*.mjs` and unit tests (feeding errors back to the agent if anything fails).
   2. Blocks secrets (`.env`, `.sqlite`, `.pem`, `.key`, `authorized_keys`).
   3. Commits and pushes to `origin/main` (append-only; force-push blocked by `destructive-bash-guard`, rollbacks use `git revert`).
   4. Reloads `swarm-web` immediately and schedules `swarmd` restart cleanly after the HTTP response finishes.
+
+
+## 7. External Harbor Benchmark Isolation
+
+**WHY:** self-authored episodes can overfit the home repository. Terminal-Bench 2.1 supplies established containerized tasks and independent verifiers, while `bench/harbor-emin/` measures the real `openSwarmDaemon()` rather than Pi CLI or a substitute agent loop.
+
+```text
+Harbor on 178.105.82.203
+  └─ BaseInstalledAgent (emin_agent.py)
+       ├─ official Node 22 + pinned source.tar upload
+       ├─ driver.mjs -> real openSwarmDaemon()
+       ├─ fresh durable data + verifier-visible /app workspace
+       ├─ model credentials forwarded by allowlist only
+       └─ Harbor verifier + structured outcome receipt
+```
+
+The baseline is source commit `77addff`. The task container downloads no repository and needs no GitHub credential. `SWARM_SELF_REPO=/nonexistent-harbor` disables live self-deployment, and production OptMem/durable history is never mounted. Harbor is authoritative for task reward; the driver's `outcome.ok` reports infrastructure completion only after the original Lead submission is `done`, all workers are settled, and no activity remains. Nonzero driver outcomes are recorded before the adapter raises the execution error.
+
+The first smoke uses `terminal-bench/write-compressor` with an explicitly extended timeout, so it is a compatibility run rather than a standard-timeout leaderboard comparison. The official environment baseline passed five oracle tasks with mean reward `1.000` and zero exceptions before any Emin model trial.

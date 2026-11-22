@@ -137,6 +137,17 @@ Before spending money upgrading VPS RAM to host a larger local coding model, we 
 | `LFM3-1.7B-Q4_K_M` (base & +HF-pi-LoRA) | Apple Silicon / VPS | Same bugfix | **FAIL (`0/100`, 0 LOC)** | `13.2–17.3 tok/s` | Not a coding solver — do **not** use for autonomous edits. |
 | **`LFM3-1.7B-Q4_K_M` (`--reasoning-budget 0`)** | **Existing 7.6 GiB VPS** (`127.0.0.1:8089`) | **Tier-3 Outage Failsafe** | **PASS (`5.28s` live E2E takeover)** | `pp512: 74.6 tok/s` · `tg128: 15.25 tok/s` · **`$0/mo` extra** · `5.9 GiB` RAM still free | **Ideal Tier-3 Failsafe:** keeps chat alive during total cloud billing/network outages and tells the user *why* cloud failed without upgrading the VPS. |
 
+### 3.5 External Terminal-Bench 2.1 on the Real VPS Harness
+
+To evaluate Emin Swarm outside our self-authored episodes, we use **Harbor 0.27.0 + Terminal-Bench 2.1** on `178.105.82.203`. Harbor provides the tasks and independent verifier; it is not the agent being measured. The custom `BaseInstalledAgent` in `bench/harbor-emin/` runs the real `openSwarmDaemon()` with the production roster, prompts, hooks, and supervisor in isolated task containers.
+
+- **Environment receipt:** the official five-task oracle passed **5/5 with mean reward `1.000` and zero exceptions** (`/tmp/emin-harbor-runs/jobs/2026-11-22__12-43-05/result.json` on the VPS).
+- **Reproducible source:** `git archive` pins the exact baseline commit `77addff` and uploads it, so private GitHub authentication is never needed inside a task container.
+- **Isolation:** fresh per-trial durable data/workspace, `SWARM_SELF_REPO=/nonexistent-harbor`, no production deployment, no OptMem mirror, and only required model credentials.
+- **Scoring:** Harbor’s verifier is authoritative. The driver receipt records Lead submission completion, worker failures, usage, cost, and bounded sanitized errors; extended-timeout smoke runs are labeled and are not claimed as standard-timeout comparable scores.
+
+See [`bench/harbor-emin/README.md`](bench/harbor-emin/README.md) for the exact staged setup and invocation, and [`docs/TERMINAL_BENCHMARK_emin-swarm.md`](docs/TERMINAL_BENCHMARK_emin-swarm.md) for the receipt. The first real `write-compressor` attempts completed with **reward `0.000`**: the adapter ran correctly, but the Lead hit `turn_limit` at both 16 and 64 turns. This is a working benchmark path with a failing model baseline, not a claimed solve.
+
 ---
 
 ## 4. 3-Tier Open-Weights Failover & Zero-Silent-Shutdown Local Failsafe
@@ -212,8 +223,10 @@ Inspired by `system-on-an-agent`'s `AddonManifest`/`AddonLoader` and Hugging Fac
 | `30` | `destructive-bash-guard` | `beforeTool` | Blocks `rm -rf /`, `rm -fr /`, `git push --force/+ref/--delete`, `git reset --hard`, `mkfs.`, `dd of=/dev/`, `curl \| sh`, and edits to `authorized_keys`/`sshd_config`/`ufw disable`. |
 | `40` | `subagent-deploy-guard` | `beforeTool` | Prevents subagents from calling `swarm-ctl apply/reload/rollback` or `git push` directly; Lead owns deploy & backup. |
 | `50` | `draft-only-outbound-guard` | `beforeTool` | Prevents `support` and `social` roles from running outbound SMTP/Resend/SendGrid/X API shell sends. |
-| `10` | `coder-hard-test-gate` | `onYield` | Requires `Verified: PASS` and independently runs `node --check` + `node --test` (or `go test` / `pytest`) before a `coder` worker may finish. |
+| `10` | `coder-hard-test-gate` | `onYield` | Requires `Verified: PASS` and independently runs `node --check` + `node --test` (or `go test` / `pytest`) before a `coder` worker may finish. Worker shells and the gate clear inherited `NODE_TEST_CONTEXT` so nested test commands execute real tests. |
 | `20` | `lead-auto-backup-gate` | `onYield` | Validates, commits, pushes (append-only), and reloads VPS self-repo edits via `swarm-ctl apply` when Lead yields. |
+
+Model streams are bounded to **120 seconds per attempt**, so provider stalls surface through failover instead of leaving workers pending indefinitely.
 
 ### Registering Custom Out-of-Core Hooks
 
@@ -340,7 +353,7 @@ button implemented in `src/markdown.mjs`, `src/chat-client.js`, and inline CSS i
 - **Optimistic bubble reconciliation & Live CoT:** Optimistic `.pending` chat bubbles reconcile deterministically against `/api/history` as soon as `/api/chat` settles so sent user messages and ephemeral slash-command outputs never stay pinned below newer transcript entries. Collapsible Chain-of-Thought (`<details class="cot">` in `#log` and `<details class="wcot">` on agent cards in `#agents`) streams live reasoning (`thinking`) and active tool executions from `LiveDoc` at 1-second busy-poll intervals while defaulting to collapsed on completed turns and preserving manual open/close toggle state across polls.
 Tests: `test/ui-theme.test.mjs`, `test/markdown.test.mjs`, `test/chat-client.test.mjs`, and browser E2E coverage.
 
-### Run the Full Deterministic Unit & Integration Test Suite (84 Tests, Zero Live API Keys Required)
+### Run the Full Unit & Integration Test Suite
 
 ```sh
 # Syntax-check every module
@@ -372,6 +385,59 @@ swarm ask "/hooks"                # inspect active guardrail hooks & block count
 swarm ask "/btw what is w-1 doing?"
 swarm steer w-auth "use timingSafeEqual"
 ```
+
+### Emin Swarm MCP for Kimi Code/Desktop
+
+**Naming:** **Emin Swarm** is the whole system; **Emin Orchestrator** is the General Lead (`lead` / `orchestration:general`). The MCP namespace is `emin-swarm`, so calls are unambiguous (for example `mcp__emin-swarm__swarm_list`).
+
+**WHY:** use the same live swarm from Kimi without a second UI or control plane. The local stdio MCP server reaches the existing daemon through the system SSH alias and remote `curl`:
+
+```text
+Kimi Code/Desktop → stdio MCP → ssh swarm-host → curl --unix-socket /home/swarm/.pi-durable/swarm.sock → Pi Durable daemon
+```
+
+`SWARM_MCP_SSH_HOST` overrides `swarm-host`; `SWARM_MCP_SOCKET` overrides the socket path. Direct dependencies are `@modelcontextprotocol/sdk@1.32.2` and `zod@4.6.7`. This exposes the same daemon data as `code.emin.de`, with no duplicate UI, new approval layer, public port, or bearer token.
+
+| Tool | Inputs and defaults | Purpose |
+| :--- | :--- | :--- |
+| `swarm_list` | Optional `orchestrationId` filter | Status, orchestrations, and workers, including live activity. |
+| `swarm_read` | `conversationId: 1`, `max: 40` (capped at `200`) | Bounded transcript plus live CoT; use to poll nonblocking submissions. |
+| `swarm_prompt` | Required `text`; `target: "lead"`; always `wait: false` | Prompt `lead`, `orchestration:<id>`, or a worker ID, then poll with `swarm_read`. |
+| `swarm_steer` | Required `text` and `target` | Steer `lead`, `orchestration:<id>`, or a worker ID with `steer: true`, `wait: false`. |
+
+`orchestration:general` maps to the existing General Lead. Calls are cancellable, requests share one serialized SSH path, and successful results are capped at 4 MiB; reduce `swarm_read.max` to page large transcripts.
+
+Merge this server into user-level `~/.kimi-code/mcp.json` (keep any existing servers):
+
+```json
+{
+  "mcpServers": {
+    "emin-swarm": {
+      "command": "/Users/eminmahrt/.local/bin/node",
+      "args": [
+        "/Users/eminmahrt/Developer/pi-durable-deploy/src/swarm-mcp.mjs"
+      ],
+      "env": {
+        "SWARM_MCP_SSH_HOST": "swarm-host",
+        "SWARM_MCP_SOCKET": "/home/swarm/.pi-durable/swarm.sock"
+      }
+    }
+  }
+}
+```
+
+These absolute paths are this machine's example; adjust `command` and `args` for your setup. The `env` values are the defaults and may be omitted. Start a **new Kimi Code/Desktop session** after saving the configuration.
+
+Verify from the repository root after implementation, then check the remote and public health endpoints:
+
+```sh
+node --check src/swarm-mcp.mjs
+node --no-warnings --test test/swarm-mcp.test.mjs
+ssh swarm-host 'curl -fsS --unix-socket /home/swarm/.pi-durable/swarm.sock http://localhost/healthz'
+curl -fsS https://code.emin.de/healthz
+```
+
+The SSH check requires the local smartcard bridge and SSH key to work; the public health check alone does not verify MCP.
 
 ### Unix Socket HTTP RPC Endpoints (`swarm.sock`)
 
