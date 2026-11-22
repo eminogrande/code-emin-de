@@ -9,6 +9,8 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ### Fixes & Models (2026-11-22)
 
+- **Transparent favicon:** added an inline SVG 🤔 favicon with no background rectangle to both login and chat, avoiding another static asset/request.
+
 - **VPS ownership, SSH remote, and `swarm-ctl` guard (`ops/swarm-ctl`):** Fixed root-owned `/opt/pi-durable-swarm/.git/index` and stray `caddy`-owned image file on `code.emin.de` (`chown -R swarm:swarm`), switched VPS `origin` from HTTPS to `git@github.com:eminogrande/code-emin-de.git` (using `/home/swarm/.ssh/id_ed25519_github`), and added `chown -R swarm:swarm "$REPO/.git"` guards to `swarm-ctl` `apply|reload|reload-web|pull`.
 - **Max reasoning for Kimi K3.1 + DeepSeek Abliterated (`src/daemon.mjs`, `src/models.mjs`, `test/models-failover.test.mjs`):** Switched all primary daemon roles (`lead`, orchestrators, `coder`, `planner`, `reviewer`, `watcher`, `support`, `social`) from `thinkingLevel: "high"` to `"max"` (keeping `/btw` at `"low"`), stopped `llmgateway` payload wrapper from downgrading `reasoning.effort` to `"high"`, and defaulted `reasoning.effort` to `"max"` across `llmgateway`, `allmodels`, and `paymentrequired`.
 - **Gemini & Kimi subscription router wiring (`src/models.mjs`, `src/web.mjs`, `test/lead-model.test.mjs`, VPS `.env`):** Expanded `ROUTER_PAYMENTREQUIRED_MODELS` + Web UI dropdown from 15 to 20 models (`k3`, `gemini-4-neon-xhigh`, `gemini-4-hydrogen-xhigh`, `gemini-3.8-flash-tiered`, `gemini-3-flash`), raised `contextWindow`/`maxTokens` to `1M`/`64K` for frontier Kimi/DeepSeek/Gemini entries, and configured `ROUTER_PAYMENTREQUIRED_API_KEY` + `LOCAL_LLAMA_URL` (`127.0.0.1:8089`) in VPS `.env` (runtime-only, uncommitted).

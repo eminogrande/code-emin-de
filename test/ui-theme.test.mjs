@@ -10,6 +10,15 @@ const page = src.slice(src.indexOf("function renderMinimalChat()"), src.indexOf(
 const html = page.slice(page.indexOf("<!doctype html>"));
 const doc = () => new JSDOM(html).window.document;
 
+test("transparent thinking emoji favicon is embedded", () => {
+  const icon = doc().querySelector('link[rel="icon"]');
+  assert.equal(icon.getAttribute("type"), "image/svg+xml");
+  assert.match(icon.getAttribute("href"), /^data:image\/svg\+xml,/);
+  assert.match(icon.getAttribute("href"), /🤔/);
+  assert.doesNotMatch(icon.getAttribute("href"), /rect/i, "no background rectangle");
+  assert.equal((src.match(/rel="icon"/g) || []).length, 2, "login and chat");
+});
+
 test("no external component stylesheet or RareUI credit remains", () => {
   const d = doc();
   assert.equal(d.querySelectorAll('link[rel="stylesheet"]').length, 0);

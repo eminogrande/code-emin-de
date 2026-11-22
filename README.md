@@ -4,7 +4,7 @@ A durable, self-hosting, **open-weights-only** multi-agent coding, review, memor
 
 > **Never guess, never trust vibes — measure every prompt byte, harness invariant, failover hop, and hardware dollar against real benchmarks.**
 
-Live deployment: `https://code.emin.de` (Ubuntu 24.04 LTS, 4 vCPU Skylake / 7.6 GiB RAM, hardware Passkey / FIDO2 Smartcard auth, `0` bearer tokens, `$0/mo` Tier-3 local `llama.cpp` failsafe).
+Live deployment: `https://code.emin.de` (Ubuntu 24.04 LTS, 4 vCPU Skylake / 7.6 GiB RAM, hardware Passkey / FIDO2 Smartcard auth, `0` bearer tokens, `$0/mo` Tier-3 local `llama.cpp` failsafe). Login and chat use a transparent inline 🤔 SVG favicon, so no extra asset request or opaque background.
 
 ---
 
