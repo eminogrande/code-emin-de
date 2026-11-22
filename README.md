@@ -297,6 +297,8 @@ cp .env.example .env              # set LLMGATEWAY_API_KEY / ALLMODELS_API_KEY (
 npm install
 ```
 
+`jsdom` is a **production dependency** because `src/markdown.mjs` imports it at runtime. Production deploys use `npm ci --omit=dev --ignore-scripts` and therefore retain it.
+
 ### Free Router Lead Model (`paymentrequired`)
 
 The free internal router is a built-in provider (`PaymentRequired Free`) at

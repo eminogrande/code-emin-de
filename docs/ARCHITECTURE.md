@@ -111,6 +111,8 @@ Two browser/OS boundaries prevent a raw web tab from directly using a T=0 contac
 
 ## 6. VPS-First Self-Improvement + Append-Only GitHub Backup
 
+Production installs must retain `jsdom` as a runtime dependency (`src/markdown.mjs`), and `/opt/pi-durable-swarm` must remain writable by the `swarm` service account for `git pull`, dependency installation, and deploy checks.
+
 - Live repo on VPS: `/opt/pi-durable-swarm` (pushing via single-repo deploy key to `eminogrande/pi-durable-swarm`).
 - **No push-event deployment:** no tracked GitHub Actions/workflows or repository webhooks were found. Pushing or merging GitHub `main` does not itself update the VPS.
 - **GitHub `main` → VPS:** run `sudo /usr/local/bin/swarm-ctl pull` on the VPS. This is separate from Lead's self-update flow.

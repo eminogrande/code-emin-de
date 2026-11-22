@@ -9,6 +9,8 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ### Features
 
+- **Production deployment fixes:** moved `jsdom` into production dependencies because `src/markdown.mjs` imports it at runtime; `npm ci --omit=dev` otherwise makes `swarm-ctl pull` fail its WebAuthn/Markdown checks. Corrected `/opt/pi-durable-swarm` ownership to the `swarm` service account and replaced stale GitHub known-host entries only after all three scanned keys matched GitHub's official metadata. Pre-existing VPS changes are preserved in named stash backups.
+
 - **External Terminal-Bench 2.1 + real Emin Swarm Harbor adapter (`bench/harbor-emin/`, `docs/TERMINAL_BENCHMARK_emin-swarm.md`):**
   - Added a Harbor `BaseInstalledAgent` that runs the real `openSwarmDaemon()` in isolated task containers on `178.105.82.203`, with pinned `git archive` source upload, production roster/hooks/supervisor, and Harbor as independent verifier.
   - Hardened the execution path: correct Harbor 0.27 module/task IDs, 1200s setup deadline, secure `0600` model-env file instead of process-argument credentials, original-Lead `done` validation, worker failure/final activity checks, bounded cleanup, and structured failure receipts/transcript previews.
