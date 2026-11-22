@@ -494,7 +494,7 @@ The SSH check requires the local smartcard bridge and SSH key to work; the publi
 
 **Repository:** <https://github.com/eminogrande/pi-durable-swarm> · **Live UI:** <https://code.emin.de>
 
-Current `main` and live deployment are aligned on **`7cf3b30`** (`49a2abc` MCP/Harbor feature + `7cf3b30` production dependency fix).
+GitHub `main` and live deployment are aligned on the handover documentation commit; use Git history for the exact SHA. Feature baseline: **`49a2abc`** (MCP/Harbor) and **`7cf3b30`** (production dependency fix), followed by handover documentation updates.
 
 - **Tests:** full `npm test` passed **138/138**, including the bounded live swarm E2E in **144.76s**. Isolated bounded-stream live E2E also passed in **70.34s**.
 - **Production:** `swarm-ctl pull` returned `PULLED_OK`; `swarmd`, `swarm-web`, and Caddy are active. `https://code.emin.de/healthz` and the Unix-socket daemon both return healthy.

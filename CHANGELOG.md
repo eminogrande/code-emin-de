@@ -9,7 +9,7 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ### Handover
 
-- **Verified GitHub + production deployment:** `main` is pushed through **`7cf3b30`** (`49a2abc` MCP/Harbor feature, `7cf3b30` production dependency fix) and deployed to `code.emin.de` with `PULLED_OK`. Full suite passed **138/138**; bounded live E2E passed **70.34s** and the final suite's live E2E passed **144.76s**. All three services and public/daemon health checks pass. A real deployed MCP `swarm_list` returned **6 orchestrations / 33 workers**. Pre-existing VPS changes remain in two named stash backups; no reset, force-push, or deletion was used.
+- **Verified GitHub + production deployment:** `main` includes **`49a2abc`** (MCP/Harbor feature), **`7cf3b30`** (production dependency fix), and handover documentation, deployed to `code.emin.de` with `PULLED_OK`. Full suite passed **138/138**; bounded live E2E passed **70.34s** and the final suite's live E2E passed **144.76s**. All three services and public/daemon health checks pass. A real deployed MCP `swarm_list` returned **6 orchestrations / 33 workers**. Pre-existing VPS changes remain in two named stash backups; no reset, force-push, or deletion was used.
 
 ### Features
 
