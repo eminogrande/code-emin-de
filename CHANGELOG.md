@@ -7,6 +7,10 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ## Unreleased
 
+### Handover
+
+- **Verified GitHub + production deployment:** `main` is pushed through **`7cf3b30`** (`49a2abc` MCP/Harbor feature, `7cf3b30` production dependency fix) and deployed to `code.emin.de` with `PULLED_OK`. Full suite passed **138/138**; bounded live E2E passed **70.34s** and the final suite's live E2E passed **144.76s**. All three services and public/daemon health checks pass. A real deployed MCP `swarm_list` returned **6 orchestrations / 33 workers**. Pre-existing VPS changes remain in two named stash backups; no reset, force-push, or deletion was used.
+
 ### Features
 
 - **Production deployment fixes:** moved `jsdom` into production dependencies because `src/markdown.mjs` imports it at runtime; `npm ci --omit=dev` otherwise makes `swarm-ctl pull` fail its WebAuthn/Markdown checks. Corrected `/opt/pi-durable-swarm` ownership to the `swarm` service account and replaced stale GitHub known-host entries only after all three scanned keys matched GitHub's official metadata. Pre-existing VPS changes are preserved in named stash backups.

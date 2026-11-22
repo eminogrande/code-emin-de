@@ -24,6 +24,7 @@ Live deployment: `https://code.emin.de` (Ubuntu 24.04 LTS, 4 vCPU Skylake / 7.6 
 8. [Security Model — Zero Bearer Tokens & Hardware Smartcard Auth](#8-security-model--zero-bearer-tokens--hardware-smartcard-auth)
 9. [Quickstart, Commands & Testing](#9-quickstart-commands--testing)
 10. [Repository Map & Deep-Dive Docs](#10-repository-map--deep-dive-docs)
+11. [Handover & Verified State](#11-handover--verified-state)
 
 ---
 
@@ -483,4 +484,22 @@ The SSH check requires the local smartcard bridge and SSH key to work; the publi
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — Production VPS architecture, Smartcard Bridge (`127.0.0.1:4199`), 3-tier failover, hook registry, zero-LLM commands, and `swarm-ctl` deploy pipeline
 - [`docs/HARNESS_BENCHMARK_ep3.md`](docs/HARNESS_BENCHMARK_ep3.md) — Controlled 4-harness `Kimi K3.1 Pro` benchmark (`pi-durable-swarm` #1 at `95.33/100`)
 - [`docs/REINFORCE_BENCHMARK.md`](docs/REINFORCE_BENCHMARK.md) — Isolated Docker `/reinforce` Ep1 replay (`88.0/100`, 0 nudges, `$0.1548` vs `44.8/100`, 6 nudges, `$1.0940`)
+- [`docs/TERMINAL_BENCHMARK_emin-swarm.md`](docs/TERMINAL_BENCHMARK_emin-swarm.md) — Real VPS Terminal-Bench 2.1 adapter, oracle and model receipts, isolation, failure analysis, and extended-timeout caveats
 - [`docs/HARNESS_BENCHMARK_ep4-kimi-ref.md`](docs/HARNESS_BENCHMARK_ep4-kimi-ref.md), [`docs/HARNESS_BENCHMARK_ep4-qwen38-27b.md`](docs/HARNESS_BENCHMARK_ep4-qwen38-27b.md), [`docs/LOCAL_ADAPTER_BENCHMARK_ep4.md`](docs/LOCAL_ADAPTER_BENCHMARK_ep4.md) — Cloud vs. local model empirical reality check
+
+
+---
+
+## 11. Handover & Verified State
+
+**Repository:** <https://github.com/eminogrande/pi-durable-swarm> · **Live UI:** <https://code.emin.de>
+
+Current `main` and live deployment are aligned on **`7cf3b30`** (`49a2abc` MCP/Harbor feature + `7cf3b30` production dependency fix).
+
+- **Tests:** full `npm test` passed **138/138**, including the bounded live swarm E2E in **144.76s**. Isolated bounded-stream live E2E also passed in **70.34s**.
+- **Production:** `swarm-ctl pull` returned `PULLED_OK`; `swarmd`, `swarm-web`, and Caddy are active. `https://code.emin.de/healthz` and the Unix-socket daemon both return healthy.
+- **MCP:** the deployed `emin-swarm` stdio server completed a real `swarm_list` read over smartcard SSH: **6 orchestrations / 33 workers**, with live status and transcripts available through `swarm_read`.
+- **External benchmark:** Harbor oracle passed **5/5** with mean reward `1.000`. Real Emin Swarm `write-compressor` attempts returned **reward `0.000`** after Lead `turn_limit`; the adapter works, but the model baseline has not solved that task. See [`docs/TERMINAL_BENCHMARK_emin-swarm.md`](docs/TERMINAL_BENCHMARK_emin-swarm.md).
+- **Deployment backup:** pre-existing VPS changes are preserved in Git stashes `pre-49a2abc-backup-root` and `pre-49a2abc-backup`. No reset, force-push, or deletion was used.
+- **Dependencies:** `jsdom` is retained in production because `src/markdown.mjs` imports it at runtime. Model credentials are not committed; Harbor receives them through an agent-owned `0600` file inside each isolated container.
+- **Known remaining work:** the first model baseline needs a shorter deterministic smoke and measured prompt/Lead improvements. The separate `npm audit` report still contains existing Mermaid/transitive advisories; the newly added MCP SDK and Zod dependencies no longer contribute findings.
