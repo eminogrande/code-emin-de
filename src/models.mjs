@@ -26,21 +26,26 @@ const routerModel = (id, name, opts = {}) => ({
   id,
   name,
   contextWindow: opts.contextWindow || 262144,
-  maxTokens: 32768,
+  maxTokens: opts.maxTokens || 32768,
   reasoning: opts.reasoning !== false,
   input: opts.image ? ["text", "image"] : ["text"],
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 });
 
 export const ROUTER_PAYMENTREQUIRED_MODELS = [
-  routerModel("k3.1-pro", "Kimi K3.1 Pro · free router", { image: true }),
-  routerModel("k3.1-pro-highspeed", "Kimi K3.1 Pro Highspeed · free router", { image: true }),
+  routerModel("k3.1-pro", "Kimi K3.1 Pro · free router", { image: true, contextWindow: 1048576, maxTokens: 65536 }),
+  routerModel("k3.1-pro-highspeed", "Kimi K3.1 Pro Highspeed · free router", { image: true, contextWindow: 1048576, maxTokens: 65536 }),
+  routerModel("k3", "Kimi K3 · free router", { image: true, contextWindow: 1048576, maxTokens: 65536 }),
   routerModel("kimi-for-coding", "Kimi for Coding · free router"),
   routerModel("kimi-for-coding-highspeed", "Kimi for Coding Highspeed · free router"),
-  routerModel("deepseek-v4.1-flash-abliterated", "DeepSeek V4.1 Flash Abliterated · free router"),
+  routerModel("deepseek-v4.1-flash-abliterated", "DeepSeek V4.1 Flash Abliterated · free router", { contextWindow: 1048576, maxTokens: 65536 }),
+  routerModel("gemini-4-neon-xhigh", "Gemini 4 Neon XHigh · free router", { image: true, contextWindow: 1048576, maxTokens: 65536 }),
+  routerModel("gemini-4-hydrogen-xhigh", "Gemini 4 Hydrogen XHigh · free router", { image: true, contextWindow: 1048576, maxTokens: 65536 }),
+  routerModel("gemini-4-argon-high", "Gemini 4 Argon High · free router", { image: true, contextWindow: 1048576, maxTokens: 65536 }),
+  routerModel("gemini-3.8-flash-high", "Gemini 3.8 Flash High · free router", { image: true, contextWindow: 1048576, maxTokens: 65536 }),
+  routerModel("gemini-3.8-flash-tiered", "Gemini 3.8 Flash Tiered · free router", { image: true, contextWindow: 1048576, maxTokens: 65536 }),
   routerModel("gemini-3.5-flash-lite", "Gemini 3.5 Flash Lite · free router", { image: true, reasoning: false }),
-  routerModel("gemini-3.8-flash-high", "Gemini 3.8 Flash High · free router", { image: true }),
-  routerModel("gemini-4-argon-high", "Gemini 4 Argon High · free router", { image: true }),
+  routerModel("gemini-3-flash", "Gemini 3 Flash · free router", { image: true, contextWindow: 1048576, maxTokens: 65536 }),
   routerModel("glm-5.3-abliterated", "GLM-5.3 Abliterated · free router"),
   routerModel("glm-5.3-flash-abliterated", "GLM-5.3 Flash Abliterated · free router"),
   routerModel("cohere/north-mini-code:free", "Cohere North Mini Code · free", { reasoning: false }),
@@ -356,6 +361,16 @@ export function attachOpenWeightsFailover(models, { cooldownMs = 5 * 60_000, loc
   return models;
 }
 
+const MAX_THINKING_LEVEL_MAP = {
+  off: "none",
+  minimal: "minimal",
+  low: "low",
+  medium: "medium",
+  high: "high",
+  xhigh: "xhigh",
+  max: "max",
+};
+
 export function createOpenModels({ enableFailover = true } = {}) {
   const models = createModels();
   models.setProvider(deepseekProvider());
@@ -372,6 +387,7 @@ export function createOpenModels({ enableFailover = true } = {}) {
         provider: "llmgateway",
         baseUrl: "https://api.llmgateway.io/v1",
         type: "chat",
+        ...(m.reasoning ? { thinkingLevelMap: MAX_THINKING_LEVEL_MAP } : {}),
         compat: {
           supportsStore: false,
           supportsDeveloperRole: false,
@@ -382,8 +398,8 @@ export function createOpenModels({ enableFailover = true } = {}) {
         },
       })),
       api: wrapApiWithPayload((payload, model) => {
-        if (payload && typeof payload === "object" && model.reasoning) {
-          return { ...payload, reasoning: { effort: "high" } };
+        if (payload && typeof payload === "object" && model.reasoning && !payload.reasoning) {
+          return { ...payload, reasoning: { effort: "max" } };
         }
         return payload;
       }),
@@ -402,6 +418,7 @@ export function createOpenModels({ enableFailover = true } = {}) {
         provider: "allmodels",
         baseUrl: "https://api.allmodels.io/oai",
         type: "chat",
+        ...(m.reasoning ? { thinkingLevelMap: MAX_THINKING_LEVEL_MAP } : {}),
         compat: {
           supportsStore: false,
           supportsDeveloperRole: false,
@@ -418,6 +435,9 @@ export function createOpenModels({ enableFailover = true } = {}) {
           ...payload,
           max_tokens: payload.max_tokens ? Math.min(Number(payload.max_tokens), cap) : cap,
         };
+        if (model.reasoning && !next.reasoning) {
+          next.reasoning = { effort: "max" };
+        }
         if (model.id === "deepseek/deepseek-v4.1-flash-abliterated") {
           next.provider = { order: ["lyber", "hopper", "abliteration"], allow_fallbacks: true };
         }
@@ -438,6 +458,7 @@ export function createOpenModels({ enableFailover = true } = {}) {
         provider: "paymentrequired",
         baseUrl: ROUTER_PAYMENTREQUIRED_BASE_URL,
         type: "chat",
+        ...(m.reasoning ? { thinkingLevelMap: MAX_THINKING_LEVEL_MAP } : {}),
         compat: {
           supportsStore: false,
           supportsDeveloperRole: false,
@@ -450,7 +471,11 @@ export function createOpenModels({ enableFailover = true } = {}) {
       api: wrapApiWithPayload((payload, model) => {
         if (!payload || typeof payload !== "object") return payload;
         const cap = model.maxTokens || 8192;
-        return { ...payload, max_tokens: payload.max_tokens ? Math.min(Number(payload.max_tokens), cap) : cap };
+        const next = { ...payload, max_tokens: payload.max_tokens ? Math.min(Number(payload.max_tokens), cap) : cap };
+        if (model.reasoning && !next.reasoning) {
+          next.reasoning = { effort: "max" };
+        }
+        return next;
       }),
     }),
   );

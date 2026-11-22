@@ -26,7 +26,7 @@ test("1. allowlist: only known verified provider/model pairs resolve", () => {
   assert.equal(resolveLeadModelChoice("paymentrequired", "gemini-3.7-flash-high"), null);
   // every router catalogue entry is selectable, and only under the router provider
   const routerIds = ROUTER_PAYMENTREQUIRED_MODELS.map((m) => m.id);
-  assert.equal(routerIds.length, 15);
+  assert.equal(routerIds.length, 20);
   for (const id of routerIds) {
     assert.ok(resolveLeadModelChoice("paymentrequired", id), id);
     assert.equal(resolveLeadModelChoice("llmgateway", id), null, id);

@@ -243,7 +243,7 @@ export async function openSwarmDaemon({
               convId = c.id;
               await configure(tx, convId, {
                 model: mRef,
-                thinkingLevel: "high",
+                thinkingLevel: "max",
                 cwd: workspaceDir,
                 maxTurns: 6,
                 tools: roleToolSet(role),
@@ -394,7 +394,7 @@ export async function openSwarmDaemon({
       convId = c.id;
       await configure(tx, convId, {
         model: roleModels.lead,
-        thinkingLevel: "high",
+        thinkingLevel: "max",
         cwd: workspaceDir,
         maxTurns: 16,
         tools: roleToolSet("orchestrator"),
@@ -428,7 +428,7 @@ export async function openSwarmDaemon({
       convId = c.id;
       await configure(tx, convId, {
         model: mRef,
-        thinkingLevel: "high",
+        thinkingLevel: "max",
         cwd: workspaceDir,
         maxTurns: args.role === "coder" ? 40 : 16,
         tools: roleToolSet(args.role),
@@ -501,7 +501,7 @@ export async function openSwarmDaemon({
         convId = c.id;
         await configure(tx, convId, {
           model: mRef,
-          thinkingLevel: "high",
+          thinkingLevel: "max",
           cwd: workspaceDir,
           maxTurns: role === "coder" ? 40 : 16,
           tools: roleToolSet(role),
@@ -570,7 +570,7 @@ export async function openSwarmDaemon({
         convId = c.id;
         await configure(tx, convId, {
           model: mRef,
-          thinkingLevel: "high",
+          thinkingLevel: "max",
           cwd: workspaceDir,
           maxTurns: 8,
           tools: roleToolSet("reviewer"),
@@ -1040,7 +1040,7 @@ export async function openSwarmDaemon({
   const lead = await harness.root(BACKGROUND_CONTEXT, {
     agent: {
       model: roleModels.lead,
-      thinkingLevel: "high",
+      thinkingLevel: "max",
       cwd: workspaceDir,
       maxTurns: 16,
       tools: roleToolSet("lead"),
@@ -1050,7 +1050,7 @@ export async function openSwarmDaemon({
   await lead.commit(async (tx) => {
     await configure(tx, lead.id, {
       model: roleModels.lead,
-      thinkingLevel: "high",
+      thinkingLevel: "max",
       cwd: workspaceDir,
       maxTurns: 16,
       tools: roleToolSet("lead"),

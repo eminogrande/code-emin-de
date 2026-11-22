@@ -740,12 +740,17 @@ const MODEL_CHOICES = [
   ['llmgateway', 'kimi-k3.1-pro'],
   ['paymentrequired', 'k3.1-pro'],
   ['paymentrequired', 'k3.1-pro-highspeed'],
+  ['paymentrequired', 'k3'],
   ['paymentrequired', 'kimi-for-coding'],
   ['paymentrequired', 'kimi-for-coding-highspeed'],
   ['paymentrequired', 'deepseek-v4.1-flash-abliterated'],
-  ['paymentrequired', 'gemini-3.5-flash-lite'],
-  ['paymentrequired', 'gemini-3.8-flash-high'],
+  ['paymentrequired', 'gemini-4-neon-xhigh'],
+  ['paymentrequired', 'gemini-4-hydrogen-xhigh'],
   ['paymentrequired', 'gemini-4-argon-high'],
+  ['paymentrequired', 'gemini-3.8-flash-high'],
+  ['paymentrequired', 'gemini-3.8-flash-tiered'],
+  ['paymentrequired', 'gemini-3.5-flash-lite'],
+  ['paymentrequired', 'gemini-3-flash'],
   ['paymentrequired', 'glm-5.3-abliterated'],
   ['paymentrequired', 'glm-5.3-flash-abliterated'],
   ['paymentrequired', 'cohere/north-mini-code:free'],
@@ -761,7 +766,13 @@ const MODEL_CHOICES = [
 ];
 const PROVIDER_LABEL = { llmgateway: 'LLMGateway', allmodels: 'AllModels', paymentrequired: 'PaymentRequired' };
 // Readable, provider-prefixed labels: a bare id column would read identically in 13rem.
-const MODEL_LABELS = { 'paymentrequired k3.1-pro': 'Kimi K3.1 Pro · free router' };
+const MODEL_LABELS = {
+  'paymentrequired k3.1-pro': 'Kimi K3.1 Pro · sub router',
+  'paymentrequired k3': 'Kimi K3 · sub router',
+  'paymentrequired gemini-4-neon-xhigh': 'Gemini 4 Neon XHigh · sub router',
+  'paymentrequired gemini-4-argon-high': 'Gemini 4 Argon High · sub router',
+  'paymentrequired deepseek-v4.1-flash-abliterated': 'DeepSeek V4.1 Flash Abliterated · router',
+};
 function modelLabel(pv, md) {
   return MODEL_LABELS[pv + ' ' + md] || (PROVIDER_LABEL[pv] || pv) + ' · ' + md;
 }

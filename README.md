@@ -257,13 +257,13 @@ const daemon = await openSwarmDaemon({
 
 ## 7. Open-Weights Role Roster & Hard Invariants
 
-Configured in [`src/models.mjs`](src/models.mjs) (`ROLE_MODELS`, all overrideable via env vars):
+Configured in [`src/models.mjs`](src/models.mjs) (`ROLE_MODELS`, all overrideable via env vars). All main roles run at **`thinkingLevel: "max"`** (`reasoning.effort = "max"` on LLMGateway, AllModels, and PaymentRequired; `/btw` stays `low` for fast side-chat):
 
 | Role | Default Open-Weights Model | Tools & Invariant |
 | :--- | :--- | :--- |
-| **`lead`** | `kimi-k3.1-pro` | Orchestrator, parallel worker fan-out, Verbatim Spec Rule, sole OptMem writer (`memory_note`), sole `swarm-ctl` / `git push` owner. |
-| **`planner`** | `kimi-k3.1-pro` | Strictly read-only (`readonly-role-guard`); outputs `<=5` atomic steps with exact paths & verification commands. |
-| **`coder`** | `deepseek-v4.1-flash-uncensored` (fast: `deepseek-v4.1-flash-1017`) | Full workspace coding + `bus_send`/`read_sibling`; guarded by `coder-hard-test-gate` and `subagent-deploy-guard`. |
+| **`lead`** | `kimi-k3.1-pro` (`max`) | Orchestrator, parallel worker fan-out, Verbatim Spec Rule, sole OptMem writer (`memory_note`), sole `swarm-ctl` / `git push` owner. |
+| **`planner`** | `kimi-k3.1-pro` (`max`) | Strictly read-only (`readonly-role-guard`); outputs `<=5` atomic steps with exact paths & verification commands. |
+| **`coder`** | `deepseek-v4.1-flash-uncensored` (`max`, fails over to `allmodels` `deepseek/deepseek-v4.1-flash-abliterated` `max`; fast: `deepseek-v4.1-flash-1017`) | Full workspace coding + `bus_send`/`read_sibling`; guarded by `coder-hard-test-gate` and `subagent-deploy-guard`. |
 | **`reviewer`** | `kimi-k3.1-pro` | Strictly read-only security/bug audit (`VERDICT: APPROVE` or `REQUEST_CHANGES`). |
 | **`support` / `social`** | `glm-5.3` / `kimi-k3.1-pro` | **Draft-only** (`save_draft`, 1 ticket per human on support); outbound sends blocked by `draft-only-outbound-guard`. |
 | **`watcher`** | `glm-5.3` + System-1 triage (`src/triage.mjs`) | Forever-agent polling; stays silent on routine noise (`0` LLM wakeups) and surfaces only verified errors/drafts. |
@@ -300,17 +300,18 @@ npm install
 
 `jsdom` is a **production dependency** because `src/markdown.mjs` imports it at runtime. Production deploys use `npm ci --omit=dev --ignore-scripts` and therefore retain it.
 
-### Free Router Lead Model (`paymentrequired`)
+### Free / Subscription Router Lead Models (`paymentrequired`)
 
-The free internal router is a built-in provider (`PaymentRequired Free`) at
-`https://router.paymentrequired.com/v1/internal` (OpenAI-compatible). Its catalogue is the full router set —
-`k3.1-pro`, `k3.1-pro-highspeed`, `kimi-for-coding`, `kimi-for-coding-highspeed`,
-`deepseek-v4.1-flash-abliterated`, `gemini-3.5-flash-lite`, `gemini-3.8-flash-high`,
-`gemini-4-argon-high`, `glm-5.3-abliterated`, `glm-5.3-flash-abliterated`,
+The internal router is a built-in provider (`PaymentRequired Free`) at
+`https://router.paymentrequired.com/v1/internal` (OpenAI-compatible), backing Kimi and Gemini subscription
+models plus free models — `k3.1-pro`, `k3.1-pro-highspeed`, `k3`, `kimi-for-coding`,
+`kimi-for-coding-highspeed`, `deepseek-v4.1-flash-abliterated`, `gemini-4-neon-xhigh`,
+`gemini-4-hydrogen-xhigh`, `gemini-4-argon-high`, `gemini-3.8-flash-high`, `gemini-3.8-flash-tiered`,
+`gemini-3.5-flash-lite`, `gemini-3-flash`, `glm-5.3-abliterated`, `glm-5.3-flash-abliterated`,
 `cohere/north-mini-code:free`, `dots-studio/dots-3-note-preview:free`,
 `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`, `nvidia/nemotron-3-ultra-550b-a55b:free`,
-`nvidia/nemotron-3.5-lightning:free` — all selectable in the Lead dropdown as
-`PaymentRequired · <id>` (`Kimi K3.1 Pro · free router` for `k3.1-pro`).
+`nvidia/nemotron-3.5-lightning:free` — all selectable in the Lead dropdown (`1M` context / `64K` max tokens for
+frontier Kimi, DeepSeek, and Gemini models, with `reasoning.effort = "max"`).
 
 ```sh
 ROUTER_PAYMENTREQUIRED_API_KEY=<key>   # in .env only, never committed

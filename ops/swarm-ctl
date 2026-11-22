@@ -63,6 +63,7 @@ case "${1:-}" in
     ;;
   apply|reload)
     with_lock
+    chown -R swarm:swarm "$REPO/.git"
     MSG="${2:-chore(vps): verified self-update on code.emin.de}"
     check_all
     PREV_SHA=$(run_swarm "cd '$REPO' && git rev-parse HEAD")
@@ -102,6 +103,7 @@ case "${1:-}" in
     ;;
   reload-web)
     with_lock
+    chown -R swarm:swarm "$REPO/.git"
     MSG="${2:-chore(web): verified UI self-update on code.emin.de}"
     check_all
     backup_to_github "$MSG"
@@ -112,6 +114,7 @@ case "${1:-}" in
     ;;
   pull)
     with_lock
+    chown -R swarm:swarm "$REPO/.git"
     run_swarm "cd '$REPO' && git pull --ff-only origin main && npm ci --omit=dev --ignore-scripts --no-audit --no-fund"
     install -m 644 "$REPO/ops/swarmd.service" /etc/systemd/system/swarmd.service
     install -m 644 "$REPO/ops/swarm-web.service" /etc/systemd/system/swarm-web.service

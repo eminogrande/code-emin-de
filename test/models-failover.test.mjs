@@ -180,10 +180,12 @@ test("paymentrequired: registered free provider, full catalogue, zero costs, no 
   try {
     const models = createOpenModels({ enableFailover: false });
     const ids = [
-      "deepseek-v4.1-flash-abliterated", "gemini-3.5-flash-lite", "gemini-3.8-flash-high",
-      "gemini-4-argon-high", "glm-5.3-abliterated", "glm-5.3-flash-abliterated", "k3.1-pro",
-      "k3.1-pro-highspeed", "kimi-for-coding", "kimi-for-coding-highspeed",
-      "cohere/north-mini-code:free", "dots-studio/dots-3-note-preview:free",
+      "deepseek-v4.1-flash-abliterated", "gemini-3-flash", "gemini-3.5-flash-lite",
+      "gemini-3.8-flash-high", "gemini-3.8-flash-tiered", "gemini-4-argon-high",
+      "gemini-4-hydrogen-xhigh", "gemini-4-neon-xhigh", "glm-5.3-abliterated",
+      "glm-5.3-flash-abliterated", "k3", "k3.1-pro", "k3.1-pro-highspeed",
+      "kimi-for-coding", "kimi-for-coding-highspeed", "cohere/north-mini-code:free",
+      "dots-studio/dots-3-note-preview:free",
       "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
       "nvidia/nemotron-3-ultra-550b-a55b:free", "nvidia/nemotron-3.5-lightning:free",
     ];
@@ -232,5 +234,50 @@ test("paymentrequired: registered free provider, full catalogue, zero costs, no 
     else process.env.ROUTER_PAYMENTREQUIRED_API_KEY = prevRouter;
     if (prevAll === undefined) delete process.env.ALLMODELS_API_KEY;
     else process.env.ALLMODELS_API_KEY = prevAll;
+  }
+});
+
+test("reasoning effort max is preserved (never downgraded to high) on llmgateway, allmodels, and paymentrequired", async () => {
+  const prevLlm = process.env.LLMGATEWAY_API_KEY;
+  const prevAll = process.env.ALLMODELS_API_KEY;
+  const prevRouter = process.env.ROUTER_PAYMENTREQUIRED_API_KEY;
+  process.env.LLMGATEWAY_API_KEY = "test-llm";
+  process.env.ALLMODELS_API_KEY = "test-all";
+  process.env.ROUTER_PAYMENTREQUIRED_API_KEY = "test-router";
+  try {
+    const models = createOpenModels({ enableFailover: false });
+    for (const [provider, id] of [
+      ["llmgateway", "kimi-k3.1-pro"],
+      ["llmgateway", "deepseek-v4.1-flash-uncensored"],
+      ["allmodels", "deepseek/deepseek-v4.1-flash-abliterated"],
+      ["paymentrequired", "k3.1-pro"],
+      ["paymentrequired", "deepseek-v4.1-flash-abliterated"],
+      ["paymentrequired", "gemini-4-neon-xhigh"],
+    ]) {
+      const m = models.getModel(provider, id);
+      assert.ok(m, `${provider}/${id} registered`);
+      let captured = null;
+      const s = models.streamSimple(
+        m,
+        { messages: [{ role: "user", content: "hi" }] },
+        {
+          reasoning: "max",
+          onPayload(p) {
+            captured = p;
+            return p;
+          },
+          fetch: async () => new Response("abort", { status: 400 }),
+        },
+      );
+      await s.result();
+      assert.deepEqual(captured?.reasoning, { effort: "max" }, `${provider}/${id} should send reasoning.effort=max`);
+    }
+  } finally {
+    if (prevLlm === undefined) delete process.env.LLMGATEWAY_API_KEY;
+    else process.env.LLMGATEWAY_API_KEY = prevLlm;
+    if (prevAll === undefined) delete process.env.ALLMODELS_API_KEY;
+    else process.env.ALLMODELS_API_KEY = prevAll;
+    if (prevRouter === undefined) delete process.env.ROUTER_PAYMENTREQUIRED_API_KEY;
+    else process.env.ROUTER_PAYMENTREQUIRED_API_KEY = prevRouter;
   }
 });
