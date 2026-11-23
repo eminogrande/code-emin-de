@@ -49,7 +49,7 @@ test("real daemon image send", async()=>{const t=await boot();try{
   const q=t.w.document.getElementById("q");q.focus();q.dispatchEvent(ev);
   await new Promise(r=>setTimeout(r,200));
   console.log("count before",Date.now()%100000,t.w.chatImages.count());
-  q.value="hi";q.dispatchEvent(new t.w.KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true}));
+  q.value="hi";const kd=new t.w.KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true});console.log("dispatch",Date.now()%100000);q.dispatchEvent(kd);
   await new Promise(r=>setTimeout(r,9000));
   console.log("count after",Date.now()%100000,t.w.chatImages.count(),"hidden",t.w.document.getElementById("pending-images").hidden,"revoked",t.revoked.length,"errors",t.errors);
 }finally{await t.close();}});
