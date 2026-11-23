@@ -1495,7 +1495,7 @@ async function send(steer = false) {
       deckCleared = true;
       window.chatImages.clear();
     };
-    if (r.status !== 413 && !(d && d.error)) acceptSend();
+    if (r.ok && !(d && d.error)) acceptSend();
     let waitForBackend = false;
     if (r.status === 413) {
       markSettled(true);
@@ -1542,6 +1542,12 @@ async function send(steer = false) {
   }
 }
 
+const composerForm = document.getElementById('f');
+composerForm.addEventListener('submit', (ev) => {
+  ev.preventDefault();
+  send(busy);
+});
+
 const attachBtn = document.getElementById('attach-btn');
 const attachInput = document.getElementById('attach-input');
 if (attachBtn && attachInput) {
@@ -1563,7 +1569,7 @@ if (attachBtn && attachInput) {
 q.addEventListener('keydown', (ev) => {
   if (ev.key === 'Enter' && !ev.shiftKey) {
     ev.preventDefault();
-    send(busy);
+    composerForm.requestSubmit();
     return;
   }
   // Ctrl/Cmd+V is handled by chat-images.js so pasted text stays untouched.
