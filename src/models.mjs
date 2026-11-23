@@ -4,7 +4,7 @@ import { deepseekProvider } from "@earendil-works/pi-ai/providers/deepseek";
 
 // Strict verified open-weights production roster on LLMGateway + AllModels
 const LLMGATEWAY_OPEN_MODELS = [
-  { id: "kimi-k3.1-pro", name: "Kimi K3.1 Pro (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text", "image"], cost: { input: 2.0, output: 10.0, cacheRead: 0.2, cacheWrite: 0 } },
+  { id: "kimi-k3.1-pro", name: "Kimi K3.1 Pro (open-weights)", contextWindow: 1048576, maxTokens: 131072, reasoning: true, input: ["text", "image"], cost: { input: 2.0, output: 10.0, cacheRead: 0.2, cacheWrite: 0 } },
   { id: "glm-5.3", name: "GLM-5.3 (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text"], cost: { input: 0.77, output: 2.42, cacheRead: 0.143, cacheWrite: 0 } },
   { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro (open-weights)", contextWindow: 1050000, maxTokens: 64000, reasoning: true, input: ["text"], cost: { input: 0.66, output: 1.98, cacheRead: 0.022, cacheWrite: 0 } },
   { id: "deepseek-v4.1-flash-uncensored", name: "DeepSeek V4.1 Flash Uncensored (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text", "image"], cost: { input: 0.18, output: 0.65, cacheRead: 0.005, cacheWrite: 0 } },
@@ -25,48 +25,48 @@ const LLMGATEWAY_OPEN_MODELS = [
 const routerModel = (id, name, opts = {}) => ({
   id,
   name,
-  contextWindow: opts.contextWindow || 262144,
-  maxTokens: opts.maxTokens || 32768,
+  contextWindow: opts.contextWindow || 1048576,
+  maxTokens: opts.maxTokens || 65536,
   reasoning: opts.reasoning !== false,
   input: opts.image ? ["text", "image"] : ["text"],
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 });
 
 export const ROUTER_PAYMENTREQUIRED_MODELS = [
-  routerModel("k3.1-pro", "Kimi K3.1 Pro · free router", { image: true, contextWindow: 1048576, maxTokens: 65536 }),
-  routerModel("k3.1-pro-highspeed", "Kimi K3.1 Pro Highspeed · free router", { image: true, contextWindow: 1048576, maxTokens: 65536 }),
-  routerModel("k3", "Kimi K3 · free router", { image: true, contextWindow: 1048576, maxTokens: 65536 }),
+  routerModel("k3.1-pro", "Kimi K3.1 Pro · free router", { image: true, maxTokens: 131072 }),
+  routerModel("k3.1-pro-highspeed", "Kimi K3.1 Pro Highspeed · free router", { image: true, maxTokens: 131072 }),
+  routerModel("k3", "Kimi K3 · free router", { image: true, maxTokens: 131072 }),
   routerModel("kimi-for-coding", "Kimi for Coding · free router"),
-  routerModel("kimi-for-coding-highspeed", "Kimi for Coding Highspeed · free router"),
-  routerModel("deepseek-v4.1-flash-abliterated", "DeepSeek V4.1 Flash Abliterated · free router", { contextWindow: 1048576, maxTokens: 65536 }),
-  routerModel("gemini-4-neon-xhigh", "Gemini 4 Neon XHigh · free router", { image: true, contextWindow: 1048576, maxTokens: 65536 }),
-  routerModel("gemini-4-hydrogen-xhigh", "Gemini 4 Hydrogen XHigh · free router", { image: true, contextWindow: 1048576, maxTokens: 65536 }),
-  routerModel("gemini-4-argon-high", "Gemini 4 Argon High · free router", { image: true, contextWindow: 1048576, maxTokens: 65536 }),
-  routerModel("gemini-3.8-flash-high", "Gemini 3.8 Flash High · free router", { image: true, contextWindow: 1048576, maxTokens: 65536 }),
-  routerModel("gemini-3.8-flash-tiered", "Gemini 3.8 Flash Tiered · free router", { image: true, contextWindow: 1048576, maxTokens: 65536 }),
+  routerModel("kimi-for-coding-highspeed", "Kimi for Coding Highspeed · free router", { contextWindow: 262144 }),
+  routerModel("deepseek-v4.1-flash-abliterated", "DeepSeek V4.1 Flash Abliterated · free router"),
+  routerModel("gemini-4-neon-xhigh", "Gemini 4 Neon XHigh · free router", { image: true }),
+  routerModel("gemini-4-hydrogen-xhigh", "Gemini 4 Hydrogen XHigh · free router", { image: true }),
+  routerModel("gemini-4-argon-high", "Gemini 4 Argon High · free router", { image: true }),
+  routerModel("gemini-3.8-flash-high", "Gemini 3.8 Flash High · free router", { image: true }),
+  routerModel("gemini-3.8-flash-tiered", "Gemini 3.8 Flash Tiered · free router", { image: true }),
   routerModel("gemini-3.5-flash-lite", "Gemini 3.5 Flash Lite · free router", { image: true, reasoning: false }),
-  routerModel("gemini-3-flash", "Gemini 3 Flash · free router", { image: true, contextWindow: 1048576, maxTokens: 65536 }),
-  routerModel("claude-opus-5-5-high", "Claude Opus 5.5 High · free router", { image: true, contextWindow: 1000000, maxTokens: 65536 }),
-  routerModel("claude-sonnet-5-5-high", "Claude Sonnet 5.5 High · free router", { image: true, contextWindow: 1000000, maxTokens: 65536 }),
+  routerModel("gemini-3-flash", "Gemini 3 Flash · free router", { image: true }),
+  routerModel("claude-opus-5-5-high", "Claude Opus 5.5 High · free router", { image: true }),
+  routerModel("claude-sonnet-5-5-high", "Claude Sonnet 5.5 High · free router", { image: true }),
   routerModel("gpt-oss-120b-medium", "GPT-OSS 120B Medium · free router", { contextWindow: 131072, maxTokens: 32768 }),
   routerModel("glm-5.3-abliterated", "GLM-5.3 Abliterated · free router"),
   routerModel("glm-5.3-flash-abliterated", "GLM-5.3 Flash Abliterated · free router"),
-  routerModel("cohere/north-mini-code:free", "Cohere North Mini Code · free", { reasoning: false }),
-  routerModel("dots-studio/dots-3-note-preview:free", "Dots 3 Note Preview · free", { reasoning: false }),
-  routerModel("nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "Nemotron 3 Nano Omni 30B A3B · free", { image: true }),
-  routerModel("nvidia/nemotron-3-ultra-550b-a55b:free", "Nemotron 3 Ultra 550B A55B · free"),
-  routerModel("nvidia/nemotron-3.5-lightning:free", "Nemotron 3.5 Lightning · free"),
+  routerModel("cohere/north-mini-code:free", "Cohere North Mini Code · free", { contextWindow: 262144, reasoning: false }),
+  routerModel("dots-studio/dots-3-note-preview:free", "Dots 3 Note Preview · free", { contextWindow: 262144, reasoning: false }),
+  routerModel("nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "Nemotron 3 Nano Omni 30B A3B · free", { contextWindow: 262144, image: true }),
+  routerModel("nvidia/nemotron-3-ultra-550b-a55b:free", "Nemotron 3 Ultra 550B A55B · free", { contextWindow: 262144 }),
+  routerModel("nvidia/nemotron-3.5-lightning:free", "Nemotron 3.5 Lightning · free", { contextWindow: 262144 }),
 ];
 
 const ROUTER_PAYMENTREQUIRED_BASE_URL = "https://router.paymentrequired.com/v1/internal";
 
 const ALLMODELS_OPEN_MODELS = [
-  { id: "deepseek/deepseek-v4.1-flash-abliterated", name: "DeepSeek V4.1 Flash Abliterated (open-weights)", contextWindow: 1048576, maxTokens: 8192, reasoning: true, input: ["text", "image"], cost: { input: 0.3, output: 1.2, cacheRead: 0.03, cacheWrite: 0 } },
-  { id: "deepseek/deepseek-v4.1-flash-ultrafast", name: "DeepSeek V4.1 Flash Ultrafast (open-weights)", contextWindow: 1048576, maxTokens: 8192, reasoning: true, input: ["text", "image"], cost: { input: 0.18, output: 0.65, cacheRead: 0.01, cacheWrite: 0 } },
-  { id: "moonshotai/kimi-k3.1-pro-abliterated", name: "Kimi K3.1 Pro Abliterated (open-weights)", contextWindow: 1048576, maxTokens: 8192, reasoning: true, input: ["text", "image"], cost: { input: 2.0, output: 10.0, cacheRead: 0.2, cacheWrite: 0 } },
-  { id: "z-ai/glm-5.3-abliterated", name: "GLM-5.3 Abliterated (open-weights)", contextWindow: 1048576, maxTokens: 8192, reasoning: true, input: ["text"], cost: { input: 0.77, output: 2.42, cacheRead: 0.143, cacheWrite: 0 } },
-  { id: "z-ai/glm-5.3-flash-abliterated", name: "GLM-5.3 Flash Abliterated (open-weights)", contextWindow: 1048576, maxTokens: 8192, reasoning: true, input: ["text"], cost: { input: 0.2, output: 0.7, cacheRead: 0.02, cacheWrite: 0 } },
-  { id: "qwen/qwen3.8-27b-abliterated", name: "Qwen3.8 27B Abliterated (open-weights)", contextWindow: 262144, maxTokens: 8192, reasoning: true, input: ["text"], cost: { input: 0.2, output: 0.6, cacheRead: 0.02, cacheWrite: 0 } },
+  { id: "deepseek/deepseek-v4.1-flash-abliterated", name: "DeepSeek V4.1 Flash Abliterated (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text", "image"], cost: { input: 0.3, output: 1.2, cacheRead: 0.03, cacheWrite: 0 } },
+  { id: "deepseek/deepseek-v4.1-flash-ultrafast", name: "DeepSeek V4.1 Flash Ultrafast (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text", "image"], cost: { input: 0.18, output: 0.65, cacheRead: 0.01, cacheWrite: 0 } },
+  { id: "moonshotai/kimi-k3.1-pro-abliterated", name: "Kimi K3.1 Pro Abliterated (open-weights)", contextWindow: 1048576, maxTokens: 131072, reasoning: true, input: ["text", "image"], cost: { input: 2.0, output: 10.0, cacheRead: 0.2, cacheWrite: 0 } },
+  { id: "z-ai/glm-5.3-abliterated", name: "GLM-5.3 Abliterated (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text"], cost: { input: 0.77, output: 2.42, cacheRead: 0.143, cacheWrite: 0 } },
+  { id: "z-ai/glm-5.3-flash-abliterated", name: "GLM-5.3 Flash Abliterated (open-weights)", contextWindow: 1048576, maxTokens: 65536, reasoning: true, input: ["text"], cost: { input: 0.2, output: 0.7, cacheRead: 0.02, cacheWrite: 0 } },
+  { id: "qwen/qwen3.8-27b-abliterated", name: "Qwen3.8 27B Abliterated (open-weights)", contextWindow: 262144, maxTokens: 32768, reasoning: true, input: ["text"], cost: { input: 0.2, output: 0.6, cacheRead: 0.02, cacheWrite: 0 } },
 ];
 
 /**
@@ -481,11 +481,7 @@ export function createOpenModels({ enableFailover = true } = {}) {
       })),
       api: wrapApiWithPayload((payload, model) => {
         if (!payload || typeof payload !== "object") return payload;
-        const cap = model.maxTokens || 8192;
-        const next = {
-          ...payload,
-          max_tokens: payload.max_tokens ? Math.min(Number(payload.max_tokens), cap) : cap,
-        };
+        const next = { ...payload };
         if (model.reasoning && !next.reasoning) {
           next.reasoning = { effort: "max" };
         }
@@ -521,8 +517,7 @@ export function createOpenModels({ enableFailover = true } = {}) {
       })),
       api: wrapApiWithPayload((payload, model) => {
         if (!payload || typeof payload !== "object") return payload;
-        const cap = model.maxTokens || 8192;
-        const next = { ...payload, max_tokens: payload.max_tokens ? Math.min(Number(payload.max_tokens), cap) : cap };
+        const next = { ...payload };
         if (model.reasoning && !next.reasoning) {
           next.reasoning = { effort: "max" };
         }

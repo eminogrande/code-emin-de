@@ -313,7 +313,7 @@ models plus free models — `k3.1-pro`, `k3.1-pro-highspeed`, `k3`, `kimi-for-co
 `cohere/north-mini-code:free`, `dots-studio/dots-3-note-preview:free`,
 `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`, `nvidia/nemotron-3-ultra-550b-a55b:free`,
 `nvidia/nemotron-3.5-lightning:free` — all selectable globally on `General` or per-agent on any named
-Agent-Orchestrator (`1M` context / `64K` max tokens for frontier Kimi, DeepSeek, Gemini, and Claude models, with `reasoning.effort = "max"`).
+Agent-Orchestrator (`1M` context windows aligned 1:1 with `router-paymentrequired-com`, no artificial client-side `max_tokens` clamp, native `64K`–`128K` output limits, with `reasoning.effort = "max"`).
 
 ```sh
 ROUTER_PAYMENTREQUIRED_API_KEY=<key>   # in .env only, never committed

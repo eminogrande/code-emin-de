@@ -275,6 +275,9 @@ test("reasoning effort max is preserved (never downgraded to high) on llmgateway
       );
       await s.result();
       assert.deepEqual(captured?.reasoning, { effort: "max" }, `${provider}/${id} should send reasoning.effort=max`);
+      assert.ok(m.contextWindow >= 1_000_000 || id === "gpt-oss-120b-medium", `${provider}/${id} should keep full 1M context`);
+      assert.ok(m.maxTokens >= 32768, `${provider}/${id} must not be artificially capped at 8192`);
+      assert.notEqual(captured?.max_tokens, 8192, `${provider}/${id} must not inject 8192 clamp`);
     }
   } finally {
     if (prevLlm === undefined) delete process.env.LLMGATEWAY_API_KEY;
