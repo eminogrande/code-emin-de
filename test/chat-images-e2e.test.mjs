@@ -54,8 +54,9 @@ async function bootPage(chatReply = () => ({ ok: true, text: "done" })) {
     req.on("end", () => {
       seen.push({ path: req.url, body: raw ? JSON.parse(raw) : {} });
       if (String(req.url).startsWith("/transcript")) return res.end(JSON.stringify({ conversationId: 1, entries: seen.history || [] }));
-      const reply = chatReply(seen);
-      res.end(typeof reply === "string" ? reply : JSON.stringify(reply));
+      Promise.resolve(chatReply(seen)).then((reply) => {
+        res.end(typeof reply === "string" ? reply : JSON.stringify(reply));
+      });
     });
   });
   await new Promise((r) => daemon.listen(sockPath, r));
@@ -214,7 +215,8 @@ const deck = (t) => t.w.document.getElementById("pending-images");
 const composerEmpty = (t) => {
   assert.equal(t.w.chatImages.count(), 0, "pending deck empty");
   assert.equal(deck(t).hidden, true, "deck hidden");
-  assert.equal(deck(t).querySelectorAll("figure").length, 0, "no thumbnails left");
+  assert.equal(deck(t).querySelectorAll("figure").length, 0, "no thumbnails or filenames left");
+  assert.equal(t.w.document.getElementById("attach-status").textContent, "", "attachment count cleared");
   assert.equal(t.revoked.length, 1, "object URL revoked exactly once");
   assert.equal(t.revoked[0], "blob:Screenshot.png");
 };
@@ -251,6 +253,34 @@ for (const [name, reply] of [
     }
   });
 }
+
+test("composer form submit clears the real deck as soon as pending send is accepted", async () => {
+  let release;
+  const accepted = new Promise((resolve) => { release = resolve; });
+  const t = await bootPage(() => accepted);
+  try {
+    paste(t.w, [new t.w.File([png(2, 2)], "Screenshot.png", { type: "image/png" })]);
+    await flush(150);
+    t.w.document.getElementById("q").value = "look at this";
+    const form = t.w.document.getElementById("f");
+    const submitted = form.dispatchEvent(new t.w.Event("submit", { bubbles: true, cancelable: true }));
+    assert.equal(submitted, false, "composer handler prevents native form navigation");
+    for (let i = 0; i < 30 && !t.seen.some((s) => s.path === "/chat"); i++) await flush(20);
+    assert.ok(t.seen.some((s) => s.path === "/chat"), "current composer form sends through send()");
+
+    // Hold the model response open: acceptance, not response completion, owns cleanup.
+    composerEmpty(t);
+    const sent = t.w.document.querySelectorAll("#log .himages img");
+    assert.equal(sent.length, 1, "sent history thumbnail remains while reply is pending");
+    assert.match(sent[0].getAttribute("src"), /^data:image\/png;base64,/);
+    release({ status: "pending" });
+    await flush(100);
+    assert.deepEqual(t.errors, []);
+  } finally {
+    release({ status: "pending" });
+    await t.close();
+  }
+});
 
 test("HTTP 500 keeps the attachments so the user can retry", async () => {
   const t = await bootPage(() => ({ error: "model rejected image" }));
