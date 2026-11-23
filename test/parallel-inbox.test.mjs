@@ -30,7 +30,7 @@ function runtime(root, respond) {
   models.setProvider(faux.provider);
   const ref = { provider: "faux-parallel-inbox", modelId: "faux-1" };
   const roleModels = Object.fromEntries(["lead", "planner", "coder", "coderFast", "reviewer", "reviewerDeep", "support", "social", "watcher", "btw"].map((k) => [k, ref]));
-  return { models, roleModels, faux, dataDir: join(root, "data"), workspaceDir: join(root, "workspace"), supervisor: { intervalMs: 100_000 } };
+  return { models, roleModels, faux, dataDir: join(root, "data"), workspaceDir: join(root, "workspace"), supervisor: { intervalMs: 100_000 }, onReport: (r) => console.log("REPORT", r) };
 }
 
 function promptOf(context) {
@@ -68,7 +68,7 @@ test("busy Lead prompts run concurrently and results route to the requester once
     assert.equal(routed.workerId, started.workerId);
     assert.equal((await daemon.readTranscript(1, 20)).filter((e) => e.role === "user" && e.text === "second").length, 1);
     first.resolve(fauxAssistantMessage("FIRST-RESULT"));
-    assert.equal((await daemon.harness.submission(initial.submissionId)).wait, undefined); // handle is reacquirable, no queued duplicate
+    assert.equal(typeof (await daemon.harness.submission(initial.submissionId)).wait, "function"); // original remains independently awaitable
   } finally {
     first.resolve(fauxAssistantMessage("FIRST-RESULT"));
     second.resolve(fauxAssistantMessage("SECOND-RESULT"));
@@ -93,8 +93,7 @@ test("delivery task recovers an unstarted worker and survives daemon restart", a
     await daemon.chat("block lead", { wait: false });
     const accepted = await daemon.chat("restart me", { wait: false, requestId: "req-restart" });
     const workerConv = await daemon.harness.conversation(accepted.workerConversationId, (await import("@earendil-works/chord/context")).BACKGROUND_CONTEXT);
-    await workerConv.abort((await import("@earendil-works/chord/context")).BACKGROUND_CONTEXT);
-    await daemon.close();
+    await daemon.close(); // immediately: delivery task has durably admitted the request but not started it
 
     daemon = await openSwarmDaemon(rt);
     daemon.harness.resume();

@@ -269,6 +269,7 @@ export async function openSwarmDaemon({
   supervisor: supervisorOverride = {},
   retry: retryOverride = { enabled: true, maxRetries: 2, baseDelayMs: 1000 },
   streamTimeoutMs = 120_000,
+  onReport,
   hooks: customHooks = [],
   probeCredits = probeProviderHealth,
 } = {}) {
@@ -496,23 +497,33 @@ export async function openSwarmDaemon({
         const worker = swarm.workers?.[workerId];
         if (!worker) throw new Error(`Missing parallel inbox worker: ${workerId}`);
         const live = await runtime.snapshot(LiveDoc, worker.convId, context);
-        if (live?.run || (!live?.runFailure && !worker.parallelAnswer)) {
+        if (!worker.parallelSubmissionId) {
+          if (live?.run) return runtime.sleepUntil(runtime.now() + 100, { phase: "deliver" }, context);
+          const workerConv = await runtime.conversation(worker.convId, context);
+          const sub = await workerConv.submit({
+            type: "input", requestId: `parallel-inbox-work-${workerId}`, content: worker.parallelContent,
+          }, context);
+          await runtime.commit(async (tx) => {
+            const doc = await tx.doc(SwarmDoc);
+            if (doc.workers[workerId]) doc.workers[workerId].parallelSubmissionId = sub.id;
+          }, context);
           return runtime.sleepUntil(runtime.now() + 100, { phase: "deliver" }, context);
         }
-        const entries = await readConversationTranscript(worker.convId, 10);
-        const answer = [...entries].reverse().find((e) => e.role === "assistant" && e.text);
-        const failed = live?.runFailure || answer?.stopReason === "error";
-        const text = failed
-          ? `Parallel request failed (${live?.runFailure?.reason || answer?.errorMessage || "unknown error"}).`
-          : answer?.text || "Parallel request finished without an answer.";
+        const settled = await (await harnessRef.submission(worker.parallelSubmissionId, context)).wait(context);
+        let text;
+        let failed = settled.status !== "done";
+        if (failed) text = `Parallel request failed (${settled.reason || settled.status}).`;
+        else {
+          const answer = await workerConvEntry(worker.convId, settled.answer);
+          text = extractAssistantText(answer) || "Parallel request finished without an answer.";
+        }
         const requester = await runtime.conversation(requesterConvId, context);
         await requester.submit({
           type: "write",
           requestId: `parallel-inbox-result-${workerId}`,
           entry: {
             kind: "swarm.parallel_result",
-            model: [{ role: "assistant", content: [{ type: "text", text }] }],
-            data: { workerId, conversationId: worker.convId },
+            data: { role: "assistant", text, workerId, conversationId: worker.convId },
           },
         }, context);
         await runtime.commit(async (tx) => {
@@ -528,6 +539,11 @@ export async function openSwarmDaemon({
     },
   });
 
+  async function workerConvEntry(convId, entryId) {
+    const conv = await harnessRef.conversation(convId, BACKGROUND_CONTEXT);
+    return conv.commit((tx) => tx.entry(AssistantEntry, entryId), BACKGROUND_CONTEXT);
+  }
+
   // Read full non-truncated transcript of any sibling conversation
   async function readConversationTranscript(convId, maxEntries = 40) {
     if (!harnessRef) return [];
@@ -536,7 +552,7 @@ export async function openSwarmDaemon({
     const ctx = await conv.context(BACKGROUND_CONTEXT);
     return ctx.entries.slice(-maxEntries).map((e) => {
       const m = e.model?.[0];
-      if (!m) return { id: e.id, kind: e.kind };
+      if (!m) return { id: e.id, kind: e.kind, ...(e.data || {}) };
       if (e.kind === "swarm.parallel_result") {
         return { id: e.id, kind: e.kind, role: "assistant", text: extractAssistantText(m), ...(e.data || {}) };
       }
@@ -1398,6 +1414,7 @@ export async function openSwarmDaemon({
         toolExecution: "parallel",
         retry: retryOverride,
         stream: { timeoutMs: streamTimeoutMs },
+      onReport,
       },
       env: ({ cwd }) => new NodeExecutionEnv({ cwd: cwd || workspaceDir, shellEnv: { NODE_TEST_CONTEXT: undefined } }),
     },
@@ -1763,7 +1780,7 @@ export async function openSwarmDaemon({
             await targetConv.submit(tx, {
               type: "write",
               requestId: requestId ? `parallel-inbox-${requestId}` : undefined,
-              entry: { kind: "pi.user", model: [{ role: "user", content: modelContent(text) }] },
+              entry: { kind: "swarm.parallel_input", data: { role: "user", text } },
             });
             const c = await tx.createConversation({ ownership: { kind: "ownerless" } });
             convId = c.id;
@@ -1783,6 +1800,7 @@ export async function openSwarmDaemon({
               workerId, orchestrationId: DEFAULT_ORCHESTRATION_ID, name: workerId, role: "coder",
               modelId: roleModels.coder.modelId, convId, requireVerified: false, goal: text, mode: "once",
               enabled: true, runCount: 0, createdAt: Date.now(), parallelInbox: true, parallelStatus: "running",
+              parallelContent: modelContent(`[WORKER_ID=${workerId} | ROLE=coder | WORKSPACE=${workspaceDir}]\nIndependent request from the original Lead conversation. Do not edit shared files unless the request requires it; coordinate via AgentBus before touching files owned by another worker.\n\n${text}`),
               supervisor: { status: "supervising", autoResumes: 0, nextAt: 0 },
             };
             if (requestId) doc.parallelRequests[requestId] = { workerId, conversationId: lead.id, workerConversationId: convId };
@@ -1790,11 +1808,7 @@ export async function openSwarmDaemon({
               ownership: { kind: "conversation" }, conversationId: ROOT_CONVERSATION_ID, background: true,
             });
           }, BACKGROUND_CONTEXT);
-          const workerConv = await harness.conversation(convId, BACKGROUND_CONTEXT);
-          await workerConv.submit({
-            type: "input", requestId: `parallel-inbox-work-${workerId}`,
-            content: modelContent(`[WORKER_ID=${workerId} | ROLE=coder | WORKSPACE=${workspaceDir}]\nIndependent request from the original Lead conversation. Do not edit shared files unless the request requires it; coordinate via AgentBus before touching files owned by another worker.\n\n${text}`),
-          }, BACKGROUND_CONTEXT);
+          // The delivery task performs initial submission too, closing the restart gap.
           harness.resume();
           return { route: "parallel_inbox", status: "running", text: "Started in parallel; the result will appear in this conversation.", conversationId: lead.id, workerId, workerConversationId: convId };
         }
