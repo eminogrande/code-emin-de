@@ -509,7 +509,10 @@ export async function openSwarmDaemon({
           }, context);
           return runtime.sleepUntil(runtime.now() + 100, { phase: "deliver" }, context);
         }
-        const settled = await (await harnessRef.submission(worker.parallelSubmissionId, context)).wait(context);
+        const settled = await (await harnessRef.submission(worker.parallelSubmissionId, context)).status(context);
+        if (settled.status !== "done" && settled.status !== "unanswered") {
+          return runtime.sleepUntil(runtime.now() + 100, { phase: "deliver" }, context);
+        }
         let text;
         let failed = settled.status !== "done";
         if (failed) text = `Parallel request failed (${settled.reason || settled.status}).`;
