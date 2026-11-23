@@ -36,9 +36,10 @@ async function boot(){
   const dom=new JSDOM(html,{url:base+"/",runScripts:"dangerously",pretendToBeVisual:true,virtualConsole:vc});
   const w=dom.window;const revoked=[];
   w.URL.createObjectURL=f=>"blob:"+(f.name||"x");w.URL.revokeObjectURL=u=>revoked.push(u);
-  w.fetch=async(u,o={})=>{const r=await fetch(base+String(u),{...o,headers:{...(o.headers||{}),Cookie:"swarm_s=x"}});if(String(u).startsWith("/api/chat")){const c=r.clone();console.log("CHAT",Date.now()%100000,r.status,await c.text());}return r;};
+  w.fetch=async(u,o={})=>{const r=await fetch(base+String(u),{...o,headers:{...(o.headers||{}),Cookie:"swarm_s=x"}});if(String(u).startsWith("/api/chat")){console.log("STACK",new Error("x").stack.split("\n").slice(1,6).join(" | "));const c=r.clone();console.log("CHAT",Date.now()%100000,r.status,await c.text());}return r;};
   w.eval(cs);w.eval(is);w.eval([...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]).pop());
   w.document.dispatchEvent(new w.Event("DOMContentLoaded"));
+  const _f=w.fetch;
   await new Promise(r=>setTimeout(r,300));
   return {w,revoked,errors,close:async()=>{w.close();web.server.close();await new Promise(r=>daemon.close(r));await rm(root,{recursive:true,force:true});}};
 }
