@@ -1646,6 +1646,9 @@ export async function openSwarmDaemon({
           error: "Empty or non-string message",
         };
       }
+      if (requestId !== undefined && (typeof requestId !== "string" || !/^[A-Za-z0-9._:-]{1,200}$/.test(requestId))) {
+        return { route: "invalid", conversationId: ROOT_CONVERSATION_ID, status: "rejected", text: "", error: "Invalid requestId" };
+      }
       const trimmed = text.trim();
       // Build one provider-ready payload for every model route (Lead, workers, and /btw).
       const modelContent = (promptText) => {
