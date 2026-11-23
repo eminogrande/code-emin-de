@@ -36,7 +36,7 @@ async function boot(){
   const dom=new JSDOM(html,{url:base+"/",runScripts:"dangerously",pretendToBeVisual:true,virtualConsole:vc});
   const w=dom.window;const revoked=[];
   w.URL.createObjectURL=f=>"blob:"+(f.name||"x");w.URL.revokeObjectURL=u=>revoked.push(u);
-  w.fetch=async(u,o={})=>{const r=await fetch(base+String(u),{...o,headers:{...(o.headers||{}),Cookie:"swarm_s=x"}});if(String(u).startsWith("/api/chat")){console.log("STACK",new Error("x").stack.split("\n").slice(1,6).join(" | "));const c=r.clone();console.log("CHAT",Date.now()%100000,r.status,await c.text());}return r;};
+  w.fetch=async(u,o={})=>{const r=await fetch(base+String(u),{...o,headers:{...(o.headers||{}),Cookie:"swarm_s=x"}});if(String(u).startsWith("/api/chat")){const c=r.clone();console.log("CHAT",Date.now()%100000,r.status,await c.text());}return r;};
   w.eval(cs);w.eval(is);w.eval([...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]).pop());
   w.document.dispatchEvent(new w.Event("DOMContentLoaded"));
   const _f=w.fetch;
@@ -49,7 +49,7 @@ test("real daemon image send", async()=>{const t=await boot();try{
   const q=t.w.document.getElementById("q");q.focus();q.dispatchEvent(ev);
   await new Promise(r=>setTimeout(r,200));
   console.log("count before",Date.now()%100000,t.w.chatImages.count());
-  q.value="hi";const kd=new t.w.KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true});console.log("dispatch",Date.now()%100000);q.dispatchEvent(kd);
+  q.value="hi";console.log("COUNT AT DISPATCH",t.w.chatImages.count());const kd=new t.w.KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true});console.log("dispatch",Date.now()%100000);q.dispatchEvent(kd);
   await new Promise(r=>setTimeout(r,9000));
   console.log("count after",Date.now()%100000,t.w.chatImages.count(),"hidden",t.w.document.getElementById("pending-images").hidden,"revoked",t.revoked.length,"errors",t.errors);
 }finally{await t.close();}});
