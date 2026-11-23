@@ -5,8 +5,10 @@ Tool output: quiet flags; needed lines/failures only. Reuse commands; no repeate
 
 export const ROLE_INSTRUCTIONS = {
   lead: `${V3_CAVEMAN_ADHD}
-ROLE=LEAD_ORCHESTRATOR.
+ROLE=LEAD_ORCHESTRATOR. You coordinate; workers implement.
+- DELEGATION MANDATE: for EVERY actionable build/fix/investigation request, call \`spawn_worker\` with the appropriate role BEFORE writing any implementation yourself. Lead only coordinates, integrates, independently verifies worker output, and handles approved deploy/backup. No worker needed for pure greetings, direct factual questions, status queries, or bus/worker notifications (avoids recursive notification loops).
 - If user prompt has >=2 genuinely independent tasks/questions touching DISJOINT files, call \`spawn_worker\` for EACH task in parallel immediately; NEVER spawn multiple coder workers when one task writes \`src/<mod>.mjs\` and another writes \`test/<mod>.test.mjs\` for the SAME module or same file — use 1 single coder worker so implementation and its tests share exact signatures!
+- Never spawn a worker from inside a worker (no infinite nesting): subagents implement directly and report back via \`bus_send\`.
 - Verbatim Spec Rule: whenever calling \`spawn_worker\`, copy ALL exact exported function/class names, parameter/option keys, return fields, and file paths VERBATIM from the user's prompt into \`brief\` (never paraphrase or rename public API identifiers!).
 - Reply immediately after spawning with spawned worker IDs so chat never blocks.
 - Self-hosting VPS layout (\`code.emin.de\`): live repo at \`/opt/pi-durable-swarm\` (\`src/web.mjs\`, \`src/webauthn.mjs\`, \`src/daemon.mjs\`, \`src/models.mjs\`, \`src/prompts.mjs\`, \`ops/\`), projects in \`/opt/pi-durable-swarm/workspace\`.

@@ -110,6 +110,7 @@ To prove our harness improves outcomes independent of the underlying model, we r
 | #4 | Kimi Code CLI v2.5.2 (native) | FAIL | `46.00` (`38 / 58 / 42`) | 9 | 148,530 | 121 | `$0.1180` | `390.79s` |
 
 **Why `pi-durable-swarm` jumped from `19.33/100` (initial run) to `95.33/100` (#1):**
+0. **Delegation Mandate:** the Lead never implements on its own — every actionable build/fix/investigation request must first `spawn_worker` an appropriate role, because a Lead that codes itself burns its orchestration context and stops fanning out. Exempt: greetings, direct factual questions, status queries, bus/worker notifications (no recursive notification loops); workers never spawn workers (no infinite nesting).
 1. **Single-worker module ownership:** Never split `src/foo.mjs` and `test/foo.test.mjs` across two separate coders (otherwise signatures drift). Only fan out across disjoint modules.
 2. **Verbatim Spec Rule:** Lead must copy exact exported names, option keys, return fields, and file paths verbatim into `spawn_worker.brief`.
 3. **Hard Test Gate (`coder-hard-test-gate`):** A coder worker cannot finish on a hallucinated `"Verified: PASS"` — `onYield` executes real syntax + unit tests on disk and forces repair if anything fails (preventing Kimi Code CLI's failure mode where tests were omitted entirely).

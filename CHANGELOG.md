@@ -7,6 +7,14 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ## Unreleased
 
+### Features & Fixes (2026-11-24)
+
+- **Lead Delegation Mandate (`src/prompts.mjs`, `test/swarm.test.mjs`):**
+  - WHY: Lead kept coding small fixes itself, so the orchestrator burned its own context and lost the parallelism/verification benefits the swarm exists for. The Lead prompt now hard-requires `spawn_worker` (appropriate role) BEFORE any implementation on every actionable build/fix/investigation request; Lead only coordinates, integrates, independently verifies, and handles approved deploy/backup.
+  - Exemptions keep it from looping: pure greetings, direct factual questions, status queries, and bus/worker notifications spawn no worker; workers never spawn workers (no infinite nesting).
+  - Existing parallel fanout for >=2 disjoint tasks and single-coder ownership for the same module/file are preserved verbatim; the 486-byte V3 caveman/ADHD prompt floor is untouched (Lead additions are appended below it).
+  - New test `1b` pins the mandate, the exemptions, the nesting rule, and asserts every role prompt still starts with the exact caveman floor.
+
 ### Features & Fixes (2026-11-23)
 
 - **Added Claude Opus 5.5, Claude Sonnet 5.5, GPT-OSS 120B router models + per-agent model picker (`src/models.mjs`, `src/web.mjs`, `test/models-failover.test.mjs`, `test/lead-model.test.mjs`):**

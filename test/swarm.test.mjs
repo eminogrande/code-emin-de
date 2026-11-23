@@ -28,6 +28,23 @@ test("1. V3 Caveman + ADHD prompt floor intact (exact 486-byte / 116-token ancho
   assert.ok(V3_CAVEMAN_ADHD.includes("exact syntax, negations, tests and security"));
 });
 
+test("1b. Lead delegation mandate: always delegate, never self-implement, no nesting", async () => {
+  const { ROLE_INSTRUCTIONS } = await import("../src/prompts.mjs");
+  const lead = ROLE_INSTRUCTIONS.lead;
+  assert.ok(lead.includes("ROLE=LEAD_ORCHESTRATOR"));
+  assert.ok(lead.includes("DELEGATION MANDATE"));
+  assert.ok(lead.includes("call \`spawn_worker\` with the appropriate role BEFORE writing any implementation yourself"));
+  assert.ok(lead.includes("No worker needed for pure greetings, direct factual questions, status queries, or bus/worker notifications"));
+  assert.ok(lead.includes("no infinite nesting"));
+  // parallel fanout + single-coder module ownership preserved
+  assert.ok(lead.includes("DISJOINT files"));
+  assert.ok(lead.includes("use 1 single coder worker"));
+  // every role prompt keeps the immutable caveman floor prefix
+  for (const [role, text] of Object.entries(ROLE_INSTRUCTIONS)) {
+    assert.ok(text.startsWith(V3_CAVEMAN_ADHD), `${role} lost prompt floor`);
+  }
+});
+
 test("2. AgentBus broadcast ack isolation + punctuation FTS5 + threads", async () => {
   const dir = await mkdtemp(join(tmpdir(), "bus-test-"));
   const bus = openAgentBus(join(dir, "bus.sqlite"));
