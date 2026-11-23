@@ -403,6 +403,7 @@ textarea::placeholder{color:var(--muted);opacity:.65}
         <input id="edit-orch-group" maxlength="32" placeholder="Group (e.g. Repos, Marketing)" aria-label="Edit agent group">
         <input id="edit-orch-cwd" maxlength="300" placeholder="Folder in workspace (e.g. nuri-website)" aria-label="Edit agent folder">
         <input id="edit-orch-repo" maxlength="240" placeholder="Repo URL (optional)" aria-label="Edit agent repo URL">
+        <select id="edit-orch-model" aria-label="Edit agent model"></select>
         <textarea id="edit-orch-brief" rows="3" maxlength="4000" placeholder="Agent role &amp; deploy instructions"></textarea>
         <button type="submit">Save agent</button>
       </form>
@@ -417,11 +418,12 @@ textarea::placeholder{color:var(--muted);opacity:.65}
         <option value="ops">Ops / Monitor</option>
       </select>
       <details id="orch-more">
-        <summary>Options (group, folder, repo, brief)</summary>
+        <summary>Options (group, folder, repo, model, brief)</summary>
         <div class="mini-fields">
           <input id="orch-group" maxlength="32" placeholder="Group (auto from preset)" aria-label="Agent group">
           <input id="orch-cwd" maxlength="300" placeholder="Folder in workspace (e.g. nuri-website)" aria-label="Agent folder">
           <input id="orch-repo" maxlength="240" placeholder="GitHub URL (optional)" aria-label="GitHub repository URL">
+          <select id="orch-model" aria-label="Agent model"></select>
           <textarea id="orch-brief" rows="3" maxlength="4000" placeholder="Custom role instructions (optional)"></textarea>
         </div>
       </details>
@@ -793,6 +795,9 @@ const MODEL_CHOICES = [
   ['paymentrequired', 'gemini-3.8-flash-tiered'],
   ['paymentrequired', 'gemini-3.5-flash-lite'],
   ['paymentrequired', 'gemini-3-flash'],
+  ['paymentrequired', 'claude-opus-5-5-high'],
+  ['paymentrequired', 'claude-sonnet-5-5-high'],
+  ['paymentrequired', 'gpt-oss-120b-medium'],
   ['paymentrequired', 'glm-5.3-abliterated'],
   ['paymentrequired', 'glm-5.3-flash-abliterated'],
   ['paymentrequired', 'cohere/north-mini-code:free'],
@@ -812,28 +817,52 @@ const MODEL_LABELS = {
   'paymentrequired k3.1-pro': 'Kimi K3.1 Pro · sub router',
   'paymentrequired k3': 'Kimi K3 · sub router',
   'paymentrequired gemini-4-neon-xhigh': 'Gemini 4 Neon XHigh · sub router',
+  'paymentrequired gemini-4-hydrogen-xhigh': 'Gemini 4 Hydrogen XHigh · sub router',
   'paymentrequired gemini-4-argon-high': 'Gemini 4 Argon High · sub router',
+  'paymentrequired claude-opus-5-5-high': 'Claude Opus 5.5 High · sub router',
+  'paymentrequired claude-sonnet-5-5-high': 'Claude Sonnet 5.5 High · sub router',
+  'paymentrequired gpt-oss-120b-medium': 'GPT-OSS 120B Medium · router',
   'paymentrequired deepseek-v4.1-flash-abliterated': 'DeepSeek V4.1 Flash Abliterated · router',
 };
 function modelLabel(pv, md) {
   return MODEL_LABELS[pv + ' ' + md] || (PROVIDER_LABEL[pv] || pv) + ' · ' + md;
 }
+function fillModelSelect(sel, includeDefault) {
+  if (!sel) return;
+  sel.replaceChildren();
+  if (includeDefault) {
+    const def = document.createElement('option');
+    def.value = '';
+    def.textContent = 'Model: Default (Lead)';
+    sel.appendChild(def);
+  }
+  for (const [pv, md] of MODEL_CHOICES) {
+    const o = document.createElement('option');
+    o.value = pv + ' ' + md;
+    o.textContent = modelLabel(pv, md);
+    sel.appendChild(o);
+  }
+}
+function parseModelValue(val) {
+  const s = String(val || '').trim();
+  if (!s) return { provider: '', modelId: '' };
+  const parts = s.split(' ');
+  return { provider: parts[0] || '', modelId: parts.slice(1).join(' ') };
+}
+fillModelSelect(document.getElementById('orch-model'), true);
+fillModelSelect(document.getElementById('edit-orch-model'), true);
 const sbModel = statusBar ? document.createElement('select') : null;
 const sbErr = statusBar ? sbField('sb-err') : null;
 if (sbModel) {
   sbModel.className = 'sb sb-model';
   sbModel.hidden = true;
-  sbModel.setAttribute('aria-label', 'Lead model (applies to new turns globally)');
+  sbModel.setAttribute('aria-label', 'Active agent model');
   sbModel.title = 'Lead model for new turns (global)';
-  for (const [pv, md] of MODEL_CHOICES) {
-    const o = document.createElement('option');
-    o.value = pv + ' ' + md;
-    o.textContent = modelLabel(pv, md);
-    sbModel.appendChild(o);
-  }
+  fillModelSelect(sbModel, false);
   statusBar.appendChild(sbModel);
 }
 let modelPending = false;
+let lastStatusSnapshot = null;
 
 function showModelError(msg) {
   if (!sbErr) return;
@@ -845,26 +874,35 @@ function showModelError(msg) {
 if (sbModel) {
   sbModel.onchange = async () => {
     if (modelPending) return;
-    const chosen = sbModel.value.split(' ');
-    const provider = chosen[0];
-    const modelId = chosen.slice(1).join(' ');
+    const { provider, modelId } = parseModelValue(sbModel.value);
     const prev = sbModel.dataset.active || '';
     modelPending = true;
     sbModel.disabled = true;
     showModelError('');
     try {
-      const r = await fetch('/api/model', {
+      const isNamed = currentOrchestration && currentOrchestration !== 'general';
+      const url = isNamed ? '/api/orchestration-update' : '/api/model';
+      const body = isNamed ? { id: currentOrchestration, provider, modelId } : { provider, modelId };
+      const r = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, modelId }),
+        body: JSON.stringify(body),
       });
       const d = await safeJson(r);
       if (!r.ok || !d || d._nonJson || d.error) {
         throw new Error((d && d.error) || 'Switch failed');
       }
-      if (d.active) {
-        sbModel.dataset.active = d.active.provider + ' ' + d.active.modelId;
-        sbModel.value = sbModel.dataset.active;
+      const nextActive = isNamed
+        ? (provider + ' ' + modelId)
+        : (d.active ? d.active.provider + ' ' + d.active.modelId : '');
+      if (nextActive) {
+        sbModel.dataset.active = nextActive;
+        sbModel.value = nextActive;
+      }
+      if (isNamed) {
+        const hit = orchestrationList.find((x) => x.id === currentOrchestration);
+        if (hit) hit.model = { provider, modelId };
+        syncEditOrchForm(true);
       }
       if (d.warning) showModelError(d.warning);
     } catch (e) {
@@ -881,19 +919,27 @@ const sbWorkers = statusBar ? sbField('sb-workers') : null;
 
 function renderStatus(st, list) {
   if (!statusBar) return;
-  const lead = (st && st.lead) || null;
+  if (st) lastStatusSnapshot = st;
+  const eff = st || lastStatusSnapshot;
+  const lead = (eff && eff.lead) || null;
   const workers = (list || []).filter(isWorker);
+  const activeOrch = currentOrchestration && currentOrchestration !== 'general'
+    ? orchestrationList.find((x) => x.id === currentOrchestration)
+    : null;
   if (sbModel) {
-    const id = lead && lead.model ? String(lead.model) : '';
+    const pv = activeOrch?.model?.provider || (lead && lead.provider ? String(lead.provider) : '');
+    const id = activeOrch?.model?.modelId || (lead && lead.model ? String(lead.model) : '');
     sbModel.hidden = !id;
     if (id) {
-      const active = (lead.provider ? String(lead.provider) : '') + ' ' + id;
+      const active = pv + ' ' + id;
       sbModel.dataset.active = active;
       if (!modelPending && sbModel.value !== active && MODEL_CHOICES.some(([p, m]) => p + ' ' + m === active)) {
         sbModel.value = active;
       }
-      sbModel.disabled = Boolean(lead.busy) || modelPending;
-      sbModel.title = 'Lead model for new turns (global)' + (lead.busy ? ' — busy: runs keep model, next turn changes' : '');
+      sbModel.disabled = (!activeOrch && Boolean(lead?.busy)) || modelPending;
+      sbModel.title = activeOrch
+        ? ('Model for ' + activeOrch.name + ' (per-agent)')
+        : ('Lead model for new turns (global)' + (lead?.busy ? ' — busy: runs keep model, next turn changes' : ''));
     }
   }
   if (sbCtx) {
@@ -928,6 +974,7 @@ function setTarget(id, convId, orchestrationId) {
     b.setAttribute('aria-current', String(b.dataset.target === id));
   }
   renderAgents(allWorkers);
+  renderStatus(null, allWorkers);
   syncEditOrchForm();
   syncHistory().catch(() => {});
 }
@@ -1074,6 +1121,8 @@ function syncEditOrchForm(force) {
   document.getElementById('edit-orch-group').value = o.group || '';
   document.getElementById('edit-orch-cwd').value = o.cwd || '';
   document.getElementById('edit-orch-repo').value = o.repoUrl || '';
+  const editModelEl = document.getElementById('edit-orch-model');
+  if (editModelEl) editModelEl.value = o.model?.provider && o.model?.modelId ? (o.model.provider + ' ' + o.model.modelId) : '';
   document.getElementById('edit-orch-brief').value = o.instructions || '';
 }
 
@@ -1149,6 +1198,7 @@ document.getElementById('new-orch').onsubmit = async (ev) => {
   ev.preventDefault();
   orchStatus.textContent = 'Creating…';
   try {
+    const picked = parseModelValue(document.getElementById('orch-model')?.value || '');
     const payload = {
       name: document.getElementById('orch-name').value,
       preset: document.getElementById('orch-preset')?.value || 'custom',
@@ -1156,6 +1206,8 @@ document.getElementById('new-orch').onsubmit = async (ev) => {
       cwd: document.getElementById('orch-cwd')?.value || '',
       repoUrl: document.getElementById('orch-repo')?.value || '',
       instructions: document.getElementById('orch-brief')?.value || '',
+      provider: picked.provider,
+      modelId: picked.modelId,
     };
     const r = await fetch('/api/orchestrations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const d = await safeJson(r);
@@ -1175,6 +1227,7 @@ if (editOrchForm) {
     if (!currentOrchestration || currentOrchestration === 'general') return;
     orchStatus.textContent = 'Saving…';
     try {
+      const picked = parseModelValue(document.getElementById('edit-orch-model')?.value || '');
       const payload = {
         id: currentOrchestration,
         name: document.getElementById('edit-orch-name').value,
@@ -1183,6 +1236,8 @@ if (editOrchForm) {
         cwd: document.getElementById('edit-orch-cwd').value,
         repoUrl: document.getElementById('edit-orch-repo').value,
         instructions: document.getElementById('edit-orch-brief').value,
+        provider: picked.provider,
+        modelId: picked.modelId,
       };
       const r = await fetch('/api/orchestration-update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const d = await safeJson(r);

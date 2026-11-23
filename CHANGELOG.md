@@ -7,6 +7,12 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ## Unreleased
 
+### Features & Fixes (2026-11-23)
+
+- **Added Claude Opus 5.5, Claude Sonnet 5.5, GPT-OSS 120B router models + per-agent model picker (`src/models.mjs`, `src/web.mjs`, `test/models-failover.test.mjs`, `test/lead-model.test.mjs`):**
+  - Expanded `ROUTER_PAYMENTREQUIRED_MODELS` (20 → 23 models) and the web UI dropdown with `claude-opus-5-5-high`, `claude-sonnet-5-5-high`, and `gpt-oss-120b-medium` (all live-verified HTTP 200 on `router.paymentrequired.com/v1/internal`), alongside `gemini-4-neon-xhigh`, `gemini-4-hydrogen-xhigh`, `gemini-4-argon-high`, `gemini-3.8-flash-high`, Kimi K3.1/K3, and DeepSeek abliterated.
+  - Added per-agent model selectors (`#orch-model`, `#edit-orch-model`) and made the `#statusBar` model selector context-aware: switches global Lead when viewing `General`, or persists a per-agent model override (`POST /api/orchestration-update`) when viewing any named Agent-Orchestrator.
+
 ### Features & Fixes (2026-11-22)
 
 - **Typed Agent-Orchestrators, cross-agent delegation, and `nuri-website` repo workflow (`src/orchestrations.mjs`, `src/daemon.mjs`, `src/hooks.mjs`, `src/cli.mjs`, `src/web.mjs`, `test/orchestrations.test.mjs`):**

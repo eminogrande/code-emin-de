@@ -26,7 +26,7 @@ test("1. allowlist: only known verified provider/model pairs resolve", () => {
   assert.equal(resolveLeadModelChoice("paymentrequired", "gemini-3.7-flash-high"), null);
   // every router catalogue entry is selectable, and only under the router provider
   const routerIds = ROUTER_PAYMENTREQUIRED_MODELS.map((m) => m.id);
-  assert.equal(routerIds.length, 20);
+  assert.equal(routerIds.length, 23);
   for (const id of routerIds) {
     assert.ok(resolveLeadModelChoice("paymentrequired", id), id);
     assert.equal(resolveLeadModelChoice("llmgateway", id), null, id);
@@ -181,6 +181,25 @@ test("4. unix socket server exposes POST /model (400 on invalid)", async () => {
     const st1 = await unixRpc(sockPath, "GET", "/status");
     assert.equal(st1.lead.model, "glm-5.3");
     assert.equal(st1.lead.overridden, true);
+
+    // Per-agent model override on named orchestrations (Opus 5.5 + GPT-OSS 120B)
+    const created = await unixRpc(sockPath, "POST", "/orchestrations", {
+      name: "opus-agent",
+      preset: "repo",
+      provider: "paymentrequired",
+      modelId: "claude-opus-5-5-high",
+    });
+    assert.deepEqual(created.model, { provider: "paymentrequired", modelId: "claude-opus-5-5-high" });
+    await unixRpc(sockPath, "POST", "/orchestration-update", {
+      id: created.id,
+      provider: "paymentrequired",
+      modelId: "gpt-oss-120b-medium",
+    });
+    const list = await unixRpc(sockPath, "GET", "/orchestrations");
+    assert.deepEqual(list.orchestrations.find((o) => o.id === created.id)?.model, {
+      provider: "paymentrequired",
+      modelId: "gpt-oss-120b-medium",
+    });
   } finally {
     await new Promise((r) => server.close(r));
     await daemon.close();

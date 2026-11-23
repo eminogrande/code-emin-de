@@ -180,10 +180,11 @@ test("paymentrequired: registered free provider, full catalogue, zero costs, no 
   try {
     const models = createOpenModels({ enableFailover: false });
     const ids = [
-      "deepseek-v4.1-flash-abliterated", "gemini-3-flash", "gemini-3.5-flash-lite",
-      "gemini-3.8-flash-high", "gemini-3.8-flash-tiered", "gemini-4-argon-high",
-      "gemini-4-hydrogen-xhigh", "gemini-4-neon-xhigh", "glm-5.3-abliterated",
-      "glm-5.3-flash-abliterated", "k3", "k3.1-pro", "k3.1-pro-highspeed",
+      "claude-opus-5-5-high", "claude-sonnet-5-5-high", "deepseek-v4.1-flash-abliterated",
+      "gemini-3-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash-high",
+      "gemini-3.8-flash-tiered", "gemini-4-argon-high", "gemini-4-hydrogen-xhigh",
+      "gemini-4-neon-xhigh", "glm-5.3-abliterated", "glm-5.3-flash-abliterated",
+      "gpt-oss-120b-medium", "k3", "k3.1-pro", "k3.1-pro-highspeed",
       "kimi-for-coding", "kimi-for-coding-highspeed", "cohere/north-mini-code:free",
       "dots-studio/dots-3-note-preview:free",
       "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
@@ -253,6 +254,9 @@ test("reasoning effort max is preserved (never downgraded to high) on llmgateway
       ["paymentrequired", "k3.1-pro"],
       ["paymentrequired", "deepseek-v4.1-flash-abliterated"],
       ["paymentrequired", "gemini-4-neon-xhigh"],
+      ["paymentrequired", "claude-opus-5-5-high"],
+      ["paymentrequired", "claude-sonnet-5-5-high"],
+      ["paymentrequired", "gpt-oss-120b-medium"],
     ]) {
       const m = models.getModel(provider, id);
       assert.ok(m, `${provider}/${id} registered`);

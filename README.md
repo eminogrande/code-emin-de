@@ -307,11 +307,12 @@ The internal router is a built-in provider (`PaymentRequired Free`) at
 models plus free models — `k3.1-pro`, `k3.1-pro-highspeed`, `k3`, `kimi-for-coding`,
 `kimi-for-coding-highspeed`, `deepseek-v4.1-flash-abliterated`, `gemini-4-neon-xhigh`,
 `gemini-4-hydrogen-xhigh`, `gemini-4-argon-high`, `gemini-3.8-flash-high`, `gemini-3.8-flash-tiered`,
-`gemini-3.5-flash-lite`, `gemini-3-flash`, `glm-5.3-abliterated`, `glm-5.3-flash-abliterated`,
+`gemini-3.5-flash-lite`, `gemini-3-flash`, `claude-opus-5-5-high`, `claude-sonnet-5-5-high`,
+`gpt-oss-120b-medium`, `glm-5.3-abliterated`, `glm-5.3-flash-abliterated`,
 `cohere/north-mini-code:free`, `dots-studio/dots-3-note-preview:free`,
 `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`, `nvidia/nemotron-3-ultra-550b-a55b:free`,
-`nvidia/nemotron-3.5-lightning:free` — all selectable in the Lead dropdown (`1M` context / `64K` max tokens for
-frontier Kimi, DeepSeek, and Gemini models, with `reasoning.effort = "max"`).
+`nvidia/nemotron-3.5-lightning:free` — all selectable globally on `General` or per-agent on any named
+Agent-Orchestrator (`1M` context / `64K` max tokens for frontier Kimi, DeepSeek, Gemini, and Claude models, with `reasoning.effort = "max"`).
 
 ```sh
 ROUTER_PAYMENTREQUIRED_API_KEY=<key>   # in .env only, never committed
