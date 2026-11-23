@@ -328,6 +328,7 @@ instead of a silent downgrade.
 
 **WHY:** one global Lead and a flat list cannot cleanly separate repo owners (`nuri-website`), draft-only marketers (`linkedin-marketer`, `tiktok-marketer`), and read-only security auditors (`security-review-agent`).
 Each named orchestration is a durable **Agent-Orchestrator** with a preset (`repo`, `marketing`, `security`, `ops`, `custom`), `group`, workspace-contained `cwd` (automatically inherited by every worker it spawns), optional `repoUrl`, and custom `instructions`.
+`Repos` membership is derived from trusted durable bindings (`repo` preset, `repoUrl`, or a `cwd` other than the generic workspace), never from display names. Rebinding updates the existing registry record and conversation configuration in place, preserving its agent id, history, and identity; repo-less agents using the generic workspace remain in their normal domain.
 Preset guardrails are deterministic (`src/hooks.mjs`): `security` is strictly read-only, `marketing` is draft-only (blocks email/X/LinkedIn/TikTok publish APIs), and `repo`/`ops` orchestrators may run non-force `git push` to trigger GitHub Actions while `swarm-ctl` self-deploy stays exclusive to `General`.
 Agents discover and delegate across domains via `list_agents` and `ask_agent`. The Solarized left sidebar groups agents by domain (`Repos`, `Marketing`, `Security`, `Ops`, `Agents`) with in-place editing; the right sidebar manages that agent's one-shot and recurring workers.
 

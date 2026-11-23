@@ -1433,7 +1433,7 @@ export async function openSwarmDaemon({
     const out = [];
     for (const o of all) {
       const live = await harness.snapshot(LiveDoc, o.convId, BACKGROUND_CONTEXT);
-      out.push(publicOrchestration(o, live));
+      out.push(publicOrchestration(o, live, workspaceDir));
     }
     return out;
   }

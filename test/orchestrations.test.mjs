@@ -54,6 +54,50 @@ test("validation bounds orchestration names, goals, roles and schedules", () => 
   assert.equal(nextRunAt({ mode: "recurring", enabled: false, everyMs: 10000 }, 200), null);
 });
 
+test("repo grouping derives from durable cwd/repo binding, not display names", () => {
+  const workspaceDir = "/opt/pi-durable-swarm/workspace";
+  const bound = publicOrchestration({
+    id: "frontend", name: "Emin Code Frontend", preset: "custom", group: "Agents",
+    cwd: "/opt/pi-durable-swarm",
+  }, null, workspaceDir);
+  assert.equal(bound.group, "Repos");
+  assert.equal(bound.preset, "repo");
+  assert.equal(bound.cwd, "/opt/pi-durable-swarm");
+
+  const repoLess = publicOrchestration({
+    id: "helper", name: "nuri-website", preset: "custom", group: "Agents", cwd: workspaceDir,
+  }, null, workspaceDir);
+  assert.equal(repoLess.group, "Agents");
+  assert.equal(repoLess.preset, "custom");
+});
+
+test("binding an existing orchestration preserves id and conversation history", async () => {
+  const root = await mkdtemp(join(tmpdir(), "orchestrations-rebind-"));
+  const rt = fakeRuntime(root);
+  const daemon = await openSwarmDaemon(rt);
+  try {
+    const original = await daemon.createOrchestration({ name: "Emin Code Frontend" });
+    const marker = "preserve-this-existing-history-7482";
+    await daemon.chat(marker, { targetWorkerId: `orchestration:${original.id}` });
+    assert.ok((await daemon.readTranscript(original.conversationId, 20)).some((e) => e.text?.includes(marker)));
+
+    const bound = await daemon.updateOrchestration(original.id, {
+      preset: "repo", cwd: "/opt/pi-durable-swarm",
+    });
+    assert.equal(bound.id, original.id);
+    assert.equal(bound.conversationId, original.conversationId);
+    assert.equal((await daemon.listOrchestrations()).filter((o) => o.name === original.name).length, 1);
+    const listed = (await daemon.listOrchestrations()).find((o) => o.id === original.id);
+    assert.equal(listed.group, "Repos");
+    assert.equal(listed.cwd, "/opt/pi-durable-swarm");
+    assert.ok((await daemon.readTranscript(original.conversationId, 20)).some((e) => e.text?.includes(marker)));
+  } finally {
+    await daemon.close();
+    rt.faux.unregister?.();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("named Lead + one-shot/recurring workers persist across real daemon restart", async () => {
   const root = await mkdtemp(join(tmpdir(), "orchestrations-restart-"));
   const rt = fakeRuntime(root);

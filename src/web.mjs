@@ -1458,6 +1458,7 @@ async function send(steer = false) {
         const keepImgs = userNode.querySelector('.himages');
         userNode.innerHTML = h;
         if (keepImgs) userNode.appendChild(keepImgs);
+        renderContent(userNode);
       }
     });
   }

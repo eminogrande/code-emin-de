@@ -106,9 +106,16 @@ export function validateWorkerInput({ name, role = "coder", goal, mode = "once",
   return { name: cleanName, role, goal: cleanGoal, mode, everyMs: interval };
 }
 
-export function publicOrchestration(o, live) {
+export function isRepoBoundOrchestration(o, workspaceDir = "") {
+  if (o.preset === "repo" || String(o.repoUrl || "").trim()) return true;
+  const cwd = String(o.cwd || "").trim();
+  return !!cwd && (!workspaceDir || resolve(cwd) !== resolve(workspaceDir));
+}
+
+export function publicOrchestration(o, live, workspaceDir = "") {
   const id = String(o.id);
-  const preset = AGENT_PRESET_IDS.includes(o.preset) ? o.preset : "custom";
+  const storedPreset = AGENT_PRESET_IDS.includes(o.preset) ? o.preset : "custom";
+  const preset = isRepoBoundOrchestration(o, workspaceDir) ? "repo" : storedPreset;
   const defaultGroup = id === DEFAULT_ORCHESTRATION_ID ? "Core" : AGENT_PRESETS[preset].defaultGroup;
   return {
     id,
@@ -117,7 +124,7 @@ export function publicOrchestration(o, live) {
     createdAt: Number(o.createdAt) || 0,
     state: live?.run ? "running" : live?.runFailure ? "failed" : "idle",
     preset,
-    group: String(o.group || defaultGroup),
+    group: preset === "repo" ? "Repos" : String(o.group || defaultGroup),
     cwd: String(o.cwd || ""),
     repoUrl: String(o.repoUrl || ""),
     instructions: String(o.instructions || ""),
