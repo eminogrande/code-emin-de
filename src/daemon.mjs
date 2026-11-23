@@ -1258,7 +1258,13 @@ export async function openSwarmDaemon({
       const ctx = summary?.commit || summary?.tests?.length
         ? `${notice}\n\nAlready reached (authoritative, do not redo): ${summary.commit ? `commit ${summary.commit}; ` : ""}${summary.tests.join(" | ") || "no test output"}.`
         : notice;
-      await conv.submit({ type: "input", content: ctx }, BACKGROUND_CONTEXT);
+      const resumed = await conv.submit({ type: "input", content: ctx }, BACKGROUND_CONTEXT);
+      if (worker.parallelInbox) {
+        await harness.commit(async (tx) => {
+          const s = await tx.doc(SwarmDoc);
+          if (s.workers[worker.workerId]) s.workers[worker.workerId].parallelSubmissionId = resumed.id;
+        }, BACKGROUND_CONTEXT);
+      }
       harness.resume();
       return true;
     },
