@@ -946,6 +946,7 @@ function renderStatus(st, list) {
   if (st) lastStatusSnapshot = st;
   const eff = st || lastStatusSnapshot;
   const lead = (eff && eff.lead) || null;
+  busy = Boolean(lead?.busy);
   const workers = (list || []).filter(isWorker);
   const activeOrch = currentOrchestration && currentOrchestration !== 'general'
     ? orchestrationList.find((x) => x.id === currentOrchestration)
@@ -1413,6 +1414,7 @@ async function send(steer = false) {
   let text = q.value.trim();
   const imgs = window.chatImages ? window.chatImages.take() : [];
   if (!text && !imgs.length) return;
+  const requestId = globalThis.crypto?.randomUUID?.();
   let payloadImages = [];
   let fileBlocks = [];
   if (imgs.length) {
@@ -1462,13 +1464,12 @@ async function send(steer = false) {
     if (old !== userNode && old.dataset.settled === '1') old.remove();
   }
   const pending = addHtml('a', '', '…');
-  busy = true;
   schedulePoll(BUSY_POLL_MS);
   try {
     const r = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, steer, targetWorkerId: target, images: payloadImages })
+      body: JSON.stringify({ text, steer, requestId, targetWorkerId: target, images: payloadImages })
     });
     if (r.status === 401) { location.reload(); return; }
     const d = await safeJson(r);
@@ -1532,7 +1533,6 @@ async function send(steer = false) {
     pending.textContent = 'Swarm reconnecting — syncing reply…';
     setTimeout(() => { syncHistory().catch(() => {}); }, 2000);
   } finally {
-    busy = false;
     log.scrollTop = log.scrollHeight;
     schedulePoll(POLL_MS);
   }
@@ -1541,7 +1541,7 @@ async function send(steer = false) {
 const composerForm = document.getElementById('f');
 composerForm.addEventListener('submit', (ev) => {
   ev.preventDefault();
-  send(busy);
+  send(false);
 });
 
 q.addEventListener('keydown', (ev) => {
@@ -1898,6 +1898,7 @@ export async function startWebServer({
             text,
             steer: !!body.steer,
             targetWorkerId: body.targetWorkerId || "lead",
+            requestId: body.requestId,
             wait: true,
           });
           if (out && !out.error && out.text) out.html = renderMarkdown(out.text);
@@ -1913,6 +1914,7 @@ export async function startWebServer({
           images: payload,
           steer: !!body.steer,
           targetWorkerId: body.targetWorkerId || "lead",
+          requestId: body.requestId,
           wait: true,
         });
         if (out && !out.error && out.text) out.html = renderMarkdown(out.text);

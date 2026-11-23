@@ -9,6 +9,8 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ### Features & Fixes (2026-11-24)
 
+- **Parallel inbox web integration (`src/web.mjs`, `test/chat-client.test.mjs`):** Each composer send now carries a unique daemon-deduplicated `requestId`; Enter/submit always start independent work while explicit Ctrl/Cmd+S still steers. Poll cadence follows the actual Lead busy snapshot, not an immediately accepted parallel HTTP request, so rapid sends cannot accidentally steer. Image upload and accepted-send attachment cleanup are unchanged.
+
 - **Clipboard-only composer cleanup (`src/web.mjs`, `test/ui-theme.test.mjs`, `test/chat-images-e2e.test.mjs`):**
   - Removed the unwanted **Attach images** button, hidden picker input, styling and picker handler again. Screenshot paste and drag-and-drop remain; no upload workflow was removed.
   - Composer form submission and Enter now share the real `send()` path. After successful submission, message text, pasted thumbnail, filename, attachment counter and object URL clear immediately; the sent history image remains. Failed submission preserves the draft.

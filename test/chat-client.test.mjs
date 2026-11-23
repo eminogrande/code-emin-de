@@ -231,6 +231,32 @@ test("status bar stays hidden without lead or workers", async () => {
   w.close();
 });
 
+test("rapid parallel sends use distinct request IDs, never steer, and leave Lead busy state unchanged", async () => {
+  const { w } = boot([]);
+  await flush();
+  const origFetch = w.fetch;
+  const bodies = [];
+  w.fetch = async (url, init) => {
+    if (String(url) === "/api/chat") {
+      bodies.push(JSON.parse(init.body));
+      return { ok: true, status: 200, json: async () => ({
+        route: "parallel_inbox", status: "running", text: "Started in parallel.",
+        conversationId: 1, workerId: `w-${bodies.length}`, workerConversationId: bodies.length + 1,
+      }) };
+    }
+    return origFetch(url, init);
+  };
+  await w.eval("q.value='first'; const firstSend=send(false); q.value='second'; const secondSend=send(false); Promise.all([firstSend,secondSend])");
+  assert.equal(bodies.length, 2);
+  assert.equal(bodies[0].steer, false);
+  assert.equal(bodies[1].steer, false);
+  assert.match(bodies[0].requestId, /^[A-Za-z0-9._:-]{1,200}$/);
+  assert.match(bodies[1].requestId, /^[A-Za-z0-9._:-]{1,200}$/);
+  assert.notEqual(bodies[0].requestId, bodies[1].requestId);
+  assert.equal(w.eval("busy"), false, "immediate parallel acceptance is not Lead live activity");
+  w.close();
+});
+
 test("send() renders user message synchronously BEFORE pending assistant placeholder (never '…' above 'hi')", async () => {
   const { w } = boot([]);
   await flush();
