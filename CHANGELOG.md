@@ -9,9 +9,13 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ### Features & Fixes (2026-11-24)
 
+- **Clipboard-only composer cleanup (`src/web.mjs`, `test/ui-theme.test.mjs`, `test/chat-images-e2e.test.mjs`):**
+  - Removed the unwanted **Attach images** button, hidden picker input, styling and picker handler again. Screenshot paste and drag-and-drop remain; no upload workflow was removed.
+  - Composer form submission and Enter now share the real `send()` path. After successful submission, message text, pasted thumbnail, filename, attachment counter and object URL clear immediately; the sent history image remains. Failed submission preserves the draft.
+
 - **Durable repo classification and in-place frontend binding (`src/orchestrations.mjs`, `src/daemon.mjs`, `test/orchestrations.test.mjs`):**
   - Derive `Repos` membership from validated durable `cwd`/`repoUrl`/`repo` preset metadata instead of names or a stale sidebar group; generic-workspace agents remain repo-less.
-  - Rebind the existing `Emin Code Frontend` orchestrator to `/opt/pi-durable-swarm` without replacing its id or conversation. Regression coverage verifies repo-bound vs repo-less classification and preservation of agent id/history.
+  - Rebind the existing frontend orchestrator to `/opt/pi-durable-swarm` without replacing its id or conversation. Regression coverage verifies repo-bound vs repo-less classification and preservation of agent id/history.
 
 - **Composer attachments clear on accepted send (`src/web.mjs`, `test/chat-images-e2e.test.mjs`):**
   - WHY: after sending a message with a pasted screenshot the thumbnail stayed in the composer, so the user could not tell the image had been sent and could re-send it by accident.

@@ -213,6 +213,7 @@ test("wrong mime paste is rejected client-side and the text still sends", async 
 // while the sent message keeps its own history thumbnails. Failures keep the deck.
 const deck = (t) => t.w.document.getElementById("pending-images");
 const composerEmpty = (t) => {
+  assert.equal(t.w.document.getElementById("q").value, "", "message text cleared");
   assert.equal(t.w.chatImages.count(), 0, "pending deck empty");
   assert.equal(deck(t).hidden, true, "deck hidden");
   assert.equal(deck(t).querySelectorAll("figure").length, 0, "no thumbnails or filenames left");

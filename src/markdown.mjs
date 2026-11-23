@@ -98,7 +98,9 @@ function makeRenderer() {
 }
 
 const renderer = makeRenderer();
-marked.setOptions({ gfm: true, breaks: true, async: false });
+// User messages use white-space: pre-wrap. Keep source newlines as text instead of
+// adding <br>, which would render every ordinary line break twice.
+marked.setOptions({ gfm: true, breaks: false, async: false });
 
 export function renderMarkdown(src) {
   if (!src) return "";

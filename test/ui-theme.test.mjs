@@ -73,20 +73,13 @@ test("inline Solarized base and layout remain intact", () => {
   }
 });
 
-test("orchestration, chat, image and drawer contracts survive", () => {
+test("orchestration, chat, clipboard image and drawer contracts survive", () => {
   const d = doc();
   for (const id of ["log", "q", "statusBar", "agents", "targets", "leftCol", "rightCol", "backdrop", "tLeft", "tRight", "agentsEmpty", "archive", "pending-images", "new-orch", "new-worker"]) {
     assert.ok(d.getElementById(id), "missing #" + id);
   }
-  const attach = d.getElementById("attach-btn");
-  const input = d.getElementById("attach-input");
-  assert.equal(attach.type, "button");
-  assert.equal(attach.getAttribute("aria-controls"), "attach-input");
-  assert.equal(input.hidden, true);
-  assert.equal(input.multiple, true);
-  assert.match(input.accept, /image\/png/);
-  assert.match(input.accept, /image\/jpeg/);
-  assert.match(src, /attachInput\.onchange[\s\S]*new DataTransfer\(\)[\s\S]*new DragEvent\('drop'/);
+  assert.equal(d.getElementById("attach-btn"), null, "clipboard composer has no image-picker button");
+  assert.equal(d.getElementById("attach-input"), null, "clipboard composer has no file-picker input");
   assert.match(src, /images: payloadImages/);
   assert.ok(d.querySelector('[data-target="lead"].tgt[aria-current="true"]'));
   assert.match(src, /el\.classList\.add\('open'\)/);
@@ -94,36 +87,6 @@ test("orchestration, chat, image and drawer contracts survive", () => {
   assert.match(src, /api\/render/);
   assert.match(src, /api\/model/);
   assert.match(src, /mermaid-vendor\.js/);
-});
-
-test("image picker feeds selected files into the existing attachment client", () => {
-  const window = new JSDOM(html, { runScripts: "outside-only" }).window;
-  window.URL.createObjectURL = () => "blob:selected-image";
-  window.URL.revokeObjectURL = () => {};
-  window.DataTransfer = class {
-    constructor() {
-      this.files = [];
-      this.types = ["Files"];
-      this.items = { add: (file) => this.files.push(file) };
-    }
-  };
-  window.DragEvent = class extends window.Event {
-    constructor(type, options) { super(type, options); this.dataTransfer = options.dataTransfer; }
-  };
-  window.eval(imageClient);
-  window.document.dispatchEvent(new window.Event("DOMContentLoaded"));
-  const start = src.indexOf("const attachBtn = document.getElementById('attach-btn')");
-  const end = src.indexOf("\nq.addEventListener('keydown'", start);
-  assert.ok(start >= 0 && end > start);
-  window.eval(src.slice(start, end));
-  const input = window.document.getElementById("attach-input");
-  const file = new window.File(["image-bytes"], "screen.png", { type: "image/png" });
-  Object.defineProperty(input, "files", { configurable: true, value: [file] });
-  input.onchange();
-  assert.equal(window.chatImages.count(), 1);
-  assert.equal(window.document.querySelector("#pending-images img").alt, "screen.png");
-  assert.equal(window.document.getElementById("attach-status").textContent, "1 image attached");
-  assert.equal(window.chatImages.take()[0].file, file);
 });
 
 test("native copy button is plain local markup", () => {

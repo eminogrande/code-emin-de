@@ -1,6 +1,24 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { JSDOM } from "jsdom";
 import { renderMarkdown, safeUrl } from "../src/markdown.mjs";
+
+test("plain user newlines render once under the actual pre-wrap CSS", () => {
+  const web = readFileSync(new URL("../src/web.mjs", import.meta.url), "utf8");
+  const css = web.match(/\.m\.u\{white-space:pre-wrap;[^}]*\}/)?.[0];
+  assert.ok(css, "user message white-space rule must remain testable");
+
+  const html = renderMarkdown("first line\nsecond line\n\nnext paragraph");
+  const { window } = new JSDOM(`<style>${css}</style><div class="m u">${html}</div>`);
+  const message = window.document.querySelector(".m.u");
+  const paragraphs = message.querySelectorAll("p");
+  assert.equal(window.getComputedStyle(message).whiteSpace, "pre-wrap");
+  assert.equal(paragraphs.length, 2, "the intentional blank line remains a paragraph boundary");
+  assert.equal(message.querySelectorAll("br").length, 0, "pre-wrap text must not also contain forced breaks");
+  assert.equal(paragraphs[0].textContent, "first line\nsecond line");
+  assert.equal(paragraphs[1].textContent, "next paragraph");
+});
 
 test("renders headings, lists, quotes, tables, emphasis", () => {
   const html = renderMarkdown("# H1\n\n- a\n- b\n\n> q\n\n| x | y |\n|---|---|\n| 1 | 2 |\n\n**b** *i*");
