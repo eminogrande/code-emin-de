@@ -32,13 +32,14 @@ async function boot(){
   const base=`http://127.0.0.1:${web.server.address().port}`;
   const get=p=>fetch(base+p,{headers:{Cookie:"swarm_s=x"}});
   const html=await (await get("/")).text();const cs=await (await get("/chat-client.js")).text();const is=await (await get("/chat-images.js")).text();
-  const vc=new VirtualConsole();const errors=[];vc.on("jsdomError",e=>errors.push(e.message));
+  const vc=new VirtualConsole();const errors=[];vc.on("jsdomError",e=>errors.push(e.message));vc.on("log",(...a)=>console.log("PAGELOG",...a));
   const dom=new JSDOM(html,{url:base+"/",runScripts:"dangerously",pretendToBeVisual:true,virtualConsole:vc});
   const w=dom.window;const revoked=[];
   w.URL.createObjectURL=f=>"blob:"+(f.name||"x");w.URL.revokeObjectURL=u=>revoked.push(u);
   w.fetch=async(u,o={})=>{const r=await fetch(base+String(u),{...o,headers:{...(o.headers||{}),Cookie:"swarm_s=x"}});if(String(u).startsWith("/api/chat")){const b=JSON.parse(o.body||"{}");console.log("CHAT",r.status,"text=",JSON.stringify(b.text),"imgs=",(b.images||[]).length);console.log(new Error("s").stack.split("\n").slice(2,9).join("\n"));}return r;};
   w.eval(cs);w.eval(is);w.eval([...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]).pop());
   w.document.dispatchEvent(new w.Event("DOMContentLoaded"));
+  w.eval("window.__n=0;const _s=send;send=async function(){window.__n++;console.log(\"SENDCALL\"+window.__n);return _s.apply(null,arguments)};");
   w.eval("const _s=send; window.__n=0; send=async function(...a){window.__n++;console.log(\"SENDCALL\",window.__n);return _s.apply(null,a)};");
   const _f=w.fetch;
   await new Promise(r=>setTimeout(r,300));
