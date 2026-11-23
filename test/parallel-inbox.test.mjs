@@ -56,6 +56,7 @@ test("busy Lead prompts run concurrently and results route to the requester once
     const started = await daemon.chat("second", { wait: false, requestId: "req-second" });
     assert.equal(started.route, "parallel_inbox");
     assert.notEqual(started.workerConversationId, initial.conversationId);
+    await sleep(300); console.log("DEBUG", started, await daemon.readTranscript(started.workerConversationId, 10));
     assert.ok(await waitFor(async () => (await daemon.readTranscript(started.workerConversationId, 5)).some((e) => e.role === "user" && e.text.includes("second"))));
     assert.equal((await daemon.status()).lead.busy, true, "second begins while first is still running");
 
