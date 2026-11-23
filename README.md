@@ -262,7 +262,7 @@ Configured in [`src/models.mjs`](src/models.mjs) (`ROLE_MODELS` + `ROLE_THINKING
 
 | Role | Default Open-Weights Model | Tools & Invariant |
 | :--- | :--- | :--- |
-| **`lead`** | `kimi-k3.1-pro` (`max`) | Orchestrator, parallel worker fan-out, Verbatim Spec Rule, sole OptMem writer (`memory_note`), sole `swarm-ctl` / `git push` owner. |
+| **`lead`** | `kimi-k3.1-pro` (`max`) | Orchestrator, parallel worker fan-out, Verbatim Spec Rule, serialized shared OptMem (`memory_wake`/`memory_note`/`memory_recall`, auto-injected across all orchestrators), sole `swarm-ctl` / `git push` owner. |
 | **`planner`** | `kimi-k3.1-pro` (`max`) | Strictly read-only (`readonly-role-guard`); outputs `<=5` atomic steps with exact paths & verification commands. |
 | **`coder`** | `deepseek-v4.1-flash-uncensored` (`max`, fails over to `allmodels` `deepseek/deepseek-v4.1-flash-abliterated` `max`; fast: `deepseek-v4.1-flash-1017`) | Full workspace coding + `bus_send`/`read_sibling`; guarded by `coder-hard-test-gate` and `subagent-deploy-guard`. |
 | **`reviewer`** | `kimi-k3.1-pro` | Strictly read-only security/bug audit (`VERDICT: APPROVE` or `REQUEST_CHANGES`). |

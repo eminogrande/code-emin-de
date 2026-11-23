@@ -254,12 +254,12 @@ export function createBuiltinGuardHooks({
     },
     {
       id: "optmem-lead-only-guard",
-      description: "Enforces OptMem single-writer invariant: subagents cannot call memory_note directly",
+      description: "Enforces OptMem orchestrator-only writer invariant: subagent workers cannot call memory_note directly (lead and named orchestrators may write via serialized OptMem)",
       priority: 20,
       events: ["beforeTool"],
       beforeTool(call, { meta }) {
         const role = meta?.role || "lead";
-        if (role !== "lead" && call.name === "memory_note") {
+        if (role !== "lead" && role !== "orchestrator" && call.name === "memory_note") {
           return {
             block: "OptMem invariant: subagents must not write to OptMem; send findings to Lead via bus_send.",
           };

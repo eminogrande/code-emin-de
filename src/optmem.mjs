@@ -20,6 +20,14 @@ function defaultCompressPair(promptBlock, rangeId) {
 export function createOptMem({ memoryDir, memoBin = DEFAULT_MEMO_BIN, wakeLines = 48, summarizePair } = {}) {
   if (!memoryDir) throw new Error("createOptMem: memoryDir required");
   const env = { ...process.env, MEMORY_DIR: memoryDir };
+  let queue = Promise.resolve();
+  let version = 1;
+
+  function serialize(fn) {
+    const next = queue.then(fn, fn);
+    queue = next.catch(() => {});
+    return next;
+  }
 
   async function run(args) {
     await mkdir(memoryDir, { recursive: true });
@@ -43,38 +51,52 @@ export function createOptMem({ memoryDir, memoBin = DEFAULT_MEMO_BIN, wakeLines 
 
   return {
     memoryDir,
-    async init() {
-      const { stdout } = await run(["init"]);
-      await run(["config", `WAKE_LINES=${wakeLines}`]);
-      return stdout;
+    getVersion() {
+      return version;
     },
-    async wake() {
-      try {
-        const { stdout } = await run(["wake"]);
-        return stdout.trim();
-      } catch (err) {
-        if (err?.stdout && err.stdout.includes(" nap ")) {
-          await drainNaps(err.stdout);
+    init() {
+      return serialize(async () => {
+        const { stdout } = await run(["init"]);
+        await run(["config", `WAKE_LINES=${wakeLines}`]);
+        return stdout;
+      });
+    },
+    wake() {
+      return serialize(async () => {
+        try {
           const { stdout } = await run(["wake"]);
           return stdout.trim();
+        } catch (err) {
+          if (err?.stdout && err.stdout.includes(" nap ")) {
+            await drainNaps(err.stdout);
+            const { stdout } = await run(["wake"]);
+            return stdout.trim();
+          }
+          throw err;
         }
-        throw err;
-      }
+      });
     },
-    async note(line) {
-      const clean = String(line).replace(/\s+/g, " ").trim().slice(0, 275);
-      if (!clean) throw new Error("OptMem note must be non-empty");
-      const { stdout } = await run(["note", clean]);
-      const drained = await drainNaps(stdout);
-      return { recorded: clean, napsDrained: drained };
+    note(line) {
+      return serialize(async () => {
+        const clean = String(line).replace(/\s+/g, " ").trim().slice(0, 275);
+        if (!clean) throw new Error("OptMem note must be non-empty");
+        const { stdout } = await run(["note", clean]);
+        const drained = await drainNaps(stdout);
+        version += 1;
+        return { recorded: clean, napsDrained: drained, version };
+      });
     },
-    async recall(pattern) {
-      const { stdout } = await run(["recall", String(pattern)]);
-      return stdout.trim();
+    recall(pattern) {
+      return serialize(async () => {
+        const { stdout } = await run(["recall", String(pattern)]);
+        return stdout.trim();
+      });
     },
-    async zoom(range) {
-      const { stdout } = await run(["zoom", String(range)]);
-      return stdout.trim();
+    zoom(range) {
+      return serialize(async () => {
+        const { stdout } = await run(["zoom", String(range)]);
+        return stdout.trim();
+      });
     },
   };
 }

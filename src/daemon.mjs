@@ -162,6 +162,8 @@ function roleToolNames(role, preset = "custom") {
           "read_sibling",
           "bus_send",
           "bus_inbox",
+          "memory_wake",
+          "memory_note",
           "memory_recall",
           "request_review",
           "read",
@@ -177,6 +179,8 @@ function roleToolNames(role, preset = "custom") {
           "read_sibling",
           "bus_send",
           "bus_inbox",
+          "memory_wake",
+          "memory_note",
           "memory_recall",
           "save_draft",
           "list_drafts",
@@ -193,6 +197,7 @@ function roleToolNames(role, preset = "custom") {
         "bus_send",
         "bus_inbox",
         "memory_wake",
+        "memory_note",
         "memory_recall",
         "save_draft",
         "list_drafts",
@@ -267,6 +272,51 @@ export async function openSwarmDaemon({
 
   let harnessRef = null;
   const yieldRetries = new Map(); // convId -> count
+  const syncedMemoryVersion = new Map(); // convId -> optmem version last injected
+  let cachedWakeVersion = -1;
+  let cachedWakeBlock = "";
+
+  async function getSharedMemoryBlock() {
+    const ver = optmem.getVersion();
+    if (cachedWakeVersion === ver) return cachedWakeBlock;
+    try {
+      const wake = (await optmem.wake()).trim();
+      cachedWakeBlock = wake
+        ? `\n\n--- SHARED MEMORY (OptMem, cross-agent) ---\n${wake.slice(0, 8000)}\n(Record durable cross-session facts/decisions with \`memory_note\`; search raw log with \`memory_recall\`.)`
+        : "";
+      cachedWakeVersion = ver;
+    } catch {
+      cachedWakeBlock = "";
+    }
+    return cachedWakeBlock;
+  }
+
+  async function composeInstructionsWithMemory(base) {
+    const mem = await getSharedMemoryBlock();
+    return mem ? `${base}${mem}` : base;
+  }
+
+  async function syncOrchestratorMemory(convId, orchestration = null) {
+    const ver = optmem.getVersion();
+    if (syncedMemoryVersion.get(convId) === ver) return;
+    const live = await harnessRef.snapshot(LiveDoc, convId, BACKGROUND_CONTEXT).catch(() => null);
+    if (live?.run) return;
+    const base = orchestration
+      ? buildOrchestrationInstructions({
+          id: orchestration.id,
+          name: orchestration.name,
+          preset: orchestration.preset || "custom",
+          cwd: orchestration.cwd || workspaceDir,
+          repoUrl: orchestration.repoUrl || "",
+          instructions: orchestration.instructions || "",
+        })
+      : ROLE_INSTRUCTIONS.lead;
+    const full = await composeInstructionsWithMemory(base);
+    await harnessRef.commit(async (tx) => {
+      await configure(tx, convId, { instructions: full });
+    }, BACKGROUND_CONTEXT);
+    syncedMemoryVersion.set(convId, ver);
+  }
 
   // Durable Forever-Agent Task (`sleepUntil` state machine — 0 tokens when Jev says `stay_silent`)
   const ForeverWatchTask = defineTask({
@@ -474,6 +524,9 @@ export async function openSwarmDaemon({
     }
     const id = `orch-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
     const now = Date.now();
+    const initialInstructions = await composeInstructionsWithMemory(
+      buildOrchestrationInstructions({ id, ...args, cwd: args.cwd || workspaceDir }),
+    );
     let convId;
     await harnessRef.commit(async (tx) => {
       const c = await tx.createConversation({ ownership: { kind: "ownerless" } });
@@ -484,7 +537,7 @@ export async function openSwarmDaemon({
         cwd: args.cwd || workspaceDir,
         maxTurns: 20,
         tools: roleToolSet("orchestrator", args.preset),
-        instructions: buildOrchestrationInstructions({ id, ...args, cwd: args.cwd || workspaceDir }),
+        instructions: initialInstructions,
       });
       const meta = await tx.doc(RoleMetaDoc, convId);
       Object.assign(meta, {
@@ -543,6 +596,9 @@ export async function openSwarmDaemon({
     if (args.cwd && args.cwd.startsWith(workspaceDir)) {
       await mkdir(args.cwd, { recursive: true });
     }
+    const updatedInstructions = await composeInstructionsWithMemory(
+      buildOrchestrationInstructions({ id, ...args, cwd: args.cwd || workspaceDir }),
+    );
     await harnessRef.commit(async (tx) => {
       await configure(tx, existing.convId, {
         model: chosenModel,
@@ -550,7 +606,7 @@ export async function openSwarmDaemon({
         cwd: args.cwd || workspaceDir,
         maxTurns: 20,
         tools: roleToolSet("orchestrator", args.preset),
-        instructions: buildOrchestrationInstructions({ id, ...args, cwd: args.cwd || workspaceDir }),
+        instructions: updatedInstructions,
       });
       const meta = await tx.doc(RoleMetaDoc, existing.convId);
       Object.assign(meta, {
@@ -947,7 +1003,7 @@ export async function openSwarmDaemon({
 
   const memoryWakeTool = defineTool({
     name: "memory_wake",
-    description: "Read permanent cross-session OptMem binary summary tree (`memo wake`). Lead only.",
+    description: "Read permanent cross-session OptMem binary summary tree (`memo wake`) shared across all agents.",
     replay: "safe",
     parameters: { type: "object", properties: {} },
     async execute() {
@@ -958,15 +1014,22 @@ export async function openSwarmDaemon({
 
   const memoryNoteTool = defineTool({
     name: "memory_note",
-    description: "Record one permanent cross-session memory (`<=275` chars) and auto-drain OptMem `nap` merges. Lead only.",
+    description: "Record one permanent cross-session memory (`<=275` chars) shared across all agents and auto-drain OptMem `nap` merges.",
     replay: "safe",
     parameters: {
       type: "object",
       properties: { note: { type: "string" } },
       required: ["note"],
     },
-    async execute(args) {
-      const res = await optmem.note(args.note);
+    async execute(args, api, context) {
+      let text = String(args.note || "").trim();
+      const meta = await api.snapshot(RoleMetaDoc, api.conversationId, context).catch(() => null);
+      if (meta?.role === "orchestrator" && meta?.orchestrationId && !text.startsWith("[")) {
+        const snap = await api.snapshot(SwarmDoc, context).catch(() => null);
+        const label = snap?.orchestrations?.[meta.orchestrationId]?.name || meta.orchestrationId;
+        text = `[${label}] ${text}`;
+      }
+      const res = await optmem.note(text);
       return { output: [{ type: "text", text: JSON.stringify(res) }] };
     },
   });
@@ -1023,6 +1086,8 @@ export async function openSwarmDaemon({
       }
       const body = String(args.brief || "").trim();
       bus.send({ from: fromId, to: target.id, topic: "AGENT_DELEGATE", body });
+      const snap = await harnessRef.snapshot(SwarmDoc, BACKGROUND_CONTEXT).catch(() => null);
+      await syncOrchestratorMemory(target.conversationId, target.id === DEFAULT_ORCHESTRATION_ID ? null : snap?.orchestrations?.[target.id]);
       const conv = await harnessRef.conversation(target.conversationId, BACKGROUND_CONTEXT);
       await conv.submit(
         {
@@ -1274,7 +1339,8 @@ export async function openSwarmDaemon({
   );
   harnessRef = harness;
 
-  // Ensure Root Lead conversation is configured with Lead profile + V3 Caveman/ADHD instructions
+  // Ensure Root Lead conversation is configured with Lead profile + V3 Caveman/ADHD + live shared OptMem wake
+  const initialLeadInstructions = await composeInstructionsWithMemory(ROLE_INSTRUCTIONS.lead);
   const lead = await harness.root(BACKGROUND_CONTEXT, {
     agent: {
       model: roleModels.lead,
@@ -1282,7 +1348,7 @@ export async function openSwarmDaemon({
       cwd: workspaceDir,
       maxTurns: 16,
       tools: roleToolSet("lead"),
-      instructions: ROLE_INSTRUCTIONS.lead,
+      instructions: initialLeadInstructions,
     },
   });
   await lead.commit(async (tx) => {
@@ -1292,7 +1358,7 @@ export async function openSwarmDaemon({
       cwd: workspaceDir,
       maxTurns: 16,
       tools: roleToolSet("lead"),
-      instructions: ROLE_INSTRUCTIONS.lead,
+      instructions: initialLeadInstructions,
     });
     const rDoc = await tx.doc(RoleMetaDoc, lead.id);
     rDoc.role = "lead";
@@ -1305,6 +1371,31 @@ export async function openSwarmDaemon({
     const chosen = ov ? resolveLeadModelChoice(ov.provider, ov.modelId) : null;
     if (chosen) await configure(tx, lead.id, { model: chosen });
   }, BACKGROUND_CONTEXT);
+  syncedMemoryVersion.set(lead.id, optmem.getVersion());
+
+  // Sync existing named orchestrations on startup so all agents get shared OptMem + memory_note tools
+  {
+    const snap = await harness.snapshot(SwarmDoc, BACKGROUND_CONTEXT);
+    for (const o of Object.values(snap?.orchestrations || {})) {
+      if (!o?.convId) continue;
+      const base = buildOrchestrationInstructions({
+        id: o.id,
+        name: o.name,
+        preset: o.preset || "custom",
+        cwd: o.cwd || workspaceDir,
+        repoUrl: o.repoUrl || "",
+        instructions: o.instructions || "",
+      });
+      const full = await composeInstructionsWithMemory(base);
+      await harness.commit(async (tx) => {
+        await configure(tx, o.convId, {
+          tools: roleToolSet("orchestrator", o.preset || "custom"),
+          instructions: full,
+        });
+      }, BACKGROUND_CONTEXT);
+      syncedMemoryVersion.set(o.convId, optmem.getVersion());
+    }
+  }
 
   // Create/reuse dedicated `/btw` read-only Side-Chat conversation
   let btwConv = null;
@@ -1568,6 +1659,9 @@ export async function openSwarmDaemon({
         const orchestration = snap?.orchestrations?.[id];
         if (!orchestration) throw new Error(`Unknown orchestration: ${id}`);
         targetConv = await harness.conversation(orchestration.convId, BACKGROUND_CONTEXT);
+        await syncOrchestratorMemory(orchestration.convId, orchestration);
+      } else if (targetWorkerId === "lead") {
+        await syncOrchestratorMemory(lead.id, null);
       } else if (targetWorkerId !== "lead") {
         const snap = (await harness.snapshot(SwarmDoc, BACKGROUND_CONTEXT)) ?? { workers: {} };
         const w = snap.workers?.[targetWorkerId];

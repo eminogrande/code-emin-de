@@ -29,6 +29,10 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ### Features & Fixes (2026-11-23)
 
+- **Fixed cross-agent OptMem (`src/optmem.mjs`, `src/hooks.mjs`, `src/daemon.mjs`, `test/hooks.test.mjs`, `test/orchestrations.test.mjs`):**
+  - Serialized all OptMem calls (`init`/`wake`/`note`/`recall`/`zoom`) through an internal promise queue + monotonic version counter in `src/optmem.mjs` so concurrent writes from multiple agents never race on `.lock` or `LOG.txt`.
+  - Allowed named orchestrators (`role === "orchestrator"`) to call `memory_note` (auto-tagging notes with `[<AgentName>]`) and granted `memory_wake`/`memory_note`/`memory_recall` to all orchestrator presets while keeping subagent workers blocked in `optmem-lead-only-guard`.
+  - Auto-injected the live `optmem.wake()` shared memory tree into `General` and every named orchestrator on daemon startup, orchestration create/update, `ask_agent` delegation, and before idle `daemon.chat()` turns (cached by OptMem version so unchanged turns have zero overhead).
 - **Removed artificial `8192`/`256K` client caps (`src/models.mjs`, `test/models-failover.test.mjs`):** Deleted the legacy `max_tokens` clamping wrapper on `allmodels` and `paymentrequired`, raised `ALLMODELS_OPEN_MODELS` output limits from `8192` to native `65536`/`131072` (keeping `1M` context), aligned `ROUTER_PAYMENTREQUIRED_MODELS` context windows (`1M` for `kimi-for-coding`, `glm-5.3-abliterated`, `gemini-3.5-flash-lite`, `claude-5.5`, etc.) 1:1 with `router-paymentrequired-com`'s `postpriced.mjs` (which already had zero request caps), and raised Kimi K3.1/K3 `maxTokens` to `131072`.
 - **Subscription-first tiering, per-role thinking (`ROLE_THINKING`), `PAYMENTREQUIRED_FAILOVER=1`, and `router-paymentrequired-com` repo agent (`src/models.mjs`, `src/daemon.mjs`, `test/models-failover.test.mjs`, VPS `.env`):**
   - Added `ROLE_THINKING` (`lead`/`orchestrator`/`planner`/`reviewer`/`social`: `"max"`, `coder`/`watcher`/`support`/`btw`/recurring jobs: `"low"`, all env-overrideable) so orchestrators reason deeply while workers and recurring jobs stay fast.

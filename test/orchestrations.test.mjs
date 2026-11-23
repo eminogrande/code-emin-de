@@ -217,3 +217,55 @@ test("typed agent-orchestrators: presets, safe cwd, update persistence, and pres
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("shared OptMem serializes concurrent writes and auto-injects into General and named agents", async () => {
+  const root = await mkdtemp(join(tmpdir(), "orchestrations-optmem-"));
+  const seenPrompts = [];
+  const faux = fauxProvider({ provider: "faux-optmem", models: [{ id: "faux-1" }] });
+  const extractSys = (ctx) =>
+    String(ctx?.systemPrompt || ctx?.messages?.find((m) => m.role === "system")?.sections?.instructions || "");
+  faux.appendResponses([
+    (ctx) => {
+      seenPrompts.push(extractSys(ctx));
+      return fauxAssistantMessage("ack-1");
+    },
+    (ctx) => {
+      seenPrompts.push(extractSys(ctx));
+      return fauxAssistantMessage("ack-2");
+    },
+  ]);
+  const models = createModels();
+  models.setProvider(faux.provider);
+  const ref = { provider: "faux-optmem", modelId: "faux-1" };
+  const roleModels = Object.fromEntries(["lead", "planner", "coder", "coderFast", "reviewer", "reviewerDeep", "support", "social", "watcher", "btw"].map((k) => [k, ref]));
+  const daemon = await openSwarmDaemon({
+    models,
+    roleModels,
+    dataDir: join(root, "data"),
+    workspaceDir: join(root, "workspace"),
+    triageOpts: { fallbackOnly: true },
+  });
+  try {
+    const repo = await daemon.createOrchestration({ name: "nuri-website", preset: "repo", cwd: "nuri-website" });
+    // Concurrent writes must serialize cleanly without lock races
+    const writes = await Promise.all([
+      daemon.optmem.note("[nuri-website] preview branch auto-deploys staging"),
+      daemon.optmem.note("[router] 1M context active across frontier models"),
+      daemon.optmem.note("[security] never commit secrets to git"),
+    ]);
+    assert.equal(writes.length, 3);
+    assert.ok(daemon.optmem.getVersion() >= 4);
+
+    // Next turn on General AND on named repo agent automatically receives shared OptMem wake in systemPrompt
+    await daemon.chat("check status", { targetWorkerId: "lead", wait: true });
+    await daemon.chat("check repo", { targetWorkerId: `orchestration:${repo.id}`, wait: true });
+    assert.equal(seenPrompts.length, 2);
+    assert.match(seenPrompts[0], /SHARED MEMORY \(OptMem, cross-agent\)/);
+    assert.match(seenPrompts[0], /preview branch auto-deploys staging/);
+    assert.match(seenPrompts[1], /1M context active across frontier models/);
+  } finally {
+    await daemon.close();
+    faux.unregister?.();
+    await rm(root, { recursive: true, force: true });
+  }
+});

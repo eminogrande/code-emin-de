@@ -41,9 +41,11 @@ test("2. Built-in guardrails enforce read-only, OptMem single-writer, destructiv
   assert.match(opt?.block || "", /OptMem invariant/);
   assert.equal(opt?.blockedBy, "optmem-lead-only-guard");
 
-  // Lead CAN write OptMem
+  // Lead AND named orchestrators CAN write OptMem (serialized via createOptMem); subagents cannot
   const leadOpt = await reg.runBeforeTool({ name: "memory_note", arguments: { text: "hi" } }, { meta: { role: "lead" } });
   assert.equal(leadOpt, undefined);
+  const orchOpt = await reg.runBeforeTool({ name: "memory_note", arguments: { text: "hi" } }, { meta: { role: "orchestrator", preset: "repo" } });
+  assert.equal(orchOpt, undefined);
 
   // Destructive bash blocked even for Lead (including rm -rf / and rm -fr /)
   const rmRoot = await reg.runBeforeTool(
