@@ -13,16 +13,33 @@ const doc = () => new JSDOM(html).window.document;
 test("user bubbles and assistant labels make authorship clear", () => {
   const style = doc().querySelector("style").textContent;
   assert.match(style, /\.m\.u\{[^}]*background:var\(--paper-2\)[^}]*border-left:3px solid var\(--accent\)/);
-  assert.match(style, /\.m\.u::before\{content:"You"/);
+  assert.match(style, /\.m\.u::before\{content:"You";color:var\(--heading\)/);
   assert.match(style, /\.m\.a::before\{content:"Kimi"/);
   assert.match(style, /\.m\.a\.err::before\{content:"System"/);
 });
 
-test("tables scroll without splitting words or first-column labels", () => {
+test("tables use their own responsive scroller without splitting words", () => {
   const style = doc().querySelector("style").textContent;
-  assert.match(style, /\.a table\{[^}]*overflow-x:auto[^}]*max-width:100%/);
-  assert.match(style, /\.a th,\.a td\{[^}]*word-break:normal[^}]*overflow-wrap:normal/);
+  assert.match(style, /\.table-scroll\{[^}]*width:100%[^}]*max-width:100%[^}]*overflow-x:auto[^}]*-webkit-overflow-scrolling:touch/);
+  assert.match(style, /\.a table\{[^}]*table-layout:auto[^}]*width:max-content[^}]*min-width:100%[^}]*max-width:none/);
+  assert.match(style, /\.a th,\.a td\{[^}]*white-space:normal[^}]*word-break:normal[^}]*overflow-wrap:normal[^}]*hyphens:none/);
   assert.match(style, /\.a th:first-child,\.a td:first-child\{white-space:nowrap\}/);
+});
+
+test("rendered tables get an accessible, idempotent scroll wrapper", () => {
+  const window = new JSDOM('<div id="m"><table><tbody><tr><td>Description</td><td>wide-unbroken-content-1234567890</td></tr></tbody></table></div>', { runScripts: "outside-only" }).window;
+  const start = src.indexOf("function wrapTables(node)");
+  const end = src.indexOf("\nfunction renderContent", start);
+  assert.ok(start >= 0 && end > start);
+  window.eval(src.slice(start, end));
+  window.eval("wrapTables(document.getElementById('m')); wrapTables(document.getElementById('m'))");
+  const wrappers = window.document.querySelectorAll(".table-scroll");
+  assert.equal(wrappers.length, 1);
+  assert.equal(wrappers[0].getAttribute("role"), "region");
+  assert.equal(wrappers[0].getAttribute("aria-label"), "Scrollable table");
+  assert.equal(wrappers[0].tabIndex, 0);
+  assert.equal(wrappers[0].querySelector("td:first-child").textContent, "Description");
+  assert.match(wrappers[0].querySelector("td:last-child").textContent, /^wide-unbroken-content/);
 });
 
 test("transparent thinking emoji favicon is embedded", () => {
@@ -60,8 +77,16 @@ test("orchestration, chat, image and drawer contracts survive", () => {
   for (const id of ["log", "q", "statusBar", "agents", "targets", "leftCol", "rightCol", "backdrop", "tLeft", "tRight", "agentsEmpty", "archive", "pending-images", "new-orch", "new-worker"]) {
     assert.ok(d.getElementById(id), "missing #" + id);
   }
-  assert.equal(d.getElementById("attach-btn"), null, "Attach button removed in favor of drag-and-drop and paste");
-  assert.equal(d.getElementById("attach-input"), null, "Attach file input removed");
+  const attach = d.getElementById("attach-btn");
+  const input = d.getElementById("attach-input");
+  assert.equal(attach.type, "button");
+  assert.equal(attach.getAttribute("aria-controls"), "attach-input");
+  assert.equal(input.hidden, true);
+  assert.equal(input.multiple, true);
+  assert.match(input.accept, /image\/png/);
+  assert.match(input.accept, /image\/jpeg/);
+  assert.match(src, /attachInput\.onchange[\s\S]*new DataTransfer\(\)[\s\S]*new DragEvent\('drop'/);
+  assert.match(src, /images: payloadImages/);
   assert.ok(d.querySelector('[data-target="lead"].tgt[aria-current="true"]'));
   assert.match(src, /el\.classList\.add\('open'\)/);
   assert.match(src, /el\.classList\.remove\('open'\)/);

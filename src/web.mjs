@@ -239,19 +239,20 @@ body{display:flex;flex-direction:column;max-width:48rem;margin:0 auto;padding:0 
 .m{word-break:break-word}
 .m::before{display:block;font-size:.68rem;font-weight:650;letter-spacing:.06em;text-transform:uppercase;margin-bottom:.2rem}
 .m.u{white-space:pre-wrap;background:var(--paper-2);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:.55rem;padding:.55rem .75rem;max-width:88%;align-self:flex-end}
-.m.u::before{content:"You";color:var(--accent)}
+.m.u::before{content:"You";color:var(--heading)}
 .m.a::before{content:"Kimi";color:var(--muted)}
 .m.a.err::before{content:"System"}
 .a{color:var(--heading)}
 .a>:first-child{margin-top:0}
-.a p,.a ul,.a ol,.a blockquote,.a table,.a .cb,.a .mmd{margin:.55rem 0}
+.a p,.a ul,.a ol,.a blockquote,.a table,.a .cb,.a .mmd,.a .table-scroll{margin:.55rem 0}
 .a h1,.a h2,.a h3,.a h4{line-height:1.3;margin:1rem 0 .4rem;color:var(--heading)}
 .a h1{font-size:1.4em}.a h2{font-size:1.22em}.a h3{font-size:1.08em}
 .a ul,.a ol{padding-left:1.4rem}
 .a li{margin:.2rem 0}
 .a blockquote{margin-left:0;padding:.15rem .9rem;border-left:3px solid var(--accent);color:var(--muted)}
-.a table{border-collapse:collapse;font-size:.95em;display:block;overflow-x:auto;max-width:100%}
-.a th,.a td{border:1px solid var(--rule);padding:.35rem .6rem;text-align:left;word-break:normal;overflow-wrap:normal}
+.table-scroll{display:block;width:100%;max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+.a table{border-collapse:collapse;font-size:.95em;display:table;table-layout:auto;width:max-content;min-width:100%;max-width:none;margin:0}
+.a th,.a td{border:1px solid var(--rule);padding:.35rem .6rem;text-align:left;vertical-align:top;white-space:normal;word-break:normal;overflow-wrap:normal;hyphens:none}
 .a th:first-child,.a td:first-child{white-space:nowrap}
 .a th{background:var(--paper-2)}
 .a hr{border:0;border-top:1px solid var(--rule);margin:1rem 0}
@@ -364,7 +365,9 @@ form.drop-active{border-top-color:#2aa198;background:var(--paper-2)}
 textarea{width:100%;border:0;outline:0;background:transparent;color:var(--heading);font:inherit;resize:none;max-height:12rem;padding:0;margin:0}
 textarea::placeholder{color:var(--muted);opacity:.65}
 #composer-row{display:flex;gap:.5rem;align-items:flex-start}
-#composer-row textarea{flex:1}
+#composer-row textarea{flex:1;min-width:0}
+#attach-btn{flex:none;appearance:none;background:var(--paper-2);color:var(--heading);border:1px solid var(--rule);border-radius:3px;padding:.3rem .6rem;min-height:2.25rem;font:inherit;font-size:.8rem;cursor:pointer}
+#attach-btn:hover,#attach-btn:focus-visible{border-color:var(--accent)}
 #pending-images{display:flex;gap:.5rem;flex-wrap:wrap;padding-bottom:.5rem}
 #pending-images[hidden]{display:none}
 #pending-images figure{margin:0;position:relative;width:5rem;text-align:center}
@@ -450,7 +453,9 @@ textarea::placeholder{color:var(--muted);opacity:.65}
   <form id="f">
     <div id="pending-images" hidden></div>
     <div id="composer-row">
-      <textarea id="q" rows="1" placeholder="Ask… (paste or drop images & files)" autofocus></textarea>
+      <textarea id="q" rows="1" placeholder="Ask… (attach, paste or drop images & files)" autofocus></textarea>
+      <button type="button" id="attach-btn" aria-controls="attach-input">Attach images</button>
+      <input type="file" id="attach-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
     </div>
     <p id="attach-status" aria-live="polite"></p>
   </form>
@@ -524,6 +529,24 @@ function atBottom() {
   return log.scrollHeight - log.scrollTop - log.clientHeight < 40;
 }
 
+function wrapTables(node) {
+  for (const table of node.querySelectorAll('table')) {
+    if (table.parentElement?.classList.contains('table-scroll')) continue;
+    const scroll = document.createElement('div');
+    scroll.className = 'table-scroll';
+    scroll.setAttribute('role', 'region');
+    scroll.setAttribute('aria-label', 'Scrollable table');
+    scroll.tabIndex = 0;
+    table.parentNode.replaceChild(scroll, table);
+    scroll.appendChild(table);
+  }
+}
+
+function renderContent(node) {
+  wrapTables(node);
+  if (window.chatRender) window.chatRender(node);
+}
+
 function addHtml(cls, html, fallback, id) {
   const d = document.createElement('div');
   d.className = 'm ' + cls;
@@ -532,7 +555,7 @@ function addHtml(cls, html, fallback, id) {
   const stick = atBottom();
   log.appendChild(d);
   if (stick) log.scrollTop = log.scrollHeight;
-  if (window.chatRender) window.chatRender(d);
+  renderContent(d);
   return d;
 }
 
@@ -626,7 +649,7 @@ async function syncHistory() {
         if (keepToggled) oldDet.dataset.userToggled = keepToggled;
         node.insertBefore(oldDet, node.firstChild);
       }
-      if (window.chatRender) window.chatRender(node);
+      renderContent(node);
     }
     if (e.role === 'assistant') {
       applyCot(node, { thinking: e.thinking, toolCalls: e.toolCalls, live: false });
@@ -675,7 +698,7 @@ async function syncHistory() {
       liveNode.dataset.liveHtml = bodyHtml;
       liveNode.innerHTML = bodyHtml;
       if (oldDet) liveNode.insertBefore(oldDet, liveNode.firstChild);
-      if (window.chatRender) window.chatRender(liveNode);
+      renderContent(liveNode);
     } else if (!bodyHtml && !oldDet && liveNode.textContent === '\u2026') {
       liveNode.textContent = '';
     }
@@ -1490,7 +1513,7 @@ async function send(steer = false) {
       const oldDet = pending.querySelector(':scope > details.cot');
       pending.innerHTML = d.html;
       if (oldDet) pending.insertBefore(oldDet, pending.firstChild);
-      if (window.chatRender) window.chatRender(pending);
+      renderContent(pending);
       if (d.thinking || (d.toolCalls && d.toolCalls.length)) {
         applyCot(pending, { thinking: d.thinking, toolCalls: d.toolCalls, live: false });
       }
@@ -1520,7 +1543,21 @@ async function send(steer = false) {
 
 const attachBtn = document.getElementById('attach-btn');
 const attachInput = document.getElementById('attach-input');
-if (attachBtn && attachInput) attachBtn.onclick = () => attachInput.click();
+if (attachBtn && attachInput) {
+  attachBtn.onclick = () => attachInput.click();
+  attachInput.onchange = () => {
+    const files = Array.from(attachInput.files || []);
+    if (!files.length) return;
+    try {
+      const transfer = new DataTransfer();
+      for (const file of files) transfer.items.add(file);
+      document.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+    } catch {
+      window.chatImages?.note('File picker unavailable here; paste or drop the images instead.', true);
+    }
+    attachInput.value = '';
+  };
+}
 
 q.addEventListener('keydown', (ev) => {
   if (ev.key === 'Enter' && !ev.shiftKey) {

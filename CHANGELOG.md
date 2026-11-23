@@ -9,6 +9,14 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ### Features & Fixes (2026-11-24)
 
+- **Composer attachments clear on accepted send (`src/web.mjs`, `test/chat-images-e2e.test.mjs`):**
+  - WHY: after sending a message with a pasted screenshot the thumbnail stayed in the composer, so the user could not tell the image had been sent and could re-send it by accident.
+  - Cleanup used to run at the very end of the reply-rendering chain inside `send()`'s `try`, so any throw in the markdown/CoT render branches skipped it and left stale thumbnails and leaked object URLs behind.
+  - Now a single `acceptSend()` helper runs immediately after the response is classified as accepted and clears `window.chatImages` exactly once (revoking the object URLs), before rendering. Covered accepted paths: `text`, `html`, `images`, HTTP `202`/pending, daemon-reload (`502/503/504`) and malformed non-JSON bodies.
+  - Attachments are deliberately kept on validation/provider/network failure (`d.error`, HTTP `413`, fetch throw) so the user can retry, and the request is never cleared before the `await`.
+  - Sent-message history thumbnails are untouched: the optimistic `.himages` node renders from the payload data URLs, not from the composer deck.
+  - New E2E regressions in `test/chat-images-e2e.test.mjs` assert composer empty + object URL revoked exactly once after every accepted shape, preserved on `500`/`413`, and cleared even when reply rendering throws.
+
 - **Lead Delegation Mandate (`src/prompts.mjs`, `test/swarm.test.mjs`):**
   - WHY: Lead kept coding small fixes itself, so the orchestrator burned its own context and lost the parallelism/verification benefits the swarm exists for. The Lead prompt now hard-requires `spawn_worker` (appropriate role) BEFORE any implementation on every actionable build/fix/investigation request; Lead only coordinates, integrates, independently verifies, and handles approved deploy/backup.
   - Exemptions keep it from looping: pure greetings, direct factual questions, status queries, and bus/worker notifications spawn no worker; workers never spawn workers (no infinite nesting).
