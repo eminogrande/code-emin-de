@@ -30,7 +30,7 @@ import { openAgentBus } from "./bus.mjs";
 import { handleDeterministicCommand, probeProviderHealth } from "./commands.mjs";
 import { createBuiltinGuardHooks, HookRegistry } from "./hooks.mjs";
 import { decodeImage, imageId, sanitizeCorruptDurableImages } from "./image-util.mjs";
-import { createOpenModels, resolveLeadModelChoice, ROLE_MODELS } from "./models.mjs";
+import { createOpenModels, resolveLeadModelChoice, ROLE_MODELS, ROLE_THINKING } from "./models.mjs";
 import { createOptMem } from "./optmem.mjs";
 import {
   AGENT_PRESETS,
@@ -315,7 +315,7 @@ export async function openSwarmDaemon({
               convId = c.id;
               await configure(tx, convId, {
                 model: mRef,
-                thinkingLevel: "max",
+                thinkingLevel: ROLE_THINKING[role] || "low",
                 cwd: workspaceDir,
                 maxTurns: 6,
                 tools: roleToolSet(role),
@@ -610,7 +610,7 @@ export async function openSwarmDaemon({
       convId = c.id;
       await configure(tx, convId, {
         model: mRef,
-        thinkingLevel: "max",
+        thinkingLevel: args.mode === "recurring" ? (ROLE_THINKING.watcher || "low") : (ROLE_THINKING[args.role] || "low"),
         cwd: targetCwd,
         maxTurns: args.role === "coder" ? 40 : 16,
         tools: roleToolSet(args.role),
@@ -684,7 +684,7 @@ export async function openSwarmDaemon({
         convId = c.id;
         await configure(tx, convId, {
           model: mRef,
-          thinkingLevel: "max",
+          thinkingLevel: ROLE_THINKING[role] || "low",
           cwd: targetCwd,
           maxTurns: role === "coder" ? 40 : 16,
           tools: roleToolSet(role),

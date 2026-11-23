@@ -142,9 +142,34 @@ export const ROLE_MODELS = {
   btw: { provider: process.env.PROVIDER_BTW || "llmgateway", modelId: process.env.MODEL_BTW || "deepseek-v4.1-flash-1017" },
 };
 
+export const ROLE_THINKING = {
+  lead: process.env.THINKING_LEAD || "max",
+  orchestrator: process.env.THINKING_ORCHESTRATOR || "max",
+  planner: process.env.THINKING_PLANNER || "max",
+  coder: process.env.THINKING_CODER || "low",
+  coderFast: process.env.THINKING_CODER_FAST || "low",
+  reviewer: process.env.THINKING_REVIEWER || "max",
+  reviewerDeep: process.env.THINKING_REVIEWER_DEEP || "max",
+  support: process.env.THINKING_SUPPORT || "low",
+  social: process.env.THINKING_SOCIAL || "max",
+  watcher: process.env.THINKING_WATCHER || "low",
+  btw: process.env.THINKING_BTW || "low",
+};
+
+export const PAYMENTREQUIRED_TO_LLMGATEWAY_MAP = {
+  "k3.1-pro": "kimi-k3.1-pro",
+  "k3.1-pro-highspeed": "kimi-k3.1-pro",
+  "k3": "kimi-k3.1-pro",
+  "kimi-for-coding": "deepseek-v4.1-flash-uncensored",
+  "kimi-for-coding-highspeed": "deepseek-v4.1-flash-uncensored",
+  "deepseek-v4.1-flash-abliterated": "deepseek-v4.1-flash-uncensored",
+  "glm-5.3-abliterated": "glm-5.3",
+  "glm-5.3-flash-abliterated": "glm-5.3",
+};
+
 export function isFailoverEligibleError(errorMessage = "") {
   const s = String(errorMessage || "");
-  return /402|billing_error|insufficient_balance|insufficient_quota|insufficient credits|Insufficient Balance|lower max_tokens|No API key set|Provider is not configured|401|502|503|504|fetch failed|ECONNRESET|ETIMEDOUT/i.test(s);
+  return /402|429|rate_limit|model_cooldown|RESOURCE_EXHAUSTED|billing_error|insufficient_balance|insufficient_quota|insufficient credits|Insufficient Balance|quota|lower max_tokens|No API key set|Provider is not configured|401|502|503|504|fetch failed|ECONNRESET|ETIMEDOUT/i.test(s);
 }
 
 function wrapApiWithPayload(payloadPatch) {
@@ -172,6 +197,7 @@ function wrapApiWithPayload(payloadPatch) {
 export function attachOpenWeightsFailover(models, { cooldownMs = 5 * 60_000, localModelId = process.env.LOCAL_LLAMA_MODEL || DEFAULT_LOCAL_LLAMA_MODEL } = {}) {
   const origStreamSimple = models.streamSimple.bind(models);
   let llmgatewayTrippedUntil = 0;
+  const routerTrippedUntil = new Map();
 
   function prependBannerToMessage(msg, banner) {
     if (!msg || !banner) return msg;
@@ -189,8 +215,9 @@ export function attachOpenWeightsFailover(models, { cooldownMs = 5 * 60_000, loc
 
   function buildFailoverChain(model) {
     const chain = [];
-    // Free router: surface the real error (no cross-provider fallback hiding quota/errors).
-    if (model?.provider === "paymentrequired") return [model];
+    const routerFailoverEnabled = process.env.PAYMENTREQUIRED_FAILOVER === "1";
+    // Free/sub router: surface real errors by default; when PAYMENTREQUIRED_FAILOVER=1, fail over on 429/5xx.
+    if (model?.provider === "paymentrequired" && !routerFailoverEnabled) return [model];
     const seen = new Set();
     const push = (m) => {
       if (!m) return;
@@ -200,17 +227,30 @@ export function attachOpenWeightsFailover(models, { cooldownMs = 5 * 60_000, loc
         chain.push(m);
       }
     };
+    const hasPaidFallback = Boolean(process.env.LLMGATEWAY_API_KEY || process.env.ALLMODELS_API_KEY);
+    const skipRouterPrimary =
+      model?.provider === "paymentrequired" &&
+      hasPaidFallback &&
+      (!process.env.ROUTER_PAYMENTREQUIRED_API_KEY || Date.now() < (routerTrippedUntil.get(model.id) || 0));
     const skipPrimary =
-      model?.provider === "llmgateway" &&
-      Boolean(process.env.ALLMODELS_API_KEY) &&
-      (!process.env.LLMGATEWAY_API_KEY || Date.now() < llmgatewayTrippedUntil);
+      skipRouterPrimary ||
+      (model?.provider === "llmgateway" &&
+        Boolean(process.env.ALLMODELS_API_KEY) &&
+        (!process.env.LLMGATEWAY_API_KEY || Date.now() < llmgatewayTrippedUntil));
     if (!skipPrimary) push(model);
+    if (model?.provider === "paymentrequired" && process.env.LLMGATEWAY_API_KEY && Date.now() >= llmgatewayTrippedUntil) {
+      const llmMapped = PAYMENTREQUIRED_TO_LLMGATEWAY_MAP[model.id] || "deepseek-v4.1-flash-uncensored";
+      push(models.getModel("llmgateway", llmMapped));
+    }
     if (process.env.ALLMODELS_API_KEY) {
       if (model?.provider === "llmgateway") {
         const mappedId = LLMGATEWAY_TO_ALLMODELS_MAP[model.id] || "deepseek/deepseek-v4.1-flash-abliterated";
         push(models.getModel("allmodels", mappedId));
       }
-      if (model?.provider === "llmgateway" || model?.provider === "allmodels") {
+      if (model?.provider === "paymentrequired") {
+        push(models.getModel("allmodels", "deepseek/deepseek-v4.1-flash-abliterated"));
+      }
+      if (model?.provider === "llmgateway" || model?.provider === "allmodels" || model?.provider === "paymentrequired") {
         push(models.getModel("allmodels", "z-ai/glm-5.3-abliterated"));
         push(models.getModel("allmodels", "deepseek/deepseek-v4.1-flash-abliterated"));
       }
@@ -307,6 +347,14 @@ export function attachOpenWeightsFailover(models, { cooldownMs = 5 * 60_000, loc
             )
           ) {
             llmgatewayTrippedUntil = Date.now() + cooldownMs;
+          }
+          if (
+            candidate.provider === "paymentrequired" &&
+            /429|rate_limit|model_cooldown|RESOURCE_EXHAUSTED|quota|No API key set/i.test(
+              terminalError.errorMessage || "",
+            )
+          ) {
+            routerTrippedUntil.set(candidate.id, Date.now() + cooldownMs);
           }
           lastError = terminalError;
           continue;

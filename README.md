@@ -258,7 +258,7 @@ const daemon = await openSwarmDaemon({
 
 ## 7. Open-Weights Role Roster & Hard Invariants
 
-Configured in [`src/models.mjs`](src/models.mjs) (`ROLE_MODELS`, all overrideable via env vars). All main roles run at **`thinkingLevel: "max"`** (`reasoning.effort = "max"` on LLMGateway, AllModels, and PaymentRequired; `/btw` stays `low` for fast side-chat):
+Configured in [`src/models.mjs`](src/models.mjs) (`ROLE_MODELS` + `ROLE_THINKING`, all overrideable via env vars). Orchestrators/planners/reviewers default to **`thinkingLevel: "max"`**, while `coder` workers, recurring jobs, watchers, support, and `/btw` default to **`"low"`** for fast execution. Setting `PAYMENTREQUIRED_FAILOVER=1` enables per-model cooldown failover from subscription router `429`/5xx into `llmgateway` → `allmodels` (DeepSeek abliterated) → Tier-3 `local-llama`:
 
 | Role | Default Open-Weights Model | Tools & Invariant |
 | :--- | :--- | :--- |
