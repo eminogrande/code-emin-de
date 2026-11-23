@@ -1624,8 +1624,14 @@ export async function openSwarmDaemon({
     ];
     const out = [];
     for (const o of all) {
-      const live = await harness.snapshot(LiveDoc, o.convId, BACKGROUND_CONTEXT);
-      out.push(publicOrchestration(o, live, workspaceDir));
+      const [live, git] = await Promise.all([
+        harness.snapshot(LiveDoc, o.convId, BACKGROUND_CONTEXT),
+        o.cwd ? readGitContext(o.cwd) : Promise.resolve(null),
+      ]);
+      const item = publicOrchestration(o, live, workspaceDir);
+      if (git?.branch) item.branch = git.branch;
+      if (git) item.dirty = git.dirty;
+      out.push(item);
     }
     return out;
   }

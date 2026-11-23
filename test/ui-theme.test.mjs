@@ -80,6 +80,9 @@ test("orchestration, chat, clipboard image and drawer contracts survive", () => 
   }
   assert.equal(d.getElementById("attach-btn"), null, "clipboard composer has no image-picker button");
   assert.equal(d.getElementById("attach-input"), null, "clipboard composer has no file-picker input");
+  for (const removed of ["orch-preset", "edit-orch-preset", "orch-group", "edit-orch-group", "worker-role"]) {
+    assert.equal(d.getElementById(removed), null, "removed fake category dropdown #" + removed);
+  }
   assert.match(src, /images: payloadImages/);
   assert.ok(d.querySelector('[data-target="lead"].tgt[aria-current="true"]'));
   assert.match(src, /el\.classList\.add\('open'\)/);

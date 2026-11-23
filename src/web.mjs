@@ -389,51 +389,35 @@ textarea::placeholder{color:var(--muted);opacity:.65}
 <div id="backdrop" hidden></div>
 <aside id="leftCol">
   <div class="sect">
-    <h2>Agents &amp; Orchestrators</h2>
+    <h2>Repos</h2>
     <button type="button" class="tgt" data-target="lead" data-conv="1" aria-current="true">
       <span class="tname">code-emin-de</span>
-      <span class="tmeta tmeta-row"><span class="tbadge">repo</span><span>self-host</span></span>
+      <span class="tmeta" id="lead-meta">main · self-host</span>
     </button>
     <div id="targets"></div>
     <details id="edit-orch-box" hidden>
-      <summary>Edit selected agent</summary>
+      <summary>Edit selected repo</summary>
       <form id="edit-orch" class="mini-form">
-        <input id="edit-orch-name" maxlength="60" required placeholder="Agent name" aria-label="Edit agent name">
-        <select id="edit-orch-preset" aria-label="Edit agent preset">
-          <option value="repo">Repo / Platform</option>
-          <option value="marketing">Marketing (Draft-Only)</option>
-          <option value="security">Security Reviewer (Read-Only)</option>
-          <option value="ops">Ops / Monitor</option>
-          <option value="custom">Custom Agent</option>
-        </select>
-        <input id="edit-orch-group" maxlength="32" placeholder="Group (e.g. Repos, Marketing)" aria-label="Edit agent group">
-        <input id="edit-orch-cwd" maxlength="300" placeholder="Folder in workspace (e.g. nuri-website)" aria-label="Edit agent folder">
-        <input id="edit-orch-repo" maxlength="240" placeholder="Repo URL (optional)" aria-label="Edit agent repo URL">
-        <select id="edit-orch-model" aria-label="Edit agent model"></select>
-        <textarea id="edit-orch-brief" rows="3" maxlength="4000" placeholder="Agent role &amp; deploy instructions"></textarea>
-        <button type="submit">Save agent</button>
+        <input id="edit-orch-name" maxlength="60" required placeholder="Repo name" aria-label="Edit repo name">
+        <input id="edit-orch-cwd" maxlength="300" placeholder="Folder in workspace (e.g. nuri-website)" aria-label="Edit repo folder">
+        <input id="edit-orch-repo" maxlength="240" placeholder="GitHub URL (optional)" aria-label="Edit repo URL">
+        <select id="edit-orch-model" aria-label="Edit repo model"></select>
+        <textarea id="edit-orch-brief" rows="3" maxlength="4000" placeholder="Repo &amp; deploy instructions"></textarea>
+        <button type="submit">Save</button>
       </form>
     </details>
     <form id="new-orch" class="mini-form">
-      <input id="orch-name" maxlength="60" required placeholder="New agent name (e.g. linkedin-marketer)" aria-label="New orchestration name">
-      <select id="orch-preset" aria-label="Agent preset">
-        <option value="custom">Custom Agent</option>
-        <option value="repo">Repo / Platform</option>
-        <option value="marketing">Marketing (Draft-Only)</option>
-        <option value="security">Security Reviewer (Read-Only)</option>
-        <option value="ops">Ops / Monitor</option>
-      </select>
+      <input id="orch-name" maxlength="60" required placeholder="Add repo name" aria-label="New orchestration name">
       <details id="orch-more">
-        <summary>Options (group, folder, repo, model, brief)</summary>
+        <summary>Repo details (folder, URL, model, brief)</summary>
         <div class="mini-fields">
-          <input id="orch-group" maxlength="32" placeholder="Group (auto from preset)" aria-label="Agent group">
-          <input id="orch-cwd" maxlength="300" placeholder="Folder in workspace (e.g. nuri-website)" aria-label="Agent folder">
+          <input id="orch-cwd" maxlength="300" placeholder="Folder in workspace (e.g. nuri-website)" aria-label="Repo folder">
           <input id="orch-repo" maxlength="240" placeholder="GitHub URL (optional)" aria-label="GitHub repository URL">
-          <select id="orch-model" aria-label="Agent model"></select>
-          <textarea id="orch-brief" rows="3" maxlength="4000" placeholder="Custom role instructions (optional)"></textarea>
+          <select id="orch-model" aria-label="Repo model"></select>
+          <textarea id="orch-brief" rows="3" maxlength="4000" placeholder="Repo instructions (optional)"></textarea>
         </div>
       </details>
-      <button type="submit">Add agent</button>
+      <button type="submit">Add repo</button>
     </form>
     <p id="orch-status" class="empty" aria-live="polite"></p>
   </div>
@@ -458,19 +442,18 @@ textarea::placeholder{color:var(--muted);opacity:.65}
 </main>
 <aside id="rightCol">
   <div class="sect">
-    <h2>Agents</h2>
-    <button type="button" id="toggle-worker-form">New worker</button>
+    <h2>Workers &amp; Jobs</h2>
+    <button type="button" id="toggle-worker-form">New worker / job</button>
     <form id="new-worker" class="mini-form" hidden>
-      <input id="worker-name" maxlength="60" required placeholder="Worker name" aria-label="Worker name">
-      <select id="worker-role" aria-label="Worker role"><option>coder</option><option>planner</option><option>reviewer</option><option>watcher</option><option>support</option><option>social</option></select>
-      <select id="worker-mode" aria-label="Worker schedule"><option value="once">One task</option><option value="recurring">Recurring</option></select>
+      <input id="worker-name" maxlength="60" required placeholder="Name" aria-label="Worker name">
+      <select id="worker-mode" aria-label="Schedule"><option value="once">One-shot worker</option><option value="recurring">Recurring job</option></select>
       <label id="worker-interval-label" hidden>Every <input id="worker-minutes" type="number" min="1" max="44640" value="5"> minutes</label>
-      <textarea id="worker-goal" rows="4" maxlength="12000" required placeholder="What should this worker do?"></textarea>
-      <button type="submit">Create worker</button>
+      <textarea id="worker-goal" rows="4" maxlength="12000" required placeholder="What should it do?"></textarea>
+      <button type="submit">Start</button>
     </form>
     <p id="worker-form-status" class="empty" aria-live="polite"></p>
     <ul id="agents"></ul>
-    <p class="empty" id="agentsEmpty">No running agents.</p>
+    <p class="empty" id="agentsEmpty">No running workers.</p>
     <details id="archived">
       <summary>Archived workers</summary>
       <ul id="archive"></ul>
@@ -1129,7 +1112,6 @@ function renderAgents(list) {
   }
 }
 
-const GROUP_ORDER = ['Repos', 'Marketing', 'Security', 'Ops', 'Agents'];
 const editOrchBox = document.getElementById('edit-orch-box');
 const editOrchForm = document.getElementById('edit-orch');
 let lastEditedOrchId = '';
@@ -1142,8 +1124,6 @@ function syncEditOrchForm(force) {
   if (!force && lastEditedOrchId === o.id && editOrchBox.open) return;
   lastEditedOrchId = o.id;
   document.getElementById('edit-orch-name').value = o.name || '';
-  document.getElementById('edit-orch-preset').value = o.preset || 'custom';
-  document.getElementById('edit-orch-group').value = o.group || '';
   document.getElementById('edit-orch-cwd').value = o.cwd || '';
   document.getElementById('edit-orch-repo').value = o.repoUrl || '';
   const editModelEl = document.getElementById('edit-orch-model');
@@ -1151,45 +1131,31 @@ function syncEditOrchForm(force) {
   document.getElementById('edit-orch-brief').value = o.instructions || '';
 }
 
-// Left sidebar lists durable Agent-Orchestrators grouped by domain (Repos, Marketing, Security, Ops, Agents).
+function repoMetaText(o, fallback) {
+  const parts = [];
+  if (o.branch) parts.push(o.branch + (o.dirty > 0 ? '*' : ''));
+  parts.push(o.state || fallback || 'idle');
+  return parts.join(' · ');
+}
+
+// Left sidebar lists durable repo orchestrators directly — flat list with real git branch + state.
 function renderTargets(list) {
   orchestrationList = list && list.length ? list : orchestrationList;
+  const root = orchestrationList.find((x) => x.id === 'general');
+  const leadMeta = document.getElementById('lead-meta');
+  if (leadMeta && root) leadMeta.textContent = repoMetaText(root, 'self-host');
   targetsBox.replaceChildren();
-  const others = orchestrationList.filter((x) => x.id !== 'general');
-  const byGroup = new Map();
-  for (const o of others) {
-    const g = o.group || 'Agents';
-    if (!byGroup.has(g)) byGroup.set(g, []);
-    byGroup.get(g).push(o);
-  }
-  const groups = Array.from(byGroup.keys()).sort((a, b) => {
-    const ia = GROUP_ORDER.indexOf(a), ib = GROUP_ORDER.indexOf(b);
-    if (ia >= 0 || ib >= 0) return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
-    return a.localeCompare(b);
-  });
-  for (const g of groups) {
-    const h = document.createElement('div');
-    h.className = 'tgroup';
-    h.textContent = g;
-    targetsBox.appendChild(h);
-    for (const o of byGroup.get(g)) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'tgt';
-      b.dataset.target = 'orchestration:' + o.id;
-      b.dataset.conv = String(o.conversationId);
-      b.dataset.orch = o.id;
-      b.setAttribute('aria-current', String(currentOrchestration === o.id));
-      const name = document.createElement('span'); name.className = 'tname'; name.textContent = o.name;
-      const meta = document.createElement('span'); meta.className = 'tmeta tmeta-row';
-      if (o.preset && o.preset !== 'custom') {
-        const badge = document.createElement('span'); badge.className = 'tbadge'; badge.textContent = o.preset;
-        meta.appendChild(badge);
-      }
-      const st = document.createElement('span'); st.textContent = o.state || 'idle';
-      meta.appendChild(st);
-      b.append(name, meta); targetsBox.appendChild(b);
-    }
+  for (const o of orchestrationList.filter((x) => x.id !== 'general')) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tgt';
+    b.dataset.target = 'orchestration:' + o.id;
+    b.dataset.conv = String(o.conversationId);
+    b.dataset.orch = o.id;
+    b.setAttribute('aria-current', String(currentOrchestration === o.id));
+    const name = document.createElement('span'); name.className = 'tname'; name.textContent = o.name;
+    const meta = document.createElement('span'); meta.className = 'tmeta'; meta.textContent = repoMetaText(o, 'idle');
+    b.append(name, meta); targetsBox.appendChild(b);
   }
   syncEditOrchForm(false);
 }
@@ -1226,8 +1192,8 @@ document.getElementById('new-orch').onsubmit = async (ev) => {
     const picked = parseModelValue(document.getElementById('orch-model')?.value || '');
     const payload = {
       name: document.getElementById('orch-name').value,
-      preset: document.getElementById('orch-preset')?.value || 'custom',
-      group: document.getElementById('orch-group')?.value || '',
+      preset: 'repo',
+      group: 'Repos',
       cwd: document.getElementById('orch-cwd')?.value || '',
       repoUrl: document.getElementById('orch-repo')?.value || '',
       instructions: document.getElementById('orch-brief')?.value || '',
@@ -1240,7 +1206,7 @@ document.getElementById('new-orch').onsubmit = async (ev) => {
     document.getElementById('new-orch').reset();
     const more = document.getElementById('orch-more');
     if (more) more.open = false;
-    orchStatus.textContent = 'Created ' + d.name;
+    orchStatus.textContent = 'Added ' + d.name;
     await pollWorkers();
     setTarget('orchestration:' + d.id, d.conversationId, d.id);
   } catch (e) { orchStatus.textContent = String(e.message || e); }
@@ -1256,8 +1222,8 @@ if (editOrchForm) {
       const payload = {
         id: currentOrchestration,
         name: document.getElementById('edit-orch-name').value,
-        preset: document.getElementById('edit-orch-preset').value,
-        group: document.getElementById('edit-orch-group').value,
+        preset: 'repo',
+        group: 'Repos',
         cwd: document.getElementById('edit-orch-cwd').value,
         repoUrl: document.getElementById('edit-orch-repo').value,
         instructions: document.getElementById('edit-orch-brief').value,
@@ -1289,7 +1255,7 @@ workerForm.onsubmit = async (ev) => {
     const payload = {
       orchestrationId: currentOrchestration,
       name: document.getElementById('worker-name').value,
-      role: document.getElementById('worker-role').value,
+      role: document.getElementById('worker-role')?.value || 'coder',
       goal: document.getElementById('worker-goal').value,
       mode,
       everyMs: mode === 'recurring' ? Number(document.getElementById('worker-minutes').value) * 60000 : undefined,
