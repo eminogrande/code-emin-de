@@ -326,6 +326,12 @@ pre{padding:.75rem .9rem;overflow-x:auto;border-left:2px solid var(--rule);margi
 .mini-form button:hover,.wk button:hover,#toggle-worker-form:hover{border-color:var(--accent)}
 .mini-form label{font-size:.75rem;color:var(--muted)}
 .mini-form label input{width:4.5rem;margin:0 .25rem}
+.tgroup{font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:.65rem 0 .2rem;padding-left:.15rem}
+.tmeta-row{display:flex;align-items:center;gap:.35rem;font-size:.72rem;color:var(--muted)}
+.tbadge{border:1px solid var(--rule);border-radius:2px;padding:0 .25rem;font-size:.65rem;text-transform:uppercase}
+#orch-more,#edit-orch-box{margin:.35rem 0}
+#orch-more summary,#edit-orch-box summary{cursor:pointer;color:var(--muted);font-size:.74rem;user-select:none}
+#orch-more .mini-fields{display:flex;flex-direction:column;gap:.35rem;margin-top:.35rem}
 .wk .wactions{display:flex;gap:.35rem;margin-top:.35rem}
 .wk .wgoal{font-size:.72rem;color:var(--muted);margin-top:.25rem;white-space:pre-wrap}
 .cot,.wcot{border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:3px;background:var(--paper-2);margin:0 0 .5rem;font-size:.82rem;color:var(--muted)}
@@ -377,15 +383,49 @@ textarea::placeholder{color:var(--muted);opacity:.65}
 <div id="backdrop" hidden></div>
 <aside id="leftCol">
   <div class="sect">
-    <h2>Orchestrations</h2>
+    <h2>Agents &amp; Orchestrators</h2>
     <button type="button" class="tgt" data-target="lead" data-conv="1" aria-current="true">
       <span class="tname">General</span>
-      <span class="tmeta">main orchestration</span>
+      <span class="tmeta">main orchestrator</span>
     </button>
     <div id="targets"></div>
+    <details id="edit-orch-box" hidden>
+      <summary>Edit selected agent</summary>
+      <form id="edit-orch" class="mini-form">
+        <input id="edit-orch-name" maxlength="60" required placeholder="Agent name" aria-label="Edit agent name">
+        <select id="edit-orch-preset" aria-label="Edit agent preset">
+          <option value="repo">Repo / Platform</option>
+          <option value="marketing">Marketing (Draft-Only)</option>
+          <option value="security">Security Reviewer (Read-Only)</option>
+          <option value="ops">Ops / Monitor</option>
+          <option value="custom">Custom Agent</option>
+        </select>
+        <input id="edit-orch-group" maxlength="32" placeholder="Group (e.g. Repos, Marketing)" aria-label="Edit agent group">
+        <input id="edit-orch-cwd" maxlength="300" placeholder="Folder in workspace (e.g. nuri-website)" aria-label="Edit agent folder">
+        <input id="edit-orch-repo" maxlength="240" placeholder="Repo URL (optional)" aria-label="Edit agent repo URL">
+        <textarea id="edit-orch-brief" rows="3" maxlength="4000" placeholder="Agent role &amp; deploy instructions"></textarea>
+        <button type="submit">Save agent</button>
+      </form>
+    </details>
     <form id="new-orch" class="mini-form">
-      <input id="orch-name" maxlength="60" required placeholder="New job name" aria-label="New orchestration name">
-      <button type="submit">Add orchestration</button>
+      <input id="orch-name" maxlength="60" required placeholder="New agent name (e.g. linkedin-marketer)" aria-label="New orchestration name">
+      <select id="orch-preset" aria-label="Agent preset">
+        <option value="custom">Custom Agent</option>
+        <option value="repo">Repo / Platform</option>
+        <option value="marketing">Marketing (Draft-Only)</option>
+        <option value="security">Security Reviewer (Read-Only)</option>
+        <option value="ops">Ops / Monitor</option>
+      </select>
+      <details id="orch-more">
+        <summary>Options (group, folder, repo, brief)</summary>
+        <div class="mini-fields">
+          <input id="orch-group" maxlength="32" placeholder="Group (auto from preset)" aria-label="Agent group">
+          <input id="orch-cwd" maxlength="300" placeholder="Folder in workspace (e.g. nuri-website)" aria-label="Agent folder">
+          <input id="orch-repo" maxlength="240" placeholder="GitHub URL (optional)" aria-label="GitHub repository URL">
+          <textarea id="orch-brief" rows="3" maxlength="4000" placeholder="Custom role instructions (optional)"></textarea>
+        </div>
+      </details>
+      <button type="submit">Add agent</button>
     </form>
     <p id="orch-status" class="empty" aria-live="polite"></p>
   </div>
@@ -888,6 +928,7 @@ function setTarget(id, convId, orchestrationId) {
     b.setAttribute('aria-current', String(b.dataset.target === id));
   }
   renderAgents(allWorkers);
+  syncEditOrchForm();
   syncHistory().catch(() => {});
 }
 document.addEventListener('click', (ev) => {
@@ -1016,22 +1057,67 @@ function renderAgents(list) {
   }
 }
 
-// Left sidebar lists durable named orchestrations, each backed by its own Lead conversation.
+const GROUP_ORDER = ['Repos', 'Marketing', 'Security', 'Ops', 'Agents'];
+const editOrchBox = document.getElementById('edit-orch-box');
+const editOrchForm = document.getElementById('edit-orch');
+let lastEditedOrchId = '';
+
+function syncEditOrchForm(force) {
+  if (!editOrchBox || !editOrchForm) return;
+  const o = orchestrationList.find((x) => x.id === currentOrchestration && x.id !== 'general');
+  editOrchBox.hidden = !o;
+  if (!o) { lastEditedOrchId = ''; return; }
+  if (!force && lastEditedOrchId === o.id && editOrchBox.open) return;
+  lastEditedOrchId = o.id;
+  document.getElementById('edit-orch-name').value = o.name || '';
+  document.getElementById('edit-orch-preset').value = o.preset || 'custom';
+  document.getElementById('edit-orch-group').value = o.group || '';
+  document.getElementById('edit-orch-cwd').value = o.cwd || '';
+  document.getElementById('edit-orch-repo').value = o.repoUrl || '';
+  document.getElementById('edit-orch-brief').value = o.instructions || '';
+}
+
+// Left sidebar lists durable Agent-Orchestrators grouped by domain (Repos, Marketing, Security, Ops, Agents).
 function renderTargets(list) {
   orchestrationList = list && list.length ? list : orchestrationList;
   targetsBox.replaceChildren();
-  for (const o of orchestrationList.filter((x) => x.id !== 'general')) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'tgt';
-    b.dataset.target = 'orchestration:' + o.id;
-    b.dataset.conv = String(o.conversationId);
-    b.dataset.orch = o.id;
-    b.setAttribute('aria-current', String(currentOrchestration === o.id));
-    const name = document.createElement('span'); name.className = 'tname'; name.textContent = o.name;
-    const meta = document.createElement('span'); meta.className = 'tmeta'; meta.textContent = o.state || 'idle';
-    b.append(name, meta); targetsBox.appendChild(b);
+  const others = orchestrationList.filter((x) => x.id !== 'general');
+  const byGroup = new Map();
+  for (const o of others) {
+    const g = o.group || 'Agents';
+    if (!byGroup.has(g)) byGroup.set(g, []);
+    byGroup.get(g).push(o);
   }
+  const groups = Array.from(byGroup.keys()).sort((a, b) => {
+    const ia = GROUP_ORDER.indexOf(a), ib = GROUP_ORDER.indexOf(b);
+    if (ia >= 0 || ib >= 0) return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    return a.localeCompare(b);
+  });
+  for (const g of groups) {
+    const h = document.createElement('div');
+    h.className = 'tgroup';
+    h.textContent = g;
+    targetsBox.appendChild(h);
+    for (const o of byGroup.get(g)) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tgt';
+      b.dataset.target = 'orchestration:' + o.id;
+      b.dataset.conv = String(o.conversationId);
+      b.dataset.orch = o.id;
+      b.setAttribute('aria-current', String(currentOrchestration === o.id));
+      const name = document.createElement('span'); name.className = 'tname'; name.textContent = o.name;
+      const meta = document.createElement('span'); meta.className = 'tmeta tmeta-row';
+      if (o.preset && o.preset !== 'custom') {
+        const badge = document.createElement('span'); badge.className = 'tbadge'; badge.textContent = o.preset;
+        meta.appendChild(badge);
+      }
+      const st = document.createElement('span'); st.textContent = o.state || 'idle';
+      meta.appendChild(st);
+      b.append(name, meta); targetsBox.appendChild(b);
+    }
+  }
+  syncEditOrchForm(false);
 }
 
 // Poll the read-only agent list on the shared backoff; paused while hidden.
@@ -1063,16 +1149,51 @@ document.getElementById('new-orch').onsubmit = async (ev) => {
   ev.preventDefault();
   orchStatus.textContent = 'Creating…';
   try {
-    const name = document.getElementById('orch-name').value;
-    const r = await fetch('/api/orchestrations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+    const payload = {
+      name: document.getElementById('orch-name').value,
+      preset: document.getElementById('orch-preset')?.value || 'custom',
+      group: document.getElementById('orch-group')?.value || '',
+      cwd: document.getElementById('orch-cwd')?.value || '',
+      repoUrl: document.getElementById('orch-repo')?.value || '',
+      instructions: document.getElementById('orch-brief')?.value || '',
+    };
+    const r = await fetch('/api/orchestrations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const d = await safeJson(r);
     if (!r.ok || d.error) throw new Error(d.error || 'Create failed');
-    document.getElementById('orch-name').value = '';
+    document.getElementById('new-orch').reset();
+    const more = document.getElementById('orch-more');
+    if (more) more.open = false;
     orchStatus.textContent = 'Created ' + d.name;
     await pollWorkers();
     setTarget('orchestration:' + d.id, d.conversationId, d.id);
   } catch (e) { orchStatus.textContent = String(e.message || e); }
 };
+
+if (editOrchForm) {
+  editOrchForm.onsubmit = async (ev) => {
+    ev.preventDefault();
+    if (!currentOrchestration || currentOrchestration === 'general') return;
+    orchStatus.textContent = 'Saving…';
+    try {
+      const payload = {
+        id: currentOrchestration,
+        name: document.getElementById('edit-orch-name').value,
+        preset: document.getElementById('edit-orch-preset').value,
+        group: document.getElementById('edit-orch-group').value,
+        cwd: document.getElementById('edit-orch-cwd').value,
+        repoUrl: document.getElementById('edit-orch-repo').value,
+        instructions: document.getElementById('edit-orch-brief').value,
+      };
+      const r = await fetch('/api/orchestration-update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const d = await safeJson(r);
+      if (!r.ok || d.error) throw new Error(d.error || 'Save failed');
+      editOrchBox.open = false;
+      orchStatus.textContent = 'Saved ' + d.name;
+      await pollWorkers();
+      syncEditOrchForm(true);
+    } catch (e) { orchStatus.textContent = String(e.message || e); }
+  };
+}
 
 const workerForm = document.getElementById('new-worker');
 const workerMode = document.getElementById('worker-mode');
@@ -1589,9 +1710,23 @@ export async function startWebServer({
         return sendJson(out?.error ? 500 : 200, out);
       }
       if (req.method === "POST" && url.pathname === "/api/orchestrations") {
-        const body = await readJsonLimited(req, 4096);
-        const out = await unixRpc(sockPath, "POST", "/orchestrations", { name: body.name });
+        const body = await readJsonLimited(req, 16_384);
+        const out = await unixRpc(sockPath, "POST", "/orchestrations", {
+          name: body.name,
+          preset: body.preset,
+          group: body.group,
+          cwd: body.cwd,
+          repoUrl: body.repoUrl,
+          instructions: body.instructions,
+          provider: body.provider,
+          modelId: body.modelId,
+        });
         return sendJson(out?.error ? 400 : 201, out);
+      }
+      if (req.method === "POST" && url.pathname === "/api/orchestration-update") {
+        const body = await readJsonLimited(req, 16_384);
+        const out = await unixRpc(sockPath, "POST", "/orchestration-update", body);
+        return sendJson(out?.error ? 400 : 200, out);
       }
       if (req.method === "POST" && url.pathname === "/api/orchestration-workers") {
         const body = await readJsonLimited(req, 32_768);

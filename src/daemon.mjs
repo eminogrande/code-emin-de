@@ -33,11 +33,12 @@ import { decodeImage, imageId, sanitizeCorruptDurableImages } from "./image-util
 import { createOpenModels, resolveLeadModelChoice, ROLE_MODELS } from "./models.mjs";
 import { createOptMem } from "./optmem.mjs";
 import {
+  AGENT_PRESETS,
   DEFAULT_ORCHESTRATION_ID,
   MIN_WORKER_INTERVAL_MS,
   nextRunAt,
   publicOrchestration,
-  validateOrchestrationName,
+  validateOrchestrationInput,
   validateWorkerInput,
 } from "./orchestrations.mjs";
 import { ROLE_INSTRUCTIONS } from "./prompts.mjs";
@@ -126,17 +127,18 @@ export function summarizeLiveProgress(live) {
   };
 }
 
-function roleToolSet(role) {
-  return roleToolNames(role).map((name) => ({ name }));
+function roleToolSet(role, preset) {
+  return roleToolNames(role, preset).map((name) => ({ name }));
 }
 
-function roleToolNames(role) {
+function roleToolNames(role, preset = "custom") {
   switch (role) {
     case "lead":
-    case "orchestrator":
       return [
         "spawn_worker",
         "list_workers",
+        "list_agents",
+        "ask_agent",
         "read_sibling",
         "bus_send",
         "bus_inbox",
@@ -145,6 +147,57 @@ function roleToolNames(role) {
         "memory_recall",
         "list_drafts",
         "schedule_forever_agent",
+        "read",
+        "write",
+        "edit",
+        "bash",
+      ];
+    case "orchestrator":
+      if (preset === "security") {
+        return [
+          "spawn_worker",
+          "list_workers",
+          "list_agents",
+          "ask_agent",
+          "read_sibling",
+          "bus_send",
+          "bus_inbox",
+          "memory_recall",
+          "request_review",
+          "read",
+          "bash",
+        ];
+      }
+      if (preset === "marketing") {
+        return [
+          "spawn_worker",
+          "list_workers",
+          "list_agents",
+          "ask_agent",
+          "read_sibling",
+          "bus_send",
+          "bus_inbox",
+          "memory_recall",
+          "save_draft",
+          "list_drafts",
+          "schedule_forever_agent",
+          "read",
+        ];
+      }
+      return [
+        "spawn_worker",
+        "list_workers",
+        "list_agents",
+        "ask_agent",
+        "read_sibling",
+        "bus_send",
+        "bus_inbox",
+        "memory_wake",
+        "memory_recall",
+        "save_draft",
+        "list_drafts",
+        "schedule_forever_agent",
+        "request_review",
         "read",
         "write",
         "edit",
@@ -165,6 +218,25 @@ function roleToolNames(role) {
     default:
       return ["read", "bus_inbox", "read_sibling"];
   }
+}
+
+function buildOrchestrationInstructions({ id, name, preset, cwd, repoUrl, instructions }) {
+  const presetInfo = AGENT_PRESETS[preset] || AGENT_PRESETS.custom;
+  const lines = [
+    ROLE_INSTRUCTIONS.lead,
+    `- AGENT_ORCHESTRATOR=${id} (${name}) | PRESET=${preset} (${presetInfo.label}) | CWD=${cwd}`,
+    `- Scope: own only this agent/domain. Spawned workers inherit CWD=${cwd}. Use \`list_agents\` and \`ask_agent\` to coordinate with other specialist agents (e.g. security-review-agent, marketers, repo owners).`,
+  ];
+  if (repoUrl) lines.push(`- Git Repository: ${repoUrl}. Verify build/tests before pushing; never force-push or run \`swarm-ctl\`.`);
+  if (preset === "marketing") {
+    lines.push("- Marketing Policy: strictly DRAFT-ONLY. Save every post/campaign/reply with `save_draft`; never publish externally.");
+  } else if (preset === "security") {
+    lines.push("- Security Policy: strictly READ-ONLY audit agent. Never edit files; report concrete file/line findings and severities.");
+  } else if (preset === "repo") {
+    lines.push("- Repo Policy: work inside CWD, run repo checks/tests, commit cleanly, and push non-force to GitHub when requested so GitHub Actions deploys.");
+  }
+  if (instructions) lines.push(`\nCustom Agent Brief:\n${instructions}`);
+  return lines.join("\n");
 }
 
 export async function openSwarmDaemon({
@@ -383,37 +455,147 @@ export async function openSwarmDaemon({
     });
   }
 
-  async function createNamedOrchestration(name) {
-    const cleanName = validateOrchestrationName(name);
+  async function resolveOrchestrationModel(modelInput) {
+    if (!modelInput) return roleModels.lead;
+    const chosen = resolveLeadModelChoice(modelInput.provider, modelInput.modelId);
+    if (!chosen || !models.getModel(chosen.provider, chosen.modelId)) {
+      throw new Error(`Unknown model ${modelInput.provider}/${modelInput.modelId}`);
+    }
+    return chosen;
+  }
+
+  async function createNamedOrchestration(input) {
+    const args = validateOrchestrationInput(input, workspaceDir);
+    const chosenModel = await resolveOrchestrationModel(args.model);
     const swarm = await harnessRef.snapshot(SwarmDoc, BACKGROUND_CONTEXT);
     if (Object.keys(swarm?.orchestrations || {}).length >= 50) throw new Error("Orchestration limit reached (50)");
+    if (args.cwd && args.cwd.startsWith(workspaceDir)) {
+      await mkdir(args.cwd, { recursive: true });
+    }
     const id = `orch-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const now = Date.now();
     let convId;
     await harnessRef.commit(async (tx) => {
       const c = await tx.createConversation({ ownership: { kind: "ownerless" } });
       convId = c.id;
       await configure(tx, convId, {
-        model: roleModels.lead,
+        model: chosenModel,
         thinkingLevel: "max",
-        cwd: workspaceDir,
-        maxTurns: 16,
-        tools: roleToolSet("orchestrator"),
-        instructions: `${ROLE_INSTRUCTIONS.lead}\n- You lead only orchestration ${id} (${cleanName}). Keep spawned workers on this job.`,
+        cwd: args.cwd || workspaceDir,
+        maxTurns: 20,
+        tools: roleToolSet("orchestrator", args.preset),
+        instructions: buildOrchestrationInstructions({ id, ...args, cwd: args.cwd || workspaceDir }),
       });
       const meta = await tx.doc(RoleMetaDoc, convId);
-      Object.assign(meta, { role: "orchestrator", workerId: id, orchestrationId: id, requireVerified: false });
+      Object.assign(meta, {
+        role: "orchestrator",
+        workerId: id,
+        orchestrationId: id,
+        preset: args.preset,
+        cwd: args.cwd || workspaceDir,
+        requireVerified: false,
+      });
       const doc = await tx.doc(SwarmDoc);
       doc.orchestrations ||= {};
-      doc.orchestrations[id] = { id, name: cleanName, convId, createdAt: Date.now() };
+      doc.orchestrations[id] = {
+        id,
+        name: args.name,
+        convId,
+        createdAt: now,
+        preset: args.preset,
+        group: args.group,
+        cwd: args.cwd || workspaceDir,
+        repoUrl: args.repoUrl,
+        instructions: args.instructions,
+        ...(args.model ? { model: chosenModel } : {}),
+      };
     }, BACKGROUND_CONTEXT);
-    return { id, name: cleanName, conversationId: convId };
+    return {
+      id,
+      name: args.name,
+      conversationId: convId,
+      preset: args.preset,
+      group: args.group,
+      cwd: args.cwd || workspaceDir,
+      repoUrl: args.repoUrl,
+      instructions: args.instructions,
+      ...(args.model ? { model: chosenModel } : {}),
+    };
+  }
+
+  async function updateNamedOrchestration(id, patch) {
+    if (!id || id === DEFAULT_ORCHESTRATION_ID) throw new Error("Cannot edit default general orchestration");
+    const swarm = await harnessRef.snapshot(SwarmDoc, BACKGROUND_CONTEXT);
+    const existing = swarm?.orchestrations?.[id];
+    if (!existing) throw new Error(`Unknown orchestration: ${id}`);
+    const merged = {
+      name: patch?.name ?? existing.name,
+      preset: patch?.preset ?? existing.preset ?? "custom",
+      group: patch?.group ?? existing.group,
+      cwd: patch?.cwd !== undefined ? patch.cwd : (existing.cwd || ""),
+      repoUrl: patch?.repoUrl !== undefined ? patch.repoUrl : (existing.repoUrl || ""),
+      instructions: patch?.instructions !== undefined ? patch.instructions : (existing.instructions || ""),
+      provider: patch?.provider !== undefined ? patch.provider : existing.model?.provider,
+      modelId: patch?.modelId !== undefined ? patch.modelId : existing.model?.modelId,
+    };
+    const args = validateOrchestrationInput(merged, workspaceDir);
+    const chosenModel = await resolveOrchestrationModel(args.model);
+    if (args.cwd && args.cwd.startsWith(workspaceDir)) {
+      await mkdir(args.cwd, { recursive: true });
+    }
+    await harnessRef.commit(async (tx) => {
+      await configure(tx, existing.convId, {
+        model: chosenModel,
+        thinkingLevel: "max",
+        cwd: args.cwd || workspaceDir,
+        maxTurns: 20,
+        tools: roleToolSet("orchestrator", args.preset),
+        instructions: buildOrchestrationInstructions({ id, ...args, cwd: args.cwd || workspaceDir }),
+      });
+      const meta = await tx.doc(RoleMetaDoc, existing.convId);
+      Object.assign(meta, {
+        role: "orchestrator",
+        workerId: id,
+        orchestrationId: id,
+        preset: args.preset,
+        cwd: args.cwd || workspaceDir,
+        requireVerified: false,
+      });
+      const doc = await tx.doc(SwarmDoc);
+      const nextOrch = {
+        ...doc.orchestrations[id],
+        name: args.name,
+        preset: args.preset,
+        group: args.group,
+        cwd: args.cwd || workspaceDir,
+        repoUrl: args.repoUrl,
+        instructions: args.instructions,
+      };
+      if (args.model) nextOrch.model = chosenModel;
+      else delete nextOrch.model;
+      doc.orchestrations[id] = nextOrch;
+    }, BACKGROUND_CONTEXT);
+    return {
+      ok: true,
+      id,
+      name: args.name,
+      conversationId: existing.convId,
+      preset: args.preset,
+      group: args.group,
+      cwd: args.cwd || workspaceDir,
+      repoUrl: args.repoUrl,
+      instructions: args.instructions,
+    };
   }
 
   async function createPersistentWorker(orchestrationId, input) {
     const args = validateWorkerInput(input);
+    let targetCwd = workspaceDir;
     if (orchestrationId !== DEFAULT_ORCHESTRATION_ID) {
       const snap = await harnessRef.snapshot(SwarmDoc, BACKGROUND_CONTEXT);
-      if (!snap?.orchestrations?.[orchestrationId]) throw new Error(`Unknown orchestration: ${orchestrationId}`);
+      const orch = snap?.orchestrations?.[orchestrationId];
+      if (!orch) throw new Error(`Unknown orchestration: ${orchestrationId}`);
+      if (orch.cwd) targetCwd = orch.cwd;
     }
     const workers = await listWorkersSnapshot();
     if (workers.filter((w) => w.orchestrationId === orchestrationId).length >= 25) throw new Error("Worker limit reached (25 per orchestration)");
@@ -429,13 +611,13 @@ export async function openSwarmDaemon({
       await configure(tx, convId, {
         model: mRef,
         thinkingLevel: "max",
-        cwd: workspaceDir,
+        cwd: targetCwd,
         maxTurns: args.role === "coder" ? 40 : 16,
         tools: roleToolSet(args.role),
         instructions: ROLE_INSTRUCTIONS[args.role] || ROLE_INSTRUCTIONS.coder,
       });
       const meta = await tx.doc(RoleMetaDoc, convId);
-      Object.assign(meta, { role: args.role, workerId, orchestrationId, requireVerified });
+      Object.assign(meta, { role: args.role, workerId, orchestrationId, cwd: targetCwd, requireVerified });
       if (args.mode === "recurring") {
         taskId = await tx.createTask(ForeverWorkTask, { workerId }, {
           ownership: { kind: "conversation" }, conversationId: ROOT_CONVERSATION_ID, background: true,
@@ -495,6 +677,7 @@ export async function openSwarmDaemon({
       const requireVerified = args.requireVerified ?? role === "coder";
       const parentMeta = await api.snapshot(RoleMetaDoc, api.conversationId, context);
       const orchestrationId = parentMeta?.orchestrationId || DEFAULT_ORCHESTRATION_ID;
+      const targetCwd = parentMeta?.cwd || workspaceDir;
       let convId;
       await api.commit(async (tx) => {
         const c = await tx.createConversation({ ownership: { kind: "ownerless" } });
@@ -502,7 +685,7 @@ export async function openSwarmDaemon({
         await configure(tx, convId, {
           model: mRef,
           thinkingLevel: "max",
-          cwd: workspaceDir,
+          cwd: targetCwd,
           maxTurns: role === "coder" ? 40 : 16,
           tools: roleToolSet(role),
           instructions: ROLE_INSTRUCTIONS[role] || ROLE_INSTRUCTIONS.coder,
@@ -511,6 +694,7 @@ export async function openSwarmDaemon({
         rDoc.role = role;
         rDoc.workerId = args.workerId;
         rDoc.orchestrationId = orchestrationId;
+        rDoc.cwd = targetCwd;
         rDoc.requireVerified = requireVerified;
 
         const sDoc = await tx.doc(SwarmDoc);
@@ -533,7 +717,7 @@ export async function openSwarmDaemon({
       await handle.submit(
         {
           type: "input",
-          content: `[WORKER_ID=${args.workerId} | ROLE=${role} | WORKSPACE=${workspaceDir}]\n${args.brief}`,
+          content: `[WORKER_ID=${args.workerId} | ROLE=${role} | WORKSPACE=${targetCwd}]\n${args.brief}`,
         },
         context,
       );
@@ -802,6 +986,58 @@ export async function openSwarmDaemon({
     },
   });
 
+  const listAgentsTool = defineTool({
+    name: "list_agents",
+    description: "List all durable Agent-Orchestrators (General, repo owners, marketers, security reviewers) with id, name, group, preset, cwd, and state.",
+    replay: "safe",
+    parameters: { type: "object", properties: {} },
+    async execute() {
+      const agents = await listOrchestrationsSnapshot();
+      return { output: [{ type: "text", text: JSON.stringify(agents) }] };
+    },
+  });
+
+  const askAgentTool = defineTool({
+    name: "ask_agent",
+    description: "Delegate a task or question to another Agent-Orchestrator by id or name (e.g. 'security-review-agent', 'linkedin-marketer', 'nuri-website', 'general'). Queues non-blocking into its durable conversation and logs on AgentBus.",
+    replay: "safe",
+    parameters: {
+      type: "object",
+      properties: {
+        target: { type: "string", description: "Target agent orchestration id or name (case-insensitive)." },
+        brief: { type: "string", description: "Concrete request, file paths, or context for the target agent." },
+      },
+      required: ["target", "brief"],
+    },
+    async execute(args, api, context) {
+      const callerMeta = await api.snapshot(RoleMetaDoc, api.conversationId, context);
+      const fromId = callerMeta?.workerId || "lead";
+      const needle = String(args.target || "").trim().toLowerCase();
+      const all = await listOrchestrationsSnapshot();
+      const target = all.find((a) => a.id.toLowerCase() === needle || a.name.toLowerCase() === needle);
+      if (!target) {
+        return { output: [{ type: "text", text: JSON.stringify({ delegated: false, error: `Unknown agent: ${args.target}` }) }] };
+      }
+      if (target.conversationId === api.conversationId) {
+        return { output: [{ type: "text", text: JSON.stringify({ delegated: false, error: "Cannot delegate to self" }) }] };
+      }
+      const body = String(args.brief || "").trim();
+      bus.send({ from: fromId, to: target.id, topic: "AGENT_DELEGATE", body });
+      const conv = await harnessRef.conversation(target.conversationId, BACKGROUND_CONTEXT);
+      await conv.submit(
+        {
+          type: "input",
+          content: `[DELEGATED FROM ${fromId}]\n${body}\n\n(Reply via \`bus_send\` to \`${fromId}\` when finished.)`,
+        },
+        BACKGROUND_CONTEXT,
+      );
+      harnessRef.resume();
+      return {
+        output: [{ type: "text", text: JSON.stringify({ delegated: true, targetId: target.id, targetName: target.name, conversationId: target.conversationId }) }],
+      };
+    },
+  });
+
   const scheduleForeverTool = defineTool({
     name: "schedule_forever_agent",
     description: "Start a durable `sleepUntil` forever-agent (`logs`, `support`, `social`) gated by System-1 Jev triage.",
@@ -919,7 +1155,7 @@ export async function openSwarmDaemon({
                     'elif [ -f pyproject.toml ] || [ -f pytest.ini ]; then pytest -q || exit 1; ran=1; fi; fi; ' +
                     'if [ "$ran" -eq 0 ] && [ "$srcs" -gt 0 ]; then echo "HARD GATE: zero test files found/executed for $srcs source file(s)" >&2; exit 1; fi',
                 ],
-                { cwd: workspaceDir, timeout: 45_000, env: { ...process.env, NODE_TEST_CONTEXT: undefined } },
+                { cwd: meta?.cwd || workspaceDir, timeout: 45_000, env: { ...process.env, NODE_TEST_CONTEXT: undefined } },
               );
               yieldRetries.delete(gateKey);
               yieldRetries.delete(api.conversationId);
@@ -927,7 +1163,7 @@ export async function openSwarmDaemon({
               yieldRetries.set(gateKey, prevHard + 1);
               const out = `${err?.stdout || ""}\n${err?.stderr || err?.message || err}`.trim().slice(-1200);
               return {
-                continue: `HARD TEST GATE FAILED — you claimed \`Verified: PASS\`, but automated syntax/unit tests failed in \`${workspaceDir}\`. Fix every failure and re-verify before finishing:\n${out}`,
+                continue: `HARD TEST GATE FAILED — you claimed \`Verified: PASS\`, but automated syntax/unit tests failed in \`${meta?.cwd || workspaceDir}\`. Fix every failure and re-verify before finishing:\n${out}`,
               };
             }
           }
@@ -972,6 +1208,8 @@ export async function openSwarmDaemon({
       requestReviewTool,
       readSiblingTool,
       listWorkersTool,
+      listAgentsTool,
+      askAgentTool,
       busSendTool,
       busInboxTool,
       saveDraftTool,
@@ -1372,6 +1610,7 @@ export async function openSwarmDaemon({
     },
 
     createOrchestration: createNamedOrchestration,
+    updateOrchestration: updateNamedOrchestration,
     listOrchestrations: listOrchestrationsSnapshot,
     createOrchestrationWorker: createPersistentWorker,
 

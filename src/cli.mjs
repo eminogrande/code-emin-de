@@ -60,7 +60,11 @@ export async function startUnixSocketServer({
       }
       if (req.method === "POST" && url.pathname === "/orchestrations") {
         const body = await readJsonBody(req);
-        return send(201, await daemon.createOrchestration(body.name));
+        return send(201, await daemon.createOrchestration(body));
+      }
+      if (req.method === "POST" && url.pathname === "/orchestration-update") {
+        const body = await readJsonBody(req);
+        return send(200, await daemon.updateOrchestration(body.id, body));
       }
       if (req.method === "POST" && url.pathname === "/orchestration-workers") {
         const body = await readJsonBody(req);

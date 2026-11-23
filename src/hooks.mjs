@@ -19,7 +19,12 @@ export const DESTRUCTIVE_BASH_RE =
   /(?:\brm\s+-[a-z]*r[a-z]*f[a-z]*\s+\/(?:\s|$|[;&|])|\brm\s+-[a-z]*f[a-z]*r[a-z]*\s+\/(?:\s|$|[;&|])|\bgit\s+push\s+(?:--force|-f|--delete)\b|\bgit\s+push\s+\S+\s+\+|\bgit\s+reset\s+--hard\b|\bmkfs\.|\bdd\s+if=.*of=\/dev\/|\bcurl\b.*\|\s*(?:ba)?sh\b|\b(?:authorized_keys|sshd_config|00-nuri-smartcard)\b|\bufw\s+disable\b)/i;
 
 export const OUTBOUND_SEND_RE =
-  /\b(sendmail|postfix|smtp|api\.resend\.com|api\.sendgrid\.com|api\.twitter\.com\/2\/tweets|x\.com\/i\/api)\b/i;
+  /\b(sendmail|postfix|smtp|api\.resend\.com|api\.sendgrid\.com|api\.twitter\.com\/2\/tweets|x\.com\/i\/api|api\.linkedin\.com\/(?:v2|rest)\/(?:ugcPosts|posts)|open\.tiktokapis\.com\/v2\/post)\b/i;
+
+export const SWARM_CTL_DEPLOY_RE =
+  /\bswarm-ctl\s+(?:apply|reload|reload-web|pull|rollback)\b/i;
+
+export const GIT_PUSH_RE = /\bgit\s+push\b/i;
 
 export const SUBAGENT_DEPLOY_RE =
   /\b(swarm-ctl\s+(?:apply|reload|reload-web|pull|rollback)|git\s+push)\b/i;
@@ -233,13 +238,14 @@ export function createBuiltinGuardHooks({
   const hooks = [
     {
       id: "readonly-role-guard",
-      description: "Blocks file writes/edits for read-only roles (btw, reviewer, planner) and bash for /btw side-chat",
+      description: "Blocks file writes/edits for read-only roles (btw, reviewer, planner) and security-preset orchestrators, and bash for /btw side-chat",
       priority: 10,
       events: ["beforeTool"],
       beforeTool(call, { meta }) {
         const role = meta?.role || "lead";
-        if (READONLY_ROLES.has(role) && (call.name === "write" || call.name === "edit")) {
-          return { block: `Role '${role}' is strictly read-only.` };
+        const isSecurityOrch = role === "orchestrator" && meta?.preset === "security";
+        if ((READONLY_ROLES.has(role) || isSecurityOrch) && (call.name === "write" || call.name === "edit")) {
+          return { block: `Role '${isSecurityOrch ? "security-orchestrator" : role}' is strictly read-only.` };
         }
         if (role === "btw" && call.name === "bash") {
           return { block: "Side-chat (/btw) cannot execute shell commands." };
@@ -277,14 +283,21 @@ export function createBuiltinGuardHooks({
     },
     {
       id: "subagent-deploy-guard",
-      description: "Prevents subagents from running swarm-ctl apply/reload/rollback or git push directly",
+      description: "Prevents subagents from running swarm-ctl apply/reload/rollback or git push directly (repo/ops orchestrators may git push their own repo)",
       priority: 40,
       events: ["beforeTool"],
       beforeTool(call, { meta }) {
         const role = meta?.role || "lead";
         if (call.name !== "bash" || role === "lead") return;
         const cmd = String(call.arguments?.command || "");
-        if (SUBAGENT_DEPLOY_RE.test(cmd)) {
+        if (SWARM_CTL_DEPLOY_RE.test(cmd)) {
+          return {
+            block:
+              "Only General Lead may run `swarm-ctl apply/reload/pull/rollback`; notify Lead via `bus_send` once tests pass.",
+          };
+        }
+        const canPushRepo = role === "orchestrator" && (meta?.preset === "repo" || meta?.preset === "ops");
+        if (!canPushRepo && GIT_PUSH_RE.test(cmd)) {
           return {
             block:
               "Subagents must not run `swarm-ctl apply/reload` or `git push` directly; notify Lead via `bus_send` once tests pass.",
@@ -294,14 +307,15 @@ export function createBuiltinGuardHooks({
     },
     {
       id: "draft-only-outbound-guard",
-      description: "Blocks outbound email/SMTP/X API shell sends for draft-only roles (support, social)",
+      description: "Blocks outbound email/SMTP/social API shell sends for draft-only roles (support, social, marketing preset)",
       priority: 50,
       events: ["beforeTool"],
       beforeTool(call, { meta }) {
         const role = meta?.role || "lead";
         if (call.name !== "bash") return;
         const cmd = String(call.arguments?.command || "");
-        if ((role === "support" || role === "social") && OUTBOUND_SEND_RE.test(cmd)) {
+        const isDraftOnly = role === "support" || role === "social" || (role === "orchestrator" && meta?.preset === "marketing");
+        if (isDraftOnly && OUTBOUND_SEND_RE.test(cmd)) {
           return { block: `Role '${role}' is draft-only; outbound sending is strictly prohibited.` };
         }
       },

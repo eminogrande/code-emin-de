@@ -5,10 +5,14 @@ import { join } from "node:path";
 import test from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import { openSwarmDaemon } from "../src/daemon.mjs";
+import { createBuiltinGuardHooks, HookRegistry } from "../src/hooks.mjs";
 import {
+  AGENT_PRESETS,
   MIN_WORKER_INTERVAL_MS,
   nextRunAt,
   publicOrchestration,
+  resolveSafeAgentCwd,
+  validateOrchestrationInput,
   validateOrchestrationName,
   validateWorkerInput,
 } from "../src/orchestrations.mjs";
@@ -109,6 +113,60 @@ test("durable scheduler executes recurring work and pause prevents submissions",
     assert.equal((await daemon.listWorkers()).find((w) => w.id === worker.id).runCount, before);
     assert.equal((await daemon.readTranscript(worker.conversationId, 10)).filter((e) => e.role === "user").length, 1);
     await assert.rejects(() => daemon.createOrchestrationWorker("missing", { name: "x", goal: "x" }), /Unknown orchestration/);
+  } finally {
+    await daemon.close();
+    rt.faux.unregister?.();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("typed agent-orchestrators: presets, safe cwd, update persistence, and preset guard hooks", async () => {
+  const root = await mkdtemp(join(tmpdir(), "orchestrations-presets-"));
+  const ws = join(root, "workspace");
+  assert.ok(AGENT_PRESETS.repo && AGENT_PRESETS.marketing && AGENT_PRESETS.security);
+  assert.equal(resolveSafeAgentCwd("nuri-website", ws), join(ws, "nuri-website"));
+  assert.throws(() => resolveSafeAgentCwd("../../etc", ws), /inside/);
+  assert.throws(() => validateOrchestrationInput({ name: "Bad", preset: "nope" }, ws), /Unknown preset/);
+  assert.throws(() => validateOrchestrationInput({ name: "Bad", repoUrl: "javascript:alert(1)" }, ws), /repoUrl/);
+
+  // Preset guard hooks: security=readonly, marketing=draft-only, repo=git push ok (never force / never swarm-ctl)
+  const reg = new HookRegistry(createBuiltinGuardHooks());
+  assert.ok((await reg.runBeforeTool({ name: "edit", arguments: {} }, { meta: { role: "orchestrator", preset: "security" } }))?.block);
+  assert.ok((await reg.runBeforeTool({ name: "bash", arguments: { command: "curl https://api.linkedin.com/v2/ugcPosts" } }, { meta: { role: "orchestrator", preset: "marketing" } }))?.block);
+  assert.ok((await reg.runBeforeTool({ name: "bash", arguments: { command: "curl https://open.tiktokapis.com/v2/post/publish" } }, { meta: { role: "orchestrator", preset: "marketing" } }))?.block);
+  assert.equal(await reg.runBeforeTool({ name: "bash", arguments: { command: "git push origin preview" } }, { meta: { role: "orchestrator", preset: "repo" } }), undefined);
+  assert.ok((await reg.runBeforeTool({ name: "bash", arguments: { command: "git push --force origin main" } }, { meta: { role: "orchestrator", preset: "repo" } }))?.block);
+  assert.ok((await reg.runBeforeTool({ name: "bash", arguments: { command: "sudo /usr/local/bin/swarm-ctl apply" } }, { meta: { role: "orchestrator", preset: "repo" } }))?.block);
+  assert.ok((await reg.runBeforeTool({ name: "bash", arguments: { command: "git push origin main" } }, { meta: { role: "coder" } }))?.block);
+
+  const rt = fakeRuntime(root);
+  let daemon = await openSwarmDaemon(rt);
+  try {
+    const repo = await daemon.createOrchestration({
+      name: "nuri-website",
+      preset: "repo",
+      cwd: "nuri-website",
+      repoUrl: "https://github.com/nuri-com/nuri-website",
+      instructions: "Push preview for staging GH Actions.",
+    });
+    assert.equal(repo.preset, "repo");
+    assert.equal(repo.group, "Repos");
+    assert.equal(repo.cwd, join(ws, "nuri-website"));
+
+    const mkt = await daemon.createOrchestration({ name: "linkedin-marketer", preset: "marketing" });
+    assert.equal(mkt.group, "Marketing");
+
+    await daemon.updateOrchestration(mkt.id, { group: "Growth", instructions: "Weekly LinkedIn drafts only." });
+    await daemon.close();
+
+    daemon = await openSwarmDaemon(rt);
+    const list = await daemon.listOrchestrations();
+    const persistedRepo = list.find((o) => o.id === repo.id);
+    const persistedMkt = list.find((o) => o.id === mkt.id);
+    assert.equal(persistedRepo.cwd, join(ws, "nuri-website"));
+    assert.equal(persistedRepo.repoUrl, "https://github.com/nuri-com/nuri-website");
+    assert.equal(persistedMkt.group, "Growth");
+    assert.equal(persistedMkt.instructions, "Weekly LinkedIn drafts only.");
   } finally {
     await daemon.close();
     rt.faux.unregister?.();

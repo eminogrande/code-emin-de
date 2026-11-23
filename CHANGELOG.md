@@ -7,6 +7,15 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ## Unreleased
 
+### Features & Fixes (2026-11-22)
+
+- **Typed Agent-Orchestrators, cross-agent delegation, and `nuri-website` repo workflow (`src/orchestrations.mjs`, `src/daemon.mjs`, `src/hooks.mjs`, `src/cli.mjs`, `src/web.mjs`, `test/orchestrations.test.mjs`):**
+  - Upgraded named orchestrations into typed Agent-Orchestrators (`repo`, `marketing`, `security`, `ops`, `custom`) with `group`, workspace-contained `cwd` (inherited by all spawned workers and the hard test gate), `repoUrl`, custom `instructions`, and in-place updates (`POST /orchestration-update` / `POST /api/orchestration-update`).
+  - Added preset-aware guardrails in `src/hooks.mjs`: `security` preset enforces `readonly-role-guard`, `marketing` preset enforces `draft-only-outbound-guard` (including LinkedIn/TikTok publish endpoints), and `repo`/`ops` presets permit non-force `git push` (so repo orchestrators can push to GitHub/GitHub Actions) while still blocking `swarm-ctl` self-deploy and destructive force-pushes.
+  - Added `list_agents` and `ask_agent` tools so specialist orchestrators (`General`, `nuri-website`, `linkedin-marketer`, `tiktok-marketer`, `security-review-agent`) can delegate across agents via `AgentBus` + durable queues.
+  - Grouped the left sidebar in `src/web.mjs` by domain (`Repos`, `Marketing`, `Security`, `Ops`, `Agents`) with preset badges, expanded `+ Add agent` options, and an `Edit selected agent` drawer.
+  - Connected `nuri-com/nuri-website` on the VPS (`/opt/pi-durable-swarm/workspace/nuri-website`) via a dedicated single-repo SSH deploy key and created the live `nuri-website` `repo` Agent-Orchestrator for editing and pushing to GitHub Actions.
+
 ### Fixes & Models (2026-11-22)
 
 - **Transparent favicon:** added an inline SVG 🤔 favicon with no background rectangle to both login and chat, avoiding another static asset/request.

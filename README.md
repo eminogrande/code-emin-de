@@ -322,12 +322,12 @@ Catalog costs are declared `0` because the endpoint is free; labels say *free ro
 skip cross-provider failover, so the router's real error (quota, outage) is shown
 instead of a silent downgrade.
 
-### Durable Orchestrations & Sidebar Layout
+### Typed Agent-Orchestrators & Grouped Sidebar
 
-**WHY:** one global Lead and a flat worker list cannot represent several independent long-lived jobs.
-Each named orchestration owns a separate durable Lead conversation. The Solarized design stays intact:
-the left sidebar lists `General` plus user-created orchestrations; selecting one switches its transcript
-and workers. The right sidebar creates and controls that orchestration's workers.
+**WHY:** one global Lead and a flat list cannot cleanly separate repo owners (`nuri-website`), draft-only marketers (`linkedin-marketer`, `tiktok-marketer`), and read-only security auditors (`security-review-agent`).
+Each named orchestration is a durable **Agent-Orchestrator** with a preset (`repo`, `marketing`, `security`, `ops`, `custom`), `group`, workspace-contained `cwd` (automatically inherited by every worker it spawns), optional `repoUrl`, and custom `instructions`.
+Preset guardrails are deterministic (`src/hooks.mjs`): `security` is strictly read-only, `marketing` is draft-only (blocks email/X/LinkedIn/TikTok publish APIs), and `repo`/`ops` orchestrators may run non-force `git push` to trigger GitHub Actions while `swarm-ctl` self-deploy stays exclusive to `General`.
+Agents discover and delegate across domains via `list_agents` and `ask_agent`. The Solarized left sidebar groups agents by domain (`Repos`, `Marketing`, `Security`, `Ops`, `Agents`) with in-place editing; the right sidebar manages that agent's one-shot and recurring workers.
 
 - **One task:** a persistent worker conversation runs immediately and remains available for `Run now`.
 - **Recurring:** durable `swarm.forever_work` uses `sleepUntil`: **zero model tokens while sleeping**,
