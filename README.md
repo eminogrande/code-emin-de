@@ -258,7 +258,7 @@ const daemon = await openSwarmDaemon({
 
 ## 7. Open-Weights Role Roster & Hard Invariants
 
-Configured in [`src/models.mjs`](src/models.mjs) (`ROLE_MODELS` + `ROLE_THINKING`, all overrideable via env vars). Orchestrators/planners/reviewers default to **`thinkingLevel: "max"`**, while `coder` workers, recurring jobs, watchers, support, and `/btw` default to **`"low"`** for fast execution. Setting `PAYMENTREQUIRED_FAILOVER=1` enables per-model cooldown failover from subscription router `429`/5xx into `llmgateway` → `allmodels` (DeepSeek abliterated) → Tier-3 `local-llama`:
+Configured in [`src/models.mjs`](src/models.mjs) (`ROLE_MODELS` + `ROLE_THINKING`, all overrideable via env vars). Orchestrators/planners/reviewers default to **`thinkingLevel: "max"`**, while `coder` workers, recurring jobs, watchers, support, and `/btw` default to **`"low"`** for fast execution. Setting `PAYMENTREQUIRED_FAILOVER=1` enables per-model cooldown failover across remaining live subscription/router buckets (`gemini-4-neon-xhigh` → `claude-opus-5-5-high` → `gemini-4-argon-high` → `claude-sonnet-5-5-high` → `deepseek-v4.1-flash-abliterated`) before falling back to cheap `llmgateway/deepseek-v4.1-flash-uncensored` → `allmodels` (DeepSeek abliterated) → Tier-3 `local-llama`:
 
 | Role | Default Open-Weights Model | Tools & Invariant |
 | :--- | :--- | :--- |

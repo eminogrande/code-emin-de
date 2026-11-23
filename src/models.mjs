@@ -156,10 +156,18 @@ export const ROLE_THINKING = {
   btw: process.env.THINKING_BTW || "low",
 };
 
+export const PAYMENTREQUIRED_SUB_FALLBACK_ORDER = Object.freeze([
+  "gemini-4-neon-xhigh",
+  "claude-opus-5-5-high",
+  "gemini-4-argon-high",
+  "claude-sonnet-5-5-high",
+  "deepseek-v4.1-flash-abliterated",
+]);
+
 export const PAYMENTREQUIRED_TO_LLMGATEWAY_MAP = {
-  "k3.1-pro": "kimi-k3.1-pro",
-  "k3.1-pro-highspeed": "kimi-k3.1-pro",
-  "k3": "kimi-k3.1-pro",
+  "k3.1-pro": "deepseek-v4.1-flash-uncensored",
+  "k3.1-pro-highspeed": "deepseek-v4.1-flash-uncensored",
+  "k3": "deepseek-v4.1-flash-uncensored",
   "kimi-for-coding": "deepseek-v4.1-flash-uncensored",
   "kimi-for-coding-highspeed": "deepseek-v4.1-flash-uncensored",
   "deepseek-v4.1-flash-abliterated": "deepseek-v4.1-flash-uncensored",
@@ -238,6 +246,14 @@ export function attachOpenWeightsFailover(models, { cooldownMs = 5 * 60_000, loc
         Boolean(process.env.ALLMODELS_API_KEY) &&
         (!process.env.LLMGATEWAY_API_KEY || Date.now() < llmgatewayTrippedUntil));
     if (!skipPrimary) push(model);
+    if (model?.provider === "paymentrequired" && process.env.ROUTER_PAYMENTREQUIRED_API_KEY) {
+      // Try other non-cooled subscription/router buckets BEFORE falling back to paid per-token gateways
+      for (const altId of PAYMENTREQUIRED_SUB_FALLBACK_ORDER) {
+        if (altId === model.id) continue;
+        if (Date.now() < (routerTrippedUntil.get(altId) || 0)) continue;
+        push(models.getModel("paymentrequired", altId));
+      }
+    }
     if (model?.provider === "paymentrequired" && process.env.LLMGATEWAY_API_KEY && Date.now() >= llmgatewayTrippedUntil) {
       const llmMapped = PAYMENTREQUIRED_TO_LLMGATEWAY_MAP[model.id] || "deepseek-v4.1-flash-uncensored";
       push(models.getModel("llmgateway", llmMapped));

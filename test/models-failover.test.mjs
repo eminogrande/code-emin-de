@@ -300,18 +300,26 @@ test("PAYMENTREQUIRED_FAILOVER=1 fails over on 429/cooldown to llmgateway -> all
   process.env.ALLMODELS_API_KEY = "test-all";
   try {
     let routerCalls = 0;
-    const routerFaux = fauxProvider({ provider: "paymentrequired", models: [{ id: "k3.1-pro" }, { id: "kimi-for-coding" }] });
+    const routerFaux = fauxProvider({
+      provider: "paymentrequired",
+      models: [
+        { id: "k3.1-pro" },
+        { id: "kimi-for-coding" },
+        { id: "gemini-4-neon-xhigh" },
+      ],
+    });
     routerFaux.setResponses([
       () => {
         routerCalls += 1;
         return fauxAssistantMessage([], { stopReason: "error", errorMessage: "HTTP 429 model_cooldown" });
       },
+      fauxAssistantMessage([fauxText("SUB_FAILOVER_GEMINI")]),
+      fauxAssistantMessage([fauxText("SUB_FAILOVER_GEMINI_2")]),
       fauxAssistantMessage([fauxText("KIMI_CODING_STILL_UP")]),
     ]);
-    const llmFaux = fauxProvider({ provider: "llmgateway", models: [{ id: "kimi-k3.1-pro" }, { id: "deepseek-v4.1-flash-uncensored" }] });
+    const llmFaux = fauxProvider({ provider: "llmgateway", models: [{ id: "deepseek-v4.1-flash-uncensored" }] });
     llmFaux.setResponses([
-      fauxAssistantMessage([fauxText("FAILOVER_OK_1")]),
-      fauxAssistantMessage([fauxText("FAILOVER_OK_2")]),
+      fauxAssistantMessage([fauxText("PAID_SHOULD_NOT_BE_HIT_WHILE_SUB_UP")]),
     ]);
     const allFaux = fauxProvider({ provider: "allmodels", models: [{ id: "deepseek/deepseek-v4.1-flash-abliterated" }] });
     const wrapped = createModels();
@@ -321,17 +329,20 @@ test("PAYMENTREQUIRED_FAILOVER=1 fails over on 429/cooldown to llmgateway -> all
     attachOpenWeightsFailover(wrapped, { cooldownMs: 60_000 });
 
     const r1 = await wrapped.completeSimple(wrapped.getModel("paymentrequired", "k3.1-pro"), { messages: [{ role: "user", content: "1" }] }, {});
-    assert.equal(r1.provider, "llmgateway");
+    assert.equal(r1.provider, "paymentrequired");
+    assert.equal(r1.model, "gemini-4-neon-xhigh");
     assert.equal(routerCalls, 1);
 
-    // Second call to same tripped model skips dead router hop immediately
+    // Second call to same tripped model skips dead k3.1-pro hop immediately and hits gemini-4-neon-xhigh
     const r2 = await wrapped.completeSimple(wrapped.getModel("paymentrequired", "k3.1-pro"), { messages: [{ role: "user", content: "2" }] }, {});
-    assert.equal(r2.provider, "llmgateway");
+    assert.equal(r2.provider, "paymentrequired");
+    assert.equal(r2.model, "gemini-4-neon-xhigh");
     assert.equal(routerCalls, 1);
 
     // Different model on router is NOT tripped by k3.1-pro's cooldown
     const r3 = await wrapped.completeSimple(wrapped.getModel("paymentrequired", "kimi-for-coding"), { messages: [{ role: "user", content: "3" }] }, {});
     assert.equal(r3.provider, "paymentrequired");
+    assert.equal(r3.model, "kimi-for-coding");
   } finally {
     if (prevFlag === undefined) delete process.env.PAYMENTREQUIRED_FAILOVER;
     else process.env.PAYMENTREQUIRED_FAILOVER = prevFlag;

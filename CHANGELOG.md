@@ -35,6 +35,9 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ### Features & Fixes (2026-11-23)
 
+- **Subscription-chain failover before paid tokens & switch off exhausted Kimi weekly limit (`src/models.mjs`, `test/models-failover.test.mjs`, VPS `.env`):**
+  - Updated `PAYMENTREQUIRED_FAILOVER=1` to hop across remaining live subscription/router buckets (`gemini-4-neon-xhigh` → `claude-opus-5-5-high` → `gemini-4-argon-high` → `claude-sonnet-5-5-high` → `deepseek-v4.1-flash-abliterated`) BEFORE touching paid gateways, and changed the paid fallback from expensive `llmgateway/kimi-k3.1-pro` (`$2/$10`) to cheap `llmgateway/deepseek-v4.1-flash-uncensored` → `allmodels/deepseek/deepseek-v4.1-flash-abliterated` → `local-llama`.
+  - Switched live VPS defaults off 7-day-exhausted Kimi (`429`) to `paymentrequired/gemini-4-neon-xhigh` (`max`) for orchestrators/reviewers and `paymentrequired/deepseek-v4.1-flash-abliterated` (`low`) for workers/recurring jobs (saving sub weekly quotas for high-leverage orchestration).
 - **Clarify-first orchestration, live Git branch context, safe GitOps policy, and orchestration archiving (`src/prompts.mjs`, `src/triage.mjs`, `src/daemon.mjs`, `.gitignore`, `test/orchestrations.test.mjs`):**
   - Added a `CLARIFY-FIRST GATE` in `src/prompts.mjs` and narrowed `classifyUserPrompt` (`src/triage.mjs`) so questions and brainstorming stay `single_agent` (answer + clarify first) instead of prematurely spawning coding workers, while ≥2 concrete independent build/fix tasks still auto-fanout in parallel.
   - Injected live `[GIT_CONTEXT: repo=... | branch=... | head=... | dirty=...]` before repo orchestrator turns and codified safe GitOps policy (tests + `CHANGELOG.md`/`README.md` + non-force push to staging/feature branch so Emin manually merges `main` for production deploy).
