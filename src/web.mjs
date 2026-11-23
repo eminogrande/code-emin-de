@@ -1465,13 +1465,6 @@ async function send(steer = false) {
     // clears the composer deck exactly once and revokes its object URLs. Error paths keep
     // the attachments so the user can retry. Runs before rendering so a render throw
     // cannot leave stale thumbnails behind. History thumbnails are unaffected.
-    let deckCleared = false;
-    const acceptSend = () => {
-      if (deckCleared || !imgs.length) return;
-      deckCleared = true;
-      window.chatImages.clear();
-    };
-    if (r.status !== 413 && !(d && d.error)) acceptSend();
     let waitForBackend = false;
     if (r.status === 413) {
       markSettled(true);
@@ -1500,6 +1493,7 @@ async function send(steer = false) {
         applyCot(pending, { thinking: d.thinking, toolCalls: d.toolCalls, live: false });
       }
     }
+    if (d && !d.error && imgs.length) window.chatImages.clear();
     if (!waitForBackend && d && !d.error) {
       const localOnly = d.route === 'command' || d.route === 'btw' || d.route === 'reinforce' || d.route === 'invalid' ||
         (d.conversationId && Number(d.conversationId) !== Number(currentConv));

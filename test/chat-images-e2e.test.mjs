@@ -44,7 +44,7 @@ function png(w = 1, h = 1) {
   ]);
 }
 
-async function bootPage() {
+async function bootPage(chatReply = () => ({ ok: true, text: "done" })) {
   const root = await mkdtemp(join(tmpdir(), "imge2e-"));
   const sockPath = join(root, "swarm.sock");
   const seen = [];
@@ -54,7 +54,8 @@ async function bootPage() {
     req.on("end", () => {
       seen.push({ path: req.url, body: raw ? JSON.parse(raw) : {} });
       if (String(req.url).startsWith("/transcript")) return res.end(JSON.stringify({ conversationId: 1, entries: seen.history || [] }));
-      res.end(JSON.stringify({ ok: true, text: "done" }));
+      const reply = chatReply(seen);
+      res.end(typeof reply === "string" ? reply : JSON.stringify(reply));
     });
   });
   await new Promise((r) => daemon.listen(sockPath, r));
@@ -79,8 +80,9 @@ async function bootPage() {
   vc.on("jsdomError", (e) => errors.push("jsdom: " + e.message));
   const dom = new JSDOM(html, { url: base + "/", runScripts: "dangerously", pretendToBeVisual: true, virtualConsole: vc });
   const w = dom.window;
+  const revoked = [];
   w.URL.createObjectURL = (f) => "blob:" + (f.name || "x");
-  w.URL.revokeObjectURL = () => {};
+  w.URL.revokeObjectURL = (u) => revoked.push(u);
   w.addEventListener("error", (e) => errors.push("pageerror: " + e.message));
   w.addEventListener("unhandledrejection", (e) => errors.push("rejection: " + String(e.reason)));
   // jsdom has no fetch: proxy to the live server, keeping the page's relative URLs.
@@ -106,6 +108,7 @@ async function bootPage() {
     html,
     errors,
     seen,
+    revoked,
     root,
     async close() {
       w.close();
@@ -199,6 +202,110 @@ test("wrong mime paste is rejected client-side and the text still sends", async 
     assert.ok(chat);
     assert.equal(chat.body.images, undefined);
     assert.deepEqual(t.errors, []);
+  } finally {
+    await t.close();
+  }
+});
+
+// Composer clearing contract: the pending deck empties (and revokes its object URLs)
+// as soon as the server ACCEPTS the message — for every accepted response shape —
+// while the sent message keeps its own history thumbnails. Failures keep the deck.
+const deck = (t) => t.w.document.getElementById("pending-images");
+const composerEmpty = (t) => {
+  assert.equal(t.w.chatImages.count(), 0, "pending deck empty");
+  assert.equal(deck(t).hidden, true, "deck hidden");
+  assert.equal(deck(t).querySelectorAll("figure").length, 0, "no thumbnails left");
+  assert.equal(t.revoked.length, 1, "object URL revoked exactly once");
+  assert.equal(t.revoked[0], "blob:Screenshot.png");
+};
+async function pasteAndSend(t, text = "look at this") {
+  paste(t.w, [new t.w.File([png(2, 2)], "Screenshot.png", { type: "image/png" })]);
+  await flush(150);
+  assert.equal(t.w.chatImages.count(), 1);
+  t.w.document.getElementById("q").value = text;
+  enter(t.w);
+  await flush(800);
+}
+
+for (const [name, reply] of [
+  ["text", () => ({ ok: true, text: "done" })],
+  ["html", () => ({ ok: true, text: "done", html: "<p>done</p>" })],
+  ["images", () => ({ ok: true, text: "done", images: ["a".repeat(32)] })],
+  ["202 pending", () => ({ status: "pending" })],
+]) {
+  test(`accepted ${name} response clears the composer deck once and keeps history thumbnails`, async () => {
+    const t = await bootPage(reply);
+    try {
+      await pasteAndSend(t);
+      const chat = t.seen.find((s) => s.path === "/chat");
+      assert.ok(chat, "chat request reached the daemon");
+      assert.equal(chat.body.images.length, 1, "image was sent");
+      composerEmpty(t);
+      // Sent message keeps its own thumbnail: the optimistic node is not the composer deck.
+      const sent = t.w.document.querySelectorAll("#log .himages img");
+      assert.ok(sent.length >= 1, "sent message still shows its thumbnail");
+      assert.match(sent[0].getAttribute("src"), /^data:image\/png;base64,/);
+      assert.deepEqual(t.errors, []);
+    } finally {
+      await t.close();
+    }
+  });
+}
+
+test("HTTP 500 keeps the attachments so the user can retry", async () => {
+  const t = await bootPage(() => ({ error: "model rejected image" }));
+  try {
+    await pasteAndSend(t);
+    assert.equal(t.w.chatImages.count(), 1, "deck preserved on failure");
+    assert.equal(deck(t).hidden, false, "deck still visible");
+    assert.equal(deck(t).querySelectorAll("figure").length, 1, "thumbnail still there");
+    assert.equal(t.revoked.length, 0, "object URL not revoked");
+    assert.match(t.w.document.getElementById("attach-status").textContent, /1 image attached/);
+    assert.deepEqual(t.errors, []);
+  } finally {
+    await t.close();
+  }
+});
+
+test("malformed (non-JSON) accepted response still clears the composer deck", async () => {
+  const t = await bootPage(() => "<html>oops</html>");
+  try {
+    await pasteAndSend(t);
+    composerEmpty(t);
+    assert.deepEqual(t.errors, []);
+  } finally {
+    await t.close();
+  }
+});
+
+test("413 keeps the attachments so the user can retry", async () => {
+  const t = await bootPage(() => ({ error: "Payload too large" }));
+  try {
+    await pasteAndSend(t);
+    assert.equal(t.w.chatImages.count(), 1, "deck preserved on 413");
+    assert.equal(t.revoked.length, 0);
+    assert.deepEqual(t.errors, []);
+  } finally {
+    await t.close();
+  }
+});
+
+test("accepted send still clears the deck when reply rendering throws", async () => {
+  // Regression: cleanup used to sit after the render branches inside try, so a throw
+  // (markdown/CoT render) skipped it and stale thumbnails stayed in the composer.
+  const t = await bootPage(() => ({ ok: true, text: "done", html: "<p>done</p>" }));
+  try {
+    let armed = false;
+    const inner = t.w.fetch;
+    t.w.fetch = (u, o) => { if (String(u).startsWith("/api/chat")) armed = true; return inner(u, o); };
+    t.w.chatRender = (node) => { if (armed && node && node.classList.contains("a")) throw new Error("render boom"); };
+    paste(t.w, [new t.w.File([png(2, 2)], "Screenshot.png", { type: "image/png" })]);
+    await flush(150);
+    assert.equal(t.w.chatImages.count(), 1);
+    t.w.document.getElementById("q").value = "look at this";
+    await t.w.eval("send(false)"); // the deliberate render throw is caught by send()
+    assert.ok(t.seen.find((s) => s.path === "/chat"), "chat request reached the daemon");
+    composerEmpty(t);
   } finally {
     await t.close();
   }

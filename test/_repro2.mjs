@@ -40,6 +40,7 @@ async function boot(){
   
   w.eval(cs);w.eval(is);w.eval([...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]).pop());
   w.document.dispatchEvent(new w.Event("DOMContentLoaded"));
+  w.eval("window.chatRender=function(){throw new Error(\"renderboom\")};");
   w.eval("window.__n=0;const _s=send;send=async function(){window.__n++;console.log(\"SENDCALL\"+window.__n+\" \"+new Error().stack.split(\"\\n\").slice(1,5).join(\" | \"));return _s.apply(null,arguments)};");
   w.eval("const _s=send; window.__n=0; send=async function(...a){window.__n++;console.log(\"SENDCALL\",window.__n);return _s.apply(null,a)};");
   const _f=w.fetch;
