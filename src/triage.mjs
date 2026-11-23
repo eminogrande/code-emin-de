@@ -106,10 +106,10 @@ export async function classifyUserPrompt(promptText, opts = {}) {
       {
         id: "route",
         type: "choice",
-        instructions: "fanout_parallel if user message asks >=2 independent tasks or unrelated questions; single_agent otherwise.",
+        instructions: "fanout_parallel ONLY if user message asks >=2 concrete, independent build/fix tasks to execute now; single_agent for questions, brainstorming, clarifications, or 1 task.",
         choices: [
-          { value: "fanout_parallel", description: "2 or more independent tasks/questions that should spin into parallel background workers." },
-          { value: "single_agent", description: "1 task or tightly coupled follow-up." },
+          { value: "fanout_parallel", description: "2 or more concrete, unambiguous build/fix tasks that should spin into parallel background workers." },
+          { value: "single_agent", description: "Questions, brainstorming, ambiguous ideas, 1 task, or tightly coupled follow-up." },
         ],
       },
     ],
@@ -119,8 +119,8 @@ export async function classifyUserPrompt(promptText, opts = {}) {
   if (picked === "fanout_parallel" || picked === "single_agent") {
     return { route: picked, cleanPrompt: trimmed, confidence: jev.answers[0].confidence ?? 1, source: "jev" };
   }
-  // Deterministic fallback: detect >=2 top-level numbered/bulleted items outside code fences
+  // Deterministic fallback: detect >=2 concrete actionable bulleted/numbered items (ignore pure question items ending with '?')
   const noCode = trimmed.replace(/```[\s\S]*?```/g, "");
-  const items = noCode.match(/^(?:\d+[.)]|[-*])\s+\S+/gm) || [];
+  const items = (noCode.match(/^(?:\d+[.)]|[-*])\s+\S.*$/gm) || []).filter((line) => !/\?\s*$/.test(line.trim()));
   return { route: items.length >= 2 ? "fanout_parallel" : "single_agent", cleanPrompt: trimmed, source: "deterministic" };
 }

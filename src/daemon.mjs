@@ -225,6 +225,21 @@ function roleToolNames(role, preset = "custom") {
   }
 }
 
+async function readGitContext(dir) {
+  if (!dir || !existsSync(join(dir, ".git"))) return null;
+  try {
+    const [{ stdout: branch }, { stdout: head }, { stdout: st }] = await Promise.all([
+      execFileAsync("git", ["-C", dir, "rev-parse", "--abbrev-ref", "HEAD"], { timeout: 2000 }),
+      execFileAsync("git", ["-C", dir, "rev-parse", "--short", "HEAD"], { timeout: 2000 }),
+      execFileAsync("git", ["-C", dir, "status", "--porcelain"], { timeout: 2000 }),
+    ]);
+    const dirty = st.trim() ? st.trim().split("\n").length : 0;
+    return { branch: branch.trim(), head: head.trim(), dirty };
+  } catch {
+    return null;
+  }
+}
+
 function buildOrchestrationInstructions({ id, name, preset, cwd, repoUrl, instructions }) {
   const presetInfo = AGENT_PRESETS[preset] || AGENT_PRESETS.custom;
   const lines = [
@@ -238,7 +253,7 @@ function buildOrchestrationInstructions({ id, name, preset, cwd, repoUrl, instru
   } else if (preset === "security") {
     lines.push("- Security Policy: strictly READ-ONLY audit agent. Never edit files; report concrete file/line findings and severities.");
   } else if (preset === "repo") {
-    lines.push("- Repo Policy: work inside CWD, run repo checks/tests, commit cleanly, and push non-force to GitHub when requested so GitHub Actions deploys.");
+    lines.push("- Repo GitOps Policy: always state exact repo + branch. Run repo tests/build, update `CHANGELOG.md` and `README.md` (when present) on every meaningful change, commit cleanly (no secrets/scratch files), and push non-force to a staging/feature branch (e.g. `preview` or `agent/<task>`) unless the user explicitly approves `main` — let the user merge/promote production on GitHub.");
   }
   if (instructions) lines.push(`\nCustom Agent Brief:\n${instructions}`);
   return lines.join("\n");
@@ -626,6 +641,7 @@ export async function openSwarmDaemon({
         cwd: args.cwd || workspaceDir,
         repoUrl: args.repoUrl,
         instructions: args.instructions,
+        ...(typeof patch?.archived === "boolean" ? { archived: patch.archived } : {}),
       };
       if (args.model) nextOrch.model = chosenModel;
       else delete nextOrch.model;
@@ -1515,11 +1531,11 @@ export async function openSwarmDaemon({
     return summarizeLiveProgress(live);
   }
 
-  async function listOrchestrationsSnapshot() {
+  async function listOrchestrationsSnapshot({ includeArchived = false } = {}) {
     const snap = (await harness.snapshot(SwarmDoc, BACKGROUND_CONTEXT)) || {};
     const all = [
       { id: DEFAULT_ORCHESTRATION_ID, name: "General", convId: ROOT_CONVERSATION_ID, createdAt: 0 },
-      ...Object.values(snap.orchestrations || {}),
+      ...Object.values(snap.orchestrations || {}).filter((o) => includeArchived || !o?.archived),
     ];
     const out = [];
     for (const o of all) {
@@ -1652,12 +1668,14 @@ export async function openSwarmDaemon({
       }
 
       let targetConv = lead;
+      let targetOrch = null;
       const isOrchestrationTarget = targetWorkerId.startsWith("orchestration:");
       if (isOrchestrationTarget) {
         const id = targetWorkerId.slice("orchestration:".length);
         const snap = await harness.snapshot(SwarmDoc, BACKGROUND_CONTEXT);
         const orchestration = snap?.orchestrations?.[id];
         if (!orchestration) throw new Error(`Unknown orchestration: ${id}`);
+        targetOrch = orchestration;
         targetConv = await harness.conversation(orchestration.convId, BACKGROUND_CONTEXT);
         await syncOrchestratorMemory(orchestration.convId, orchestration);
       } else if (targetWorkerId === "lead") {
@@ -1669,10 +1687,15 @@ export async function openSwarmDaemon({
         targetConv = await harness.conversation(w.convId, BACKGROUND_CONTEXT);
       }
 
+      const gitCtx = targetOrch?.cwd ? await readGitContext(targetOrch.cwd) : null;
+      const gitPrefix = gitCtx
+        ? `[GIT_CONTEXT: repo=${targetOrch.name} | branch=${gitCtx.branch} | head=${gitCtx.head} | dirty=${gitCtx.dirty}]\n`
+        : "";
       const promptText =
-        (targetWorkerId === "lead" || isOrchestrationTarget) && routeInfo.route === "fanout_parallel"
-          ? `[ROUTER_HINT: fanout_parallel — spawn separate parallel workers via spawn_worker and return immediately]\n${text}`
-          : text;
+        gitPrefix +
+        ((targetWorkerId === "lead" || isOrchestrationTarget) && routeInfo.route === "fanout_parallel"
+          ? `[ROUTER_HINT: fanout_parallel — spawn separate parallel workers via spawn_worker for each concrete task and return immediately]\n${text}`
+          : text);
       const sub = await targetConv.submit(
         {
           type: "input",

@@ -9,3 +9,4 @@ workspace/
 dist/
 __pycache__/
 bench/harbor-emin/source.tar
+test/_repro*

@@ -29,6 +29,10 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ### Features & Fixes (2026-11-23)
 
+- **Clarify-first orchestration, live Git branch context, safe GitOps policy, and orchestration archiving (`src/prompts.mjs`, `src/triage.mjs`, `src/daemon.mjs`, `.gitignore`, `test/orchestrations.test.mjs`):**
+  - Added a `CLARIFY-FIRST GATE` in `src/prompts.mjs` and narrowed `classifyUserPrompt` (`src/triage.mjs`) so questions and brainstorming stay `single_agent` (answer + clarify first) instead of prematurely spawning coding workers, while ≥2 concrete independent build/fix tasks still auto-fanout in parallel.
+  - Injected live `[GIT_CONTEXT: repo=... | branch=... | head=... | dirty=...]` before repo orchestrator turns and codified safe GitOps policy (tests + `CHANGELOG.md`/`README.md` + non-force push to staging/feature branch so Emin manually merges `main` for production deploy).
+  - Added `archived: true` support on orchestrations (`listOrchestrations` hides archived sessions while preserving SQLite history), archived the 4 legacy repoless sessions on VPS, and ignored `test/_repro*` scratch files in `.gitignore`.
 - **Fixed cross-agent OptMem (`src/optmem.mjs`, `src/hooks.mjs`, `src/daemon.mjs`, `test/hooks.test.mjs`, `test/orchestrations.test.mjs`):**
   - Serialized all OptMem calls (`init`/`wake`/`note`/`recall`/`zoom`) through an internal promise queue + monotonic version counter in `src/optmem.mjs` so concurrent writes from multiple agents never race on `.lock` or `LOG.txt`.
   - Allowed named orchestrators (`role === "orchestrator"`) to call `memory_note` (auto-tagging notes with `[<AgentName>]`) and granted `memory_wake`/`memory_note`/`memory_recall` to all orchestrator presets while keeping subagent workers blocked in `optmem-lead-only-guard`.

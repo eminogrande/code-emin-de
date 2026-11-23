@@ -6,6 +6,7 @@ import test from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import { openSwarmDaemon } from "../src/daemon.mjs";
 import { createBuiltinGuardHooks, HookRegistry } from "../src/hooks.mjs";
+import { classifyUserPrompt } from "../src/triage.mjs";
 import {
   AGENT_PRESETS,
   MIN_WORKER_INTERVAL_MS,
@@ -263,6 +264,17 @@ test("shared OptMem serializes concurrent writes and auto-injects into General a
     assert.match(seenPrompts[0], /SHARED MEMORY \(OptMem, cross-agent\)/);
     assert.match(seenPrompts[0], /preview branch auto-deploys staging/);
     assert.match(seenPrompts[1], /1M context active across frontier models/);
+
+    // Archiving hides repoless/old orchestrations from active list without losing history
+    await daemon.updateOrchestration(repo.id, { archived: true });
+    assert.equal((await daemon.listOrchestrations()).some((o) => o.id === repo.id), false);
+    assert.equal((await daemon.listOrchestrations({ includeArchived: true })).some((o) => o.id === repo.id), true);
+
+    // Triage does not fan out on multi-question brainstorming; still fans out on concrete multi-tasks
+    const qRoute = await classifyUserPrompt("- Should we use preview branch?\n- How does deploy work?", { apiKey: "" });
+    assert.equal(qRoute.route, "single_agent");
+    const tRoute = await classifyUserPrompt("1. Build slug.mjs\n2. Fix clamp.mjs", { apiKey: "" });
+    assert.equal(tRoute.route, "fanout_parallel");
   } finally {
     await daemon.close();
     faux.unregister?.();
