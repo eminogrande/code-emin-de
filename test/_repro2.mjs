@@ -53,5 +53,5 @@ test("real daemon image send", async()=>{const t=await boot();try{
   console.log("count before",Date.now()%100000,t.w.chatImages.count());
   q.value="hi";console.log("COUNT AT DISPATCH",t.w.chatImages.count());const kd=new t.w.KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true});console.log("dispatch",Date.now()%100000);q.dispatchEvent(kd);
   await new Promise(r=>setTimeout(r,9000));
-  console.log("count after",Date.now()%100000,t.w.chatImages.count(),"hidden",t.w.document.getElementById("pending-images").hidden,"revoked",t.revoked.length,"errors",t.errors);
+  console.log("deckhidden",t.w.document.getElementById("pending-images").innerHTML.length);console.log("count after",Date.now()%100000,t.w.chatImages.count(),"hidden",t.w.document.getElementById("pending-images").hidden,"revoked",t.revoked.length,"errors",t.errors);
 }finally{await t.close();}});
