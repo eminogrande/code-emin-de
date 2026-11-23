@@ -39,6 +39,7 @@ async function boot(){
   w.fetch=async(u,o={})=>{const r=await fetch(base+String(u),{...o,headers:{...(o.headers||{}),Cookie:"swarm_s=x"}});if(String(u).startsWith("/api/chat")){const b=JSON.parse(o.body||"{}");console.log("CHAT",r.status,"text=",JSON.stringify(b.text),"imgs=",(b.images||[]).length);}return r;};
   w.eval(cs);w.eval(is);w.eval([...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]).pop());
   w.document.dispatchEvent(new w.Event("DOMContentLoaded"));
+  w.eval("const _s=send; window.__n=0; send=async function(...a){window.__n++;console.log(\"SENDCALL\",window.__n);return _s.apply(null,a)};");
   const _f=w.fetch;
   await new Promise(r=>setTimeout(r,300));
   return {w,revoked,errors,close:async()=>{w.close();web.server.close();await new Promise(r=>daemon.close(r));await rm(root,{recursive:true,force:true});}};
