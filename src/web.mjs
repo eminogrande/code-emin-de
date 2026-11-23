@@ -366,8 +366,6 @@ textarea{width:100%;border:0;outline:0;background:transparent;color:var(--headin
 textarea::placeholder{color:var(--muted);opacity:.65}
 #composer-row{display:flex;gap:.5rem;align-items:flex-start}
 #composer-row textarea{flex:1;min-width:0}
-#attach-btn{flex:none;appearance:none;background:var(--paper-2);color:var(--heading);border:1px solid var(--rule);border-radius:3px;padding:.3rem .6rem;min-height:2.25rem;font:inherit;font-size:.8rem;cursor:pointer}
-#attach-btn:hover,#attach-btn:focus-visible{border-color:var(--accent)}
 #pending-images{display:flex;gap:.5rem;flex-wrap:wrap;padding-bottom:.5rem}
 #pending-images[hidden]{display:none}
 #pending-images figure{margin:0;position:relative;width:5rem;text-align:center}
@@ -453,9 +451,7 @@ textarea::placeholder{color:var(--muted);opacity:.65}
   <form id="f">
     <div id="pending-images" hidden></div>
     <div id="composer-row">
-      <textarea id="q" rows="1" placeholder="Ask… (attach, paste or drop images & files)" autofocus></textarea>
-      <button type="button" id="attach-btn" aria-controls="attach-input">Attach images</button>
-      <input type="file" id="attach-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
+      <textarea id="q" rows="1" placeholder="Message… (paste or drop images & files)" autofocus></textarea>
     </div>
     <p id="attach-status" aria-live="polite"></p>
   </form>
@@ -1547,24 +1543,6 @@ composerForm.addEventListener('submit', (ev) => {
   ev.preventDefault();
   send(busy);
 });
-
-const attachBtn = document.getElementById('attach-btn');
-const attachInput = document.getElementById('attach-input');
-if (attachBtn && attachInput) {
-  attachBtn.onclick = () => attachInput.click();
-  attachInput.onchange = () => {
-    const files = Array.from(attachInput.files || []);
-    if (!files.length) return;
-    try {
-      const transfer = new DataTransfer();
-      for (const file of files) transfer.items.add(file);
-      document.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
-    } catch {
-      window.chatImages?.note('File picker unavailable here; paste or drop the images instead.', true);
-    }
-    attachInput.value = '';
-  };
-}
 
 q.addEventListener('keydown', (ev) => {
   if (ev.key === 'Enter' && !ev.shiftKey) {
