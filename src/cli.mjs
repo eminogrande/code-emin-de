@@ -100,6 +100,7 @@ export async function startUnixSocketServer({
           targetWorkerId: body.targetWorkerId || "lead",
           wait: body.wait !== false,
           images: Array.isArray(body.images) ? body.images : [],
+          requestId: typeof body.requestId === "string" ? body.requestId.slice(0, 200) : undefined,
         });
         return send(200, reply);
       }

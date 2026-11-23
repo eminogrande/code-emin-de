@@ -57,6 +57,7 @@ export const SwarmDoc = defineDoc({
     approvals: [],
     cronJobs: {},
     orchestrations: {}, // named durable Lead conversations; workers point back by orchestrationId
+    parallelRequests: {}, // optional caller requestId -> isolated busy-Lead worker (dedupe across retries)
     leadModelOverride: null, // { provider, modelId } from the chat model dropdown (allowlisted only)
   }),
   checkpointWhen: (_v, _ops, info) => info.deltasSinceBase >= 16,
@@ -481,6 +482,52 @@ export async function openSwarmDaemon({
     },
   });
 
+  // A busy Lead must not swallow an independent new request as steering. Keep its original
+  // user entry in the requester transcript, work in an isolated durable conversation, and
+  // append the answer back passively. This task owns delivery so restart/retry cannot lose it.
+  const ParallelInboxTask = defineTask({
+    name: "swarm.parallel_inbox",
+    version: 1,
+    initial: () => ({ phase: "deliver" }),
+    phases: {
+      async deliver(task, runtime, context) {
+        const { workerId, requesterConvId } = task.input;
+        const swarm = (await runtime.snapshot(SwarmDoc, context)) || { workers: {} };
+        const worker = swarm.workers?.[workerId];
+        if (!worker) throw new Error(`Missing parallel inbox worker: ${workerId}`);
+        const live = await runtime.snapshot(LiveDoc, worker.convId, context);
+        if (live?.run || (!live?.runFailure && !worker.parallelAnswer)) {
+          return runtime.sleepUntil(runtime.now() + 100, { phase: "deliver" }, context);
+        }
+        const entries = await readConversationTranscript(worker.convId, 10);
+        const answer = [...entries].reverse().find((e) => e.role === "assistant" && e.text);
+        const failed = live?.runFailure || answer?.stopReason === "error";
+        const text = failed
+          ? `Parallel request failed (${live?.runFailure?.reason || answer?.errorMessage || "unknown error"}).`
+          : answer?.text || "Parallel request finished without an answer.";
+        const requester = await runtime.conversation(requesterConvId, context);
+        await requester.submit({
+          type: "write",
+          requestId: `parallel-inbox-result-${workerId}`,
+          entry: {
+            kind: "swarm.parallel_result",
+            model: [{ role: "assistant", content: [{ type: "text", text }] }],
+            data: { workerId, conversationId: worker.convId },
+          },
+        }, context);
+        await runtime.commit(async (tx) => {
+          const doc = await tx.doc(SwarmDoc);
+          const w = doc.workers[workerId];
+          if (w) Object.assign(w, { parallelAnswer: text, parallelStatus: failed ? "failed" : "done" });
+          return { status: "terminal", outcome: { status: "completed", result: { workerId, status: failed ? "failed" : "done" } } };
+        }, context);
+      },
+    },
+    async abort(_task, runtime, context) {
+      await runtime.commit(() => ({ status: "terminal", outcome: { status: "aborted" } }), context);
+    },
+  });
+
   // Read full non-truncated transcript of any sibling conversation
   async function readConversationTranscript(convId, maxEntries = 40) {
     if (!harnessRef) return [];
@@ -490,6 +537,9 @@ export async function openSwarmDaemon({
     return ctx.entries.slice(-maxEntries).map((e) => {
       const m = e.model?.[0];
       if (!m) return { id: e.id, kind: e.kind };
+      if (e.kind === "swarm.parallel_result") {
+        return { id: e.id, kind: e.kind, role: "assistant", text: extractAssistantText(m), ...(e.data || {}) };
+      }
       if (m.role === "user") {
         if (typeof m.content === "string") return { id: e.id, role: "user", text: m.content };
         const blocks = m.content || [];
@@ -1283,7 +1333,7 @@ export async function openSwarmDaemon({
 
   const swarmExtension = defineExtension({
     name: "swarm-core",
-    tasks: [ForeverWatchTask, ForeverWorkTask],
+    tasks: [ForeverWatchTask, ForeverWorkTask, ParallelInboxTask],
     tools: [
       spawnWorkerTool,
       requestReviewTool,
@@ -1565,7 +1615,7 @@ export async function openSwarmDaemon({
      * - `steer: true` (`Ctrl+S` live feedback) injects mid-run into Lead or named `targetWorkerId`!
      * - Multi-task prompt gets tagged via System-1 Jev so Lead fans out parallel background workers without blocking!
      */
-    async chat(text, { steer = false, targetWorkerId = "lead", wait = true, images = [] } = {}) {
+    async chat(text, { steer = false, targetWorkerId = "lead", wait = true, images = [], requestId } = {}) {
       const hasImages = Array.isArray(images) && images.length > 0;
       if (text == null || typeof text !== "string" || (!text.trim() && !hasImages)) {
         return {
@@ -1691,6 +1741,65 @@ export async function openSwarmDaemon({
       const gitPrefix = gitCtx
         ? `[GIT_CONTEXT: repo=${targetOrch.name} | branch=${gitCtx.branch} | head=${gitCtx.head} | dirty=${gitCtx.dirty}]\n`
         : "";
+      // Only an actually busy Lead gets transparent isolation. Explicit steering,
+      // direct-worker/orchestration targets, commands and /btw retain their semantics.
+      if (targetWorkerId === "lead" && !steer) {
+        const leadLive = await harness.snapshot(LiveDoc, lead.id, BACKGROUND_CONTEXT);
+        if (leadLive?.run) {
+          const snap = (await harness.snapshot(SwarmDoc, BACKGROUND_CONTEXT)) || {};
+          if (requestId && snap.parallelRequests?.[requestId]) {
+            const prior = snap.parallelRequests[requestId];
+            const w = snap.workers?.[prior.workerId];
+            return { route: "parallel_inbox", status: w?.parallelStatus || "running", text: w?.parallelAnswer || "Started in parallel.", ...prior };
+          }
+          const workers = await listWorkersSnapshot();
+          if (workers.filter((w) => w.orchestrationId === DEFAULT_ORCHESTRATION_ID).length >= 25) {
+            throw new Error("Worker limit reached (25 per orchestration)");
+          }
+          const workerId = `w-inbox-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+          let convId;
+          await harness.commit(async (tx) => {
+            // Admission of the original message is atomic with worker/task creation.
+            await targetConv.submit(tx, {
+              type: "write",
+              requestId: requestId ? `parallel-inbox-${requestId}` : undefined,
+              entry: { kind: "pi.user", model: [{ role: "user", content: modelContent(text) }] },
+            });
+            const c = await tx.createConversation({ ownership: { kind: "ownerless" } });
+            convId = c.id;
+            await configure(tx, convId, {
+              model: roleModels.coder,
+              thinkingLevel: ROLE_THINKING.coder || "low",
+              cwd: workspaceDir,
+              maxTurns: 40,
+              tools: roleToolSet("coder"),
+              instructions: ROLE_INSTRUCTIONS.coder,
+            });
+            const meta = await tx.doc(RoleMetaDoc, convId);
+            Object.assign(meta, { role: "coder", workerId, orchestrationId: DEFAULT_ORCHESTRATION_ID, cwd: workspaceDir, requireVerified: false });
+            const doc = await tx.doc(SwarmDoc);
+            doc.parallelRequests ||= {};
+            doc.workers[workerId] = {
+              workerId, orchestrationId: DEFAULT_ORCHESTRATION_ID, name: workerId, role: "coder",
+              modelId: roleModels.coder.modelId, convId, requireVerified: false, goal: text, mode: "once",
+              enabled: true, runCount: 0, createdAt: Date.now(), parallelInbox: true, parallelStatus: "running",
+              supervisor: { status: "supervising", autoResumes: 0, nextAt: 0 },
+            };
+            if (requestId) doc.parallelRequests[requestId] = { workerId, conversationId: lead.id, workerConversationId: convId };
+            await tx.createTask(ParallelInboxTask, { workerId, requesterConvId: lead.id }, {
+              ownership: { kind: "conversation" }, conversationId: ROOT_CONVERSATION_ID, background: true,
+            });
+          }, BACKGROUND_CONTEXT);
+          const workerConv = await harness.conversation(convId, BACKGROUND_CONTEXT);
+          await workerConv.submit({
+            type: "input", requestId: `parallel-inbox-work-${workerId}`,
+            content: modelContent(`[WORKER_ID=${workerId} | ROLE=coder | WORKSPACE=${workspaceDir}]\nIndependent request from the original Lead conversation. Do not edit shared files unless the request requires it; coordinate via AgentBus before touching files owned by another worker.\n\n${text}`),
+          }, BACKGROUND_CONTEXT);
+          harness.resume();
+          return { route: "parallel_inbox", status: "running", text: "Started in parallel; the result will appear in this conversation.", conversationId: lead.id, workerId, workerConversationId: convId };
+        }
+      }
+
       const promptText =
         gitPrefix +
         ((targetWorkerId === "lead" || isOrchestrationTarget) && routeInfo.route === "fanout_parallel"
@@ -1701,6 +1810,7 @@ export async function openSwarmDaemon({
           type: "input",
           // Real image content blocks: provider sees the actual bytes, not filenames.
           content: modelContent(promptText),
+          ...(requestId ? { requestId } : {}),
           ...(steer ? { whenBusy: "steer" } : {}),
         },
         BACKGROUND_CONTEXT,
