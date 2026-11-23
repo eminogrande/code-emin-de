@@ -391,8 +391,8 @@ textarea::placeholder{color:var(--muted);opacity:.65}
   <div class="sect">
     <h2>Agents &amp; Orchestrators</h2>
     <button type="button" class="tgt" data-target="lead" data-conv="1" aria-current="true">
-      <span class="tname">General</span>
-      <span class="tmeta">main orchestrator</span>
+      <span class="tname">code-emin-de</span>
+      <span class="tmeta tmeta-row"><span class="tbadge">repo</span><span>self-host</span></span>
     </button>
     <div id="targets"></div>
     <details id="edit-orch-box" hidden>

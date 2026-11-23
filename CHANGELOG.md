@@ -35,6 +35,7 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ### Features & Fixes (2026-11-23)
 
+- **Merged root `General` into `code-emin-de` (`src/daemon.mjs`, `src/web.mjs`):** Root orchestrator (`convId: 1`, owns `swarm-ctl` self-deploy) is now labeled and bound directly to `code-emin-de` (`/opt/pi-durable-swarm`, live `[GIT_CONTEXT]`), and the duplicate `code-emin-de` orchestration (`orch-mwp7jfei-dygg`) was archived on VPS so every active sidebar entry is a single real Git repo (`code-emin-de`, `nuri-website`, `router-paymentrequired-com`).
 - **Subscription-chain failover before paid tokens & switch off exhausted Kimi weekly limit (`src/models.mjs`, `test/models-failover.test.mjs`, VPS `.env`):**
   - Updated `PAYMENTREQUIRED_FAILOVER=1` to hop across remaining live subscription/router buckets (`gemini-4-neon-xhigh` → `claude-opus-5-5-high` → `gemini-4-argon-high` → `claude-sonnet-5-5-high` → `deepseek-v4.1-flash-abliterated`) BEFORE touching paid gateways, and changed the paid fallback from expensive `llmgateway/kimi-k3.1-pro` (`$2/$10`) to cheap `llmgateway/deepseek-v4.1-flash-uncensored` → `allmodels/deepseek/deepseek-v4.1-flash-abliterated` → `local-llama`.
   - Switched live VPS defaults off 7-day-exhausted Kimi (`429`) to `paymentrequired/gemini-4-neon-xhigh` (`max`) for orchestrators/reviewers and `paymentrequired/deepseek-v4.1-flash-abliterated` (`low`) for workers/recurring jobs (saving sub weekly quotas for high-leverage orchestration).

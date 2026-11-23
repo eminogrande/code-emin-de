@@ -1610,7 +1610,16 @@ export async function openSwarmDaemon({
   async function listOrchestrationsSnapshot({ includeArchived = false } = {}) {
     const snap = (await harness.snapshot(SwarmDoc, BACKGROUND_CONTEXT)) || {};
     const all = [
-      { id: DEFAULT_ORCHESTRATION_ID, name: "General", convId: ROOT_CONVERSATION_ID, createdAt: 0 },
+      {
+        id: DEFAULT_ORCHESTRATION_ID,
+        name: "code-emin-de",
+        convId: ROOT_CONVERSATION_ID,
+        createdAt: 0,
+        preset: "repo",
+        group: "Repos",
+        cwd: SELF_REPO_DIR,
+        repoUrl: "https://github.com/eminogrande/code-emin-de",
+      },
       ...Object.values(snap.orchestrations || {}).filter((o) => includeArchived || !o?.archived),
     ];
     const out = [];
@@ -1766,9 +1775,11 @@ export async function openSwarmDaemon({
         targetConv = await harness.conversation(w.convId, BACKGROUND_CONTEXT);
       }
 
-      const gitCtx = targetOrch?.cwd ? await readGitContext(targetOrch.cwd) : null;
+      const gitDir = targetOrch?.cwd || (targetWorkerId === "lead" ? SELF_REPO_DIR : "");
+      const gitName = targetOrch?.name || "code-emin-de";
+      const gitCtx = gitDir ? await readGitContext(gitDir) : null;
       const gitPrefix = gitCtx
-        ? `[GIT_CONTEXT: repo=${targetOrch.name} | branch=${gitCtx.branch} | head=${gitCtx.head} | dirty=${gitCtx.dirty}]\n`
+        ? `[GIT_CONTEXT: repo=${gitName} | branch=${gitCtx.branch} | head=${gitCtx.head} | dirty=${gitCtx.dirty}]\n`
         : "";
       // Only an actually busy Lead gets transparent isolation. Explicit steering,
       // direct-worker/orchestration targets, commands and /btw retain their semantics.
