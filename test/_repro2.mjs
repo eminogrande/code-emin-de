@@ -46,7 +46,7 @@ async function boot(){
 test("real daemon image send", async()=>{const t=await boot();try{
   const ev=new t.w.Event("paste",{bubbles:true,cancelable:true});
   ev.clipboardData={items:[{kind:"file",type:"image/png",getAsFile:()=>new t.w.File([png()],"s.png",{type:"image/png"})}],getData:()=>""};
-  const q=t.w.document.getElementById("q");q.focus();q.dispatchEvent(ev);
+  const q=t.w.document.getElementById("q");q.focus();q.dispatchEvent(ev);console.log("LISTENERS",q.onkeydown, t.w.eval("typeof send"));
   await new Promise(r=>setTimeout(r,200));
   console.log("count before",Date.now()%100000,t.w.chatImages.count());
   q.value="hi";console.log("COUNT AT DISPATCH",t.w.chatImages.count());const kd=new t.w.KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true});console.log("dispatch",Date.now()%100000);q.dispatchEvent(kd);
