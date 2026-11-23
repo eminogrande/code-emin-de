@@ -9,6 +9,10 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ### Features & Fixes (2026-11-24)
 
+- **Durable repo classification and in-place frontend binding (`src/orchestrations.mjs`, `src/daemon.mjs`, `test/orchestrations.test.mjs`):**
+  - Derive `Repos` membership from validated durable `cwd`/`repoUrl`/`repo` preset metadata instead of names or a stale sidebar group; generic-workspace agents remain repo-less.
+  - Rebind the existing `Emin Code Frontend` orchestrator to `/opt/pi-durable-swarm` without replacing its id or conversation. Regression coverage verifies repo-bound vs repo-less classification and preservation of agent id/history.
+
 - **Composer attachments clear on accepted send (`src/web.mjs`, `test/chat-images-e2e.test.mjs`):**
   - WHY: after sending a message with a pasted screenshot the thumbnail stayed in the composer, so the user could not tell the image had been sent and could re-send it by accident.
   - Cleanup used to run at the very end of the reply-rendering chain inside `send()`'s `try`, so any throw in the markdown/CoT render branches skipped it and left stale thumbnails and leaked object URLs behind.
