@@ -10,6 +10,21 @@ const page = src.slice(src.indexOf("function renderMinimalChat()"), src.indexOf(
 const html = page.slice(page.indexOf("<!doctype html>"));
 const doc = () => new JSDOM(html).window.document;
 
+test("user bubbles and assistant labels make authorship clear", () => {
+  const style = doc().querySelector("style").textContent;
+  assert.match(style, /\.m\.u\{[^}]*background:var\(--paper-2\)[^}]*border-left:3px solid var\(--accent\)/);
+  assert.match(style, /\.m\.u::before\{content:"You"/);
+  assert.match(style, /\.m\.a::before\{content:"Kimi"/);
+  assert.match(style, /\.m\.a\.err::before\{content:"System"/);
+});
+
+test("tables scroll without splitting words or first-column labels", () => {
+  const style = doc().querySelector("style").textContent;
+  assert.match(style, /\.a table\{[^}]*overflow-x:auto[^}]*max-width:100%/);
+  assert.match(style, /\.a th,\.a td\{[^}]*word-break:normal[^}]*overflow-wrap:normal/);
+  assert.match(style, /\.a th:first-child,\.a td:first-child\{white-space:nowrap\}/);
+});
+
 test("transparent thinking emoji favicon is embedded", () => {
   const icon = doc().querySelector('link[rel="icon"]');
   assert.equal(icon.getAttribute("type"), "image/svg+xml");

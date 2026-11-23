@@ -237,7 +237,11 @@ html,body{margin:0;height:100%;background:var(--paper);color:var(--ink);font:1.1
 body{display:flex;flex-direction:column;max-width:48rem;margin:0 auto;padding:0 1.25rem}
 #log{flex:1;overflow-y:auto;padding:2rem 0 1.25rem;display:flex;flex-direction:column;gap:1.35rem}
 .m{word-break:break-word}
-.m.u{white-space:pre-wrap}
+.m::before{display:block;font-size:.68rem;font-weight:650;letter-spacing:.06em;text-transform:uppercase;margin-bottom:.2rem}
+.m.u{white-space:pre-wrap;background:var(--paper-2);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:.55rem;padding:.55rem .75rem;max-width:88%;align-self:flex-end}
+.m.u::before{content:"You";color:var(--accent)}
+.m.a::before{content:"Kimi";color:var(--muted)}
+.m.a.err::before{content:"System"}
 .a{color:var(--heading)}
 .a>:first-child{margin-top:0}
 .a p,.a ul,.a ol,.a blockquote,.a table,.a .cb,.a .mmd{margin:.55rem 0}
@@ -246,8 +250,9 @@ body{display:flex;flex-direction:column;max-width:48rem;margin:0 auto;padding:0 
 .a ul,.a ol{padding-left:1.4rem}
 .a li{margin:.2rem 0}
 .a blockquote{margin-left:0;padding:.15rem .9rem;border-left:3px solid var(--accent);color:var(--muted)}
-.a table{border-collapse:collapse;font-size:.95em;display:block;overflow-x:auto}
-.a th,.a td{border:1px solid var(--rule);padding:.35rem .6rem;text-align:left}
+.a table{border-collapse:collapse;font-size:.95em;display:block;overflow-x:auto;max-width:100%}
+.a th,.a td{border:1px solid var(--rule);padding:.35rem .6rem;text-align:left;word-break:normal;overflow-wrap:normal}
+.a th:first-child,.a td:first-child{white-space:nowrap}
 .a th{background:var(--paper-2)}
 .a hr{border:0;border-top:1px solid var(--rule);margin:1rem 0}
 .a a{color:var(--accent)}

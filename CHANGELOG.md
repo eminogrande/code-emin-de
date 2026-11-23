@@ -24,6 +24,8 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ### Fixes & Models (2026-11-22)
 
+- **Clear message authorship:** user turns now have a subtle tinted right-aligned **You** bubble; assistant and error turns get **Kimi** / **System** labels without changing rendering or history behavior.
+- **Readable tables:** table cells no longer split words mid-token; first-column labels stay intact and wide tables scroll horizontally instead of crushing columns.
 - **Transparent favicon:** added an inline SVG 🤔 favicon with no background rectangle to both login and chat, avoiding another static asset/request.
 
 - **VPS ownership, SSH remote, and `swarm-ctl` guard (`ops/swarm-ctl`):** Fixed root-owned `/opt/pi-durable-swarm/.git/index` and stray `caddy`-owned image file on `code.emin.de` (`chown -R swarm:swarm`), switched VPS `origin` from HTTPS to `git@github.com:eminogrande/code-emin-de.git` (using `/home/swarm/.ssh/id_ed25519_github`), and added `chown -R swarm:swarm "$REPO/.git"` guards to `swarm-ctl` `apply|reload|reload-web|pull`.
