@@ -1470,6 +1470,18 @@ export async function openSwarmDaemon({
         };
       }
       const trimmed = text.trim();
+      // Build one provider-ready payload for every model route (Lead, workers, and /btw).
+      const modelContent = (promptText) => {
+        const validatedImages = hasImages
+          ? images.map((i) => {
+              const { buf, mimeType } = decodeImage({ data: String(i?.data || ""), mimeType: String(i?.mimeType || "") });
+              return { type: "image", data: buf.toString("base64"), mimeType };
+            })
+          : [];
+        return validatedImages.length
+          ? [...(promptText.trim() ? [{ type: "text", text: promptText }] : []), ...validatedImages]
+          : promptText;
+      };
       if (targetWorkerId === "lead" && !steer) {
         const cmdRes = await handleDeterministicCommand(trimmed, {
           getStatus: getStatusSnapshot,
@@ -1525,7 +1537,7 @@ export async function openSwarmDaemon({
       if (routeInfo.route === "side_chat_readonly" && targetWorkerId === "lead" && !steer) {
         const side = await getBtwConversation();
         const sub = await side.submit(
-          { type: "input", content: `[LIVE SIDE-CHAT /btw]\n${routeInfo.cleanPrompt}` },
+          { type: "input", content: modelContent(`[LIVE SIDE-CHAT /btw]\n${routeInfo.cleanPrompt}`) },
           BACKGROUND_CONTEXT,
         );
         if (!wait) return { route: "btw", submissionId: sub.id, conversationId: side.id };
@@ -1567,24 +1579,11 @@ export async function openSwarmDaemon({
         (targetWorkerId === "lead" || isOrchestrationTarget) && routeInfo.route === "fanout_parallel"
           ? `[ROUTER_HINT: fanout_parallel — spawn separate parallel workers via spawn_worker and return immediately]\n${text}`
           : text;
-      // Real image content blocks: provider sees the actual bytes, not filenames.
-      const validatedImages = hasImages
-        ? images.map((i) => {
-            const { buf, mimeType } = decodeImage({ data: String(i?.data || ""), mimeType: String(i?.mimeType || "") });
-            return { type: "image", data: buf.toString("base64"), mimeType };
-          })
-        : [];
-      const content = validatedImages.length
-        ? [
-            ...(promptText.trim() ? [{ type: "text", text: promptText }] : []),
-            ...validatedImages,
-          ]
-        : promptText;
-
       const sub = await targetConv.submit(
         {
           type: "input",
-          content,
+          // Real image content blocks: provider sees the actual bytes, not filenames.
+          content: modelContent(promptText),
           ...(steer ? { whenBusy: "steer" } : {}),
         },
         BACKGROUND_CONTEXT,

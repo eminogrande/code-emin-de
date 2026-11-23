@@ -63,6 +63,28 @@ test("pasted image reaches the provider as an image block and history keeps only
   }
 });
 
+test("/btw routes the same image bytes to the side-chat model", async () => {
+  const { root, daemon } = await boot();
+  try {
+    const out = await daemon.chat("/btw what is this", { images: [{ mimeType: "image/png", data: DATA }] });
+    assert.ok(!out.error, out.error);
+    assert.equal(out.route, "btw");
+
+    const conv = await daemon.harness.conversation(out.conversationId, { background: true });
+    const ctx = await conv.context({ background: true });
+    const userMsg = ctx.entries.map((e) => e.model?.[0]).find((m) => m?.role === "user");
+    assert.ok(Array.isArray(userMsg.content));
+    assert.match(userMsg.content.find((b) => b.type === "text").text, /what is this/);
+    const img = userMsg.content.find((b) => b.type === "image");
+    assert.equal(img.mimeType, "image/png");
+    assert.equal(img.data, DATA);
+    assert.deepEqual((await daemon.readTranscript(out.conversationId, 10)).find((e) => e.role === "user").images, [imageId(PNG_1x1)]);
+  } finally {
+    await daemon.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("image-only message stores no empty text block and text-only stays a plain string", async () => {
   const { root, daemon } = await boot();
   try {
