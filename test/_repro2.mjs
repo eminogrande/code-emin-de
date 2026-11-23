@@ -36,7 +36,7 @@ async function boot(){
   const dom=new JSDOM(html,{url:base+"/",runScripts:"dangerously",pretendToBeVisual:true,virtualConsole:vc});
   const w=dom.window;const revoked=[];
   w.URL.createObjectURL=f=>"blob:"+(f.name||"x");w.URL.revokeObjectURL=u=>revoked.push(u);
-  w.fetch=async(u,o={})=>{const r=await fetch(base+String(u),{...o,headers:{...(o.headers||{}),Cookie:"swarm_s=x"}});if(String(u).startsWith("/api/chat")){const c=r.clone();console.log("CHAT",Date.now()%100000,r.status,await c.text());}return r;};
+  w.fetch=async(u,o={})=>{const r=await fetch(base+String(u),{...o,headers:{...(o.headers||{}),Cookie:"swarm_s=x"}});if(String(u).startsWith("/api/chat")){const b=JSON.parse(o.body||"{}");console.log("CHAT",r.status,"text=",JSON.stringify(b.text),"imgs=",(b.images||[]).length);}return r;};
   w.eval(cs);w.eval(is);w.eval([...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]).pop());
   w.document.dispatchEvent(new w.Event("DOMContentLoaded"));
   const _f=w.fetch;
