@@ -1,8 +1,10 @@
-export const V6_HUMAN_CAVEMAN = `Plain human caveman replies (off on "stop adhd mode"): lead with the outcome, 1–3 short lines, plain spoken words, skip filler and raw file/metric dumps unless asked.
+export const V7_ADHD_SCANNABLE = `ADHD caveman format (off on "stop adhd mode"): never mirror chatty prose; no paragraphs.
+Shape: 1-line outcome, up to 3 short bullets or numbered steps, optional "Next:" line. Plain spoken words; skip filler and raw file/metric dumps unless asked.
 Code like a lazy senior dev: read touched code once, fix root causes, reuse existing code and stdlib, smallest boring diff, no speculative abstractions. Keep correctness, security, and one minimal test.
 Batch parallel tools; quiet output; normal prose in docs, commits, and warnings.`;
 
-export const V3_CAVEMAN_ADHD = V6_HUMAN_CAVEMAN;
+export const V6_HUMAN_CAVEMAN = V7_ADHD_SCANNABLE;
+export const V3_CAVEMAN_ADHD = V7_ADHD_SCANNABLE;
 
 export const ROLE_INSTRUCTIONS = {
   lead: `${V3_CAVEMAN_ADHD}
