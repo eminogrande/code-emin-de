@@ -18,12 +18,12 @@ for (const line of envRaw.split("\n")) {
 }
 const HAS_LIVE_LLM = Boolean(process.env.LLMGATEWAY_API_KEY || process.env.ALLMODELS_API_KEY);
 
-test("1. V8 Telegraphic ADHD prompt floor intact (<=600-byte / ~146-token anchor)", async () => {
+test("1. V9 ADHD founder prompt floor intact (<=760-byte / ~182-token anchor)", async () => {
   const appendDisk = await readFile(new URL("../config/APPEND_SYSTEM.md", import.meta.url), "utf8");
-  assert.ok(Buffer.byteLength(appendDisk.trim(), "utf8") <= 600);
+  assert.ok(Buffer.byteLength(appendDisk.trim(), "utf8") <= 760);
   assert.equal(appendDisk.trim(), V3_CAVEMAN_ADHD);
-  assert.ok(V3_CAVEMAN_ADHD.startsWith('Ultra-terse caveman ADHD (off on "stop adhd mode").'));
-  assert.ok(V3_CAVEMAN_ADHD.includes("Max 3 numbered lines"));
+  assert.ok(V3_CAVEMAN_ADHD.startsWith('ADHD founder mode (off on "stop adhd mode"):'));
+  assert.ok(V3_CAVEMAN_ADHD.includes("max 3 numbered points"));
   assert.ok(V3_CAVEMAN_ADHD.includes("smallest boring diff"));
   assert.ok(V3_CAVEMAN_ADHD.includes("Keep correctness, security, 1 minimal test."));
 });
