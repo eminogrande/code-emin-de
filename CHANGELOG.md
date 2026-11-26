@@ -7,6 +7,16 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ## Unreleased
 
+### Features & Fixes (2026-11-26)
+
+- **OptMem optimization & cross-machine SSH/MCP memory sharing (`src/optmem.mjs`, `src/daemon.mjs`, `src/cli.mjs`, `src/swarm-mcp.mjs`, `test/optmem.test.mjs`, `test/swarm-mcp.test.mjs`):**
+  - WHY: smaller wake trees keep Message-1 context tiny and stop orchestrators from overthinking, while exposing OptMem over the SSH-only `0600` Unix socket + MCP lets local Mac and VPS orchestrators share one persistent memory on `code.emin.de`.
+  - Lowered default OptMem wake budget from `48` lines / `8000` chars to `24` lines / `3000` chars (`OPTMEM_WAKE_LINES` / `OPTMEM_WAKE_CHARS`).
+  - Upgraded `defaultCompressPair` to deduplicate and split the 275-char node budget evenly across merged halves; added file-stat `refreshVersion()` so external writes invalidate cached wake blocks immediately.
+  - Added Unix-socket routes (`GET /memory/wake`, `GET /memory/recall?pattern=...`, `POST /memory/note`) in `src/cli.mjs` and MCP tools (`memory_wake`, `memory_recall`, `memory_note`) in `src/swarm-mcp.mjs`.
+- **Upgraded global prompt floor to Round 6 winner `V6` (`config/APPEND_SYSTEM.md`, `src/prompts.mjs`, `test/swarm.test.mjs`):**
+  - Replaced `V3` (`485` chars) with `V6` (`450` chars / `~112` tokens, `P5_zero_overthink` from `open-frontier-swe-bench` Round 6: 146 valid runs across 6 frontier labs). Cuts `agy` robot-soup replies `-66%` vs V3 and `-91%` vs stock while maintaining highest SWE pass rate (`92%`) and `-20%` thinking tokens.
+
 ### Features & Fixes (2026-11-24)
 
 - **Parallel inbox web integration (`src/web.mjs`, `test/chat-client.test.mjs`):** Each composer send now carries a unique daemon-deduplicated `requestId`; Enter/submit always start independent work while explicit Ctrl/Cmd+S still steers. Poll cadence follows the actual Lead busy snapshot, not an immediately accepted parallel HTTP request, so rapid sends cannot accidentally steer. Image upload and accepted-send attachment cleanup are unchanged.

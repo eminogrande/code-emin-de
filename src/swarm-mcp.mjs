@@ -386,6 +386,46 @@ export function createSwarmMcpServer({ transport = createSshTransport() } = {}) 
     }
   });
 
+  server.registerTool("memory_wake", {
+    title: "Read OptMem wake summary",
+    description: "Read shared cross-session OptMem summary from code.emin.de.",
+    inputSchema: {},
+    annotations: readOnly,
+  }, async (_args, { signal }) => {
+    try {
+      return success(objectResponse(await request("GET", "/memory/wake", undefined, { signal }), "/memory/wake"));
+    } catch (error) {
+      return failure("memory_wake", error);
+    }
+  });
+
+  server.registerTool("memory_recall", {
+    title: "Search OptMem history",
+    description: "Regex search every raw OptMem memory recorded on code.emin.de.",
+    inputSchema: { pattern: z.string().trim().min(1).max(256) },
+    annotations: readOnly,
+  }, async ({ pattern }, { signal }) => {
+    try {
+      const path = `/memory/recall?pattern=${encodeURIComponent(pattern)}`;
+      return success(objectResponse(await request("GET", path, undefined, { signal }), "/memory/recall"));
+    } catch (error) {
+      return failure("memory_recall", error);
+    }
+  });
+
+  server.registerTool("memory_note", {
+    title: "Save OptMem memory",
+    description: "Record one permanent cross-session memory (<=275 chars) on code.emin.de.",
+    inputSchema: { note: z.string().trim().min(1).max(275) },
+    annotations: write,
+  }, async ({ note }, { signal }) => {
+    try {
+      return success(objectResponse(await request("POST", "/memory/note", { note }, { signal }), "/memory/note"));
+    } catch (error) {
+      return failure("memory_note", error);
+    }
+  });
+
   return server;
 }
 

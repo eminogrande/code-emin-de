@@ -165,6 +165,9 @@ test("1. real MCP initialize/list/call exposes exactly four annotated tools and 
 
   const listed = await client.listTools();
   assert.deepEqual(listed.tools.map((tool) => tool.name).sort(), [
+    "memory_note",
+    "memory_recall",
+    "memory_wake",
     "swarm_list",
     "swarm_prompt",
     "swarm_read",
@@ -706,4 +709,23 @@ test("21. importing the module does not start stdio or block the process", async
   ], { timeout: 5000 });
   assert.equal(stdout.trim(), "import-safe");
   assert.equal(stderr, "");
+});
+
+test("22. memory_wake, memory_recall, and memory_note route cleanly over SSH transport", async (t) => {
+  const { client, calls } = await mcpFixture(t, routes({
+    "GET /memory/wake": { wake: "#0 2026-11-26 [vps] ready", version: 2, wakeLines: 24 },
+    "GET /memory/recall?pattern=ready%20check": { pattern: "ready check", matches: "#0 ready check" },
+    "POST /memory/note": (body) => ({ recorded: body.note, napsDrained: 0, version: 3 }),
+  }));
+  const woke = await client.callTool({ name: "memory_wake", arguments: {} });
+  assert.match(woke.structuredContent.wake, /ready/);
+  const rec = await client.callTool({ name: "memory_recall", arguments: { pattern: "ready check" } });
+  assert.match(rec.structuredContent.matches, /ready check/);
+  const noted = await client.callTool({ name: "memory_note", arguments: { note: "save cross-session fact" } });
+  assert.equal(noted.structuredContent.recorded, "save cross-session fact");
+  assert.deepEqual(calls.map((c) => `${c.method} ${c.path}`), [
+    "GET /memory/wake",
+    "GET /memory/recall?pattern=ready%20check",
+    "POST /memory/note",
+  ]);
 });

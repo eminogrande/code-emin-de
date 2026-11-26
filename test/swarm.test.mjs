@@ -18,14 +18,14 @@ for (const line of envRaw.split("\n")) {
 }
 const HAS_LIVE_LLM = Boolean(process.env.LLMGATEWAY_API_KEY || process.env.ALLMODELS_API_KEY);
 
-test("1. V3 Caveman + ADHD prompt floor intact (exact 486-byte / 116-token anchor)", async () => {
+test("1. V6 Human Caveman prompt floor intact (<=460-byte / ~112-token anchor)", async () => {
   const appendDisk = await readFile(new URL("../config/APPEND_SYSTEM.md", import.meta.url), "utf8");
-  assert.equal(Buffer.byteLength(appendDisk, "utf8"), 486);
+  assert.ok(Buffer.byteLength(appendDisk.trim(), "utf8") <= 460);
   assert.equal(appendDisk.trim(), V3_CAVEMAN_ADHD);
-  assert.ok(V3_CAVEMAN_ADHD.startsWith('CAVEMAN + ADHD MODE. Active until "stop adhd mode".'));
-  assert.ok(V3_CAVEMAN_ADHD.includes("Code like caveman: reuse first."));
-  assert.ok(V3_CAVEMAN_ADHD.includes("obey requested format"));
-  assert.ok(V3_CAVEMAN_ADHD.includes("exact syntax, negations, tests and security"));
+  assert.ok(V3_CAVEMAN_ADHD.startsWith('Plain human caveman replies (off on "stop adhd mode"):'));
+  assert.ok(V3_CAVEMAN_ADHD.includes("Code like a lazy senior dev:"));
+  assert.ok(V3_CAVEMAN_ADHD.includes("smallest boring diff"));
+  assert.ok(V3_CAVEMAN_ADHD.includes("Keep correctness, security, and one minimal test."));
 });
 
 test("1b. Lead delegation mandate: always delegate, never self-implement, no nesting", async () => {

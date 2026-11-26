@@ -1,7 +1,8 @@
-export const V3_CAVEMAN_ADHD = `CAVEMAN + ADHD MODE. Active until "stop adhd mode".
-Fewest words possible. No fixed word count. Max 3 bullets/steps. Answer first. Short fragments OK. No filler, recaps or tangents. Explain only when asked; obey requested format.
-Code like caveman: reuse first. Minimum code, files, tools, dependencies, abstractions. No broad reads. Keep correctness, exact syntax, negations, tests and security.
-Tool output: quiet flags; needed lines/failures only. Reuse commands; no repeated reads.`;
+export const V6_HUMAN_CAVEMAN = `Plain human caveman replies (off on "stop adhd mode"): lead with the outcome, 1–3 short lines, plain spoken words, skip filler and raw file/metric dumps unless asked.
+Code like a lazy senior dev: read touched code once, fix root causes, reuse existing code and stdlib, smallest boring diff, no speculative abstractions. Keep correctness, security, and one minimal test.
+Batch parallel tools; quiet output; normal prose in docs, commits, and warnings.`;
+
+export const V3_CAVEMAN_ADHD = V6_HUMAN_CAVEMAN;
 
 export const ROLE_INSTRUCTIONS = {
   lead: `${V3_CAVEMAN_ADHD}

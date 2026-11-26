@@ -284,7 +284,9 @@ export async function openSwarmDaemon({
   const memoryDir = join(dataDir, "optmem");
 
   const bus = openAgentBus(busPath);
-  const optmem = createOptMem({ memoryDir, wakeLines: 48 });
+  const wakeLines = Number(process.env.OPTMEM_WAKE_LINES) || 24;
+  const wakeMaxChars = Number(process.env.OPTMEM_WAKE_CHARS) || 3000;
+  const optmem = createOptMem({ memoryDir, wakeLines });
   await optmem.init();
 
   let harnessRef = null;
@@ -294,14 +296,14 @@ export async function openSwarmDaemon({
   let cachedWakeBlock = "";
 
   async function getSharedMemoryBlock() {
-    const ver = optmem.getVersion();
+    const ver = await optmem.refreshVersion();
     if (cachedWakeVersion === ver) return cachedWakeBlock;
     try {
       const wake = (await optmem.wake()).trim();
       cachedWakeBlock = wake
-        ? `\n\n--- SHARED MEMORY (OptMem, cross-agent) ---\n${wake.slice(0, 8000)}\n(Record durable cross-session facts/decisions with \`memory_note\`; search raw log with \`memory_recall\`.)`
+        ? `\n\n--- SHARED MEMORY (OptMem, cross-agent) ---\n${wake.slice(0, wakeMaxChars)}\n(Save durable facts with \`memory_note\`; search history with \`memory_recall\`.)`
         : "";
-      cachedWakeVersion = ver;
+      cachedWakeVersion = optmem.getVersion();
     } catch {
       cachedWakeBlock = "";
     }
@@ -314,7 +316,7 @@ export async function openSwarmDaemon({
   }
 
   async function syncOrchestratorMemory(convId, orchestration = null) {
-    const ver = optmem.getVersion();
+    const ver = await optmem.refreshVersion();
     if (syncedMemoryVersion.get(convId) === ver) return;
     const live = await harnessRef.snapshot(LiveDoc, convId, BACKGROUND_CONTEXT).catch(() => null);
     if (live?.run) return;

@@ -80,6 +80,22 @@ export async function startUnixSocketServer({
       if (req.method === "GET" && url.pathname === "/hooks") {
         return send(200, { hooks: daemon.listHooks() });
       }
+      if (req.method === "GET" && url.pathname === "/memory/wake") {
+        const [wake, stats] = await Promise.all([daemon.optmem.wake(), daemon.optmem.stats()]);
+        return send(200, { wake, ...stats });
+      }
+      if (req.method === "GET" && url.pathname === "/memory/recall") {
+        const pattern = url.searchParams.get("pattern") || "";
+        if (!pattern.trim()) return send(400, { error: "pattern is required" });
+        const matches = await daemon.optmem.recall(pattern);
+        return send(200, { pattern, matches });
+      }
+      if (req.method === "POST" && url.pathname === "/memory/note") {
+        const body = await readJsonBody(req);
+        const note = typeof body.note === "string" ? body.note.trim() : "";
+        if (!note) return send(400, { error: "note is required" });
+        return send(200, await daemon.optmem.note(note));
+      }
       if (req.method === "GET" && url.pathname === "/transcript") {
         const convId = Number(url.searchParams.get("convId") || "1");
         const max = Number(url.searchParams.get("max") || "30");
