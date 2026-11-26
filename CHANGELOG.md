@@ -15,7 +15,7 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
   - Upgraded `defaultCompressPair` to deduplicate and split the 275-char node budget evenly across merged halves; added file-stat `refreshVersion()` so external writes invalidate cached wake blocks immediately.
   - Added Unix-socket routes (`GET /memory/wake`, `GET /memory/recall?pattern=...`, `POST /memory/note`) in `src/cli.mjs` and MCP tools (`memory_wake`, `memory_recall`, `memory_note`) in `src/swarm-mcp.mjs`.
 - **Upgraded global prompt floor to Round 6 `V7` scannable ADHD format (`config/APPEND_SYSTEM.md`, `src/prompts.mjs`, `test/swarm.test.mjs`):**
-  - Enforces `1-line outcome + up to 3 short bullets/steps + optional Next: line` without mirroring chatty prose (`531` chars / `~133` tokens; `3/3` H2 pass, `42.7s` wall, zero overthinking spike).
+  - Enforces `1-line outcome + up to 3 short numbered lines (tiny numbered table only to compare columns) + optional Next: line` without mirroring chatty prose (`536` chars / `~134` tokens; `3/3` H2 pass, `42.7s` wall, zero overthinking spike).
 
 ### Features & Fixes (2026-11-24)
 
