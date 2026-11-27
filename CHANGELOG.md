@@ -14,8 +14,8 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
   - Lowered default OptMem wake budget from `48` lines / `8000` chars to `24` lines / `3000` chars (`OPTMEM_WAKE_LINES` / `OPTMEM_WAKE_CHARS`).
   - Upgraded `defaultCompressPair` to deduplicate and split the 275-char node budget evenly across merged halves; added file-stat `refreshVersion()` so external writes invalidate cached wake blocks immediately.
   - Added Unix-socket routes (`GET /memory/wake`, `GET /memory/recall?pattern=...`, `POST /memory/note`) in `src/cli.mjs` and MCP tools (`memory_wake`, `memory_recall`, `memory_note`) in `src/swarm-mcp.mjs`.
-- **Upgraded global prompt floor to Round 9 `V10` atomic founder format (`config/APPEND_SYSTEM.md`, `src/prompts.mjs`, `test/swarm.test.mjs`):**
-  - Replaces `max 3` cap with atomic numbered points (usually 3–5 lines or one per open question), bans comma-chained items, skips edit recaps already in diffs/docs, adds `My pick:` recommendations, and enforces blank lines before lists and `Next:` (`965` chars / `~241` tokens; Round 9 27-run `agy` bakeoff: `3/3` H2 pass, `0.0` pills, `6/6` picks, `-10%` total tokens vs `V9`).
+- **Upgraded global prompt floor to Round 10 `V11` visual caveman + numbered tables (`config/APPEND_SYSTEM.md`, `src/prompts.mjs`, `test/swarm.test.mjs`):**
+  - Restores true caveman fragments (`0` articles/filler on Gemini 4), adds bold visual anchors, and prefers one tiny numbered table (`# | Item | Status or Pick`) for open calls, comparisons, or 3+ items while keeping `0.0` code pills, parens, and semicolons (`1,158` chars / `~289` tokens; `3/3` H2 pass, `6/6` tables).
 
 ### Features & Fixes (2026-11-24)
 
