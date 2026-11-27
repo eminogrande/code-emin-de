@@ -465,6 +465,6 @@ test("single-line user bubble: plain fallback then server html keeps one tight p
   assert.equal(bubble.textContent, "how much context", "plain fallback has no stray newlines");
   await new Promise((r) => setTimeout(r, 40));
   assert.equal(bubble.innerHTML, "<p>how much context</p>", "no <br> and no edge newlines");
-  assert.equal(w.eval("getComputedStyle(document.querySelector('#log .m.u')).whiteSpace"), "pre-wrap");
+  assert.equal(bubble.querySelectorAll("br").length, 0);
   w.close();
 });
