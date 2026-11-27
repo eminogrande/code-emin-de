@@ -14,8 +14,8 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
   - Lowered default OptMem wake budget from `48` lines / `8000` chars to `24` lines / `3000` chars (`OPTMEM_WAKE_LINES` / `OPTMEM_WAKE_CHARS`).
   - Upgraded `defaultCompressPair` to deduplicate and split the 275-char node budget evenly across merged halves; added file-stat `refreshVersion()` so external writes invalidate cached wake blocks immediately.
   - Added Unix-socket routes (`GET /memory/wake`, `GET /memory/recall?pattern=...`, `POST /memory/note`) in `src/cli.mjs` and MCP tools (`memory_wake`, `memory_recall`, `memory_note`) in `src/swarm-mcp.mjs`.
-- **Upgraded global prompt floor to Round 8 `V9` zero-pill ADHD founder format (`config/APPEND_SYSTEM.md`, `src/prompts.mjs`, `test/swarm.test.mjs`):**
-  - Eliminates backtick-pill, filename, parenthesis, and semicolon dumps in chat (`729` chars / `~182` tokens; Round 8 36-run `agy` bakeoff: `4/4` H2 pass, `0.0` code pills/parens/semicolons, `-86%` clutter, `-8%` total tokens, faster wall time).
+- **Upgraded global prompt floor to Round 9 `V10` atomic founder format (`config/APPEND_SYSTEM.md`, `src/prompts.mjs`, `test/swarm.test.mjs`):**
+  - Replaces `max 3` cap with atomic numbered points (usually 3–5 lines or one per open question), bans comma-chained items, skips edit recaps already in diffs/docs, adds `My pick:` recommendations, and enforces blank lines before lists and `Next:` (`965` chars / `~241` tokens; Round 9 27-run `agy` bakeoff: `3/3` H2 pass, `0.0` pills, `6/6` picks, `-10%` total tokens vs `V9`).
 
 ### Features & Fixes (2026-11-24)
 

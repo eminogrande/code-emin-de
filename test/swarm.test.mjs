@@ -18,12 +18,12 @@ for (const line of envRaw.split("\n")) {
 }
 const HAS_LIVE_LLM = Boolean(process.env.LLMGATEWAY_API_KEY || process.env.ALLMODELS_API_KEY);
 
-test("1. V9 ADHD founder prompt floor intact (<=760-byte / ~182-token anchor)", async () => {
+test("1. V10 Atomic Founder prompt floor intact (<=1000-byte / ~241-token anchor)", async () => {
   const appendDisk = await readFile(new URL("../config/APPEND_SYSTEM.md", import.meta.url), "utf8");
-  assert.ok(Buffer.byteLength(appendDisk.trim(), "utf8") <= 760);
+  assert.ok(Buffer.byteLength(appendDisk.trim(), "utf8") <= 1000);
   assert.equal(appendDisk.trim(), V3_CAVEMAN_ADHD);
   assert.ok(V3_CAVEMAN_ADHD.startsWith('ADHD founder mode (off on "stop adhd mode"):'));
-  assert.ok(V3_CAVEMAN_ADHD.includes("max 3 numbered points"));
+  assert.ok(V3_CAVEMAN_ADHD.includes("One super short atomic point per numbered line"));
   assert.ok(V3_CAVEMAN_ADHD.includes("smallest boring diff"));
   assert.ok(V3_CAVEMAN_ADHD.includes("Keep correctness, security, 1 minimal test."));
 });
