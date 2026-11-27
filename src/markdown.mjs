@@ -108,10 +108,12 @@ marked.setOptions({ gfm: true, breaks: false, async: false });
 const BLOCK = "p|div|pre|ul|ol|li|blockquote|h[1-6]|table|thead|tbody|tr|th|td|section|hr|br";
 const AFTER_BLOCK = new RegExp(`(<\\/(?:${BLOCK})>)[ \\t]*\\n+`, "gi");
 const BEFORE_BLOCK = new RegExp(`\\n+[ \\t]*(<(?:${BLOCK})\\b)`, "gi");
+const AFTER_VOID = /(<(?:br|hr)\s*\/?>)[ \t]*\n+/gi;
 
 export function compactBreaks(html = "") {
   return String(html)
     .replace(AFTER_BLOCK, "$1")
+    .replace(AFTER_VOID, "$1")
     .replace(BEFORE_BLOCK, "$1")
     .replace(/^[ \t]*\n+/, "")
     .replace(/\n+[ \t]*$/, "");

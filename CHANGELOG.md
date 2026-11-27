@@ -7,6 +7,14 @@ Standard: every code/config/ops turn updates `CHANGELOG.md`, keeps `README.md` i
 
 ## Unreleased
 
+### Fixes (2026-11-27)
+
+- **Tight chat bubbles, no runaway `<br>`/blank lines (`src/markdown.mjs`, `src/web.mjs`):**
+  - WHY: `.m.u{white-space:pre-wrap}` turned literal inter-tag/trailing `\n` from `marked` (`<p>x</p>\n`, `<br>\n`, `<hr>\n`, `r.code` trailing `\n`) into visible blank lines on top of browser-default `1em` `<p>` margins that user bubbles never reset.
+  - Added exported `compactBreaks()` in `src/markdown.mjs` to strip newlines strictly at block-tag and void-tag (`<br>`, `<hr>`) boundaries while keeping in-paragraph newlines and `<pre>/<code>` whitespace byte-exact (DOMPurify allowlist unchanged).
+  - Added compact `.45rem` block margins on `.m.u` followed by `.m.u>:first-child{margin-top:0}` and `.m.u>:last-child{margin-bottom:0}` (ordered after `.m.u .cb/.mmd/.table-scroll` so equal-specificity edge resets always win).
+  - Tests: `test/markdown.test.mjs`, `test/ui-theme.test.mjs`, `test/chat-client.test.mjs` (including hard-break `<br>`/`<hr>` and timer-safe JSDOM single-line bubble assertions).
+
 ### Features & Fixes (2026-11-26)
 
 - **OptMem optimization & cross-machine SSH/MCP memory sharing (`src/optmem.mjs`, `src/daemon.mjs`, `src/cli.mjs`, `src/swarm-mcp.mjs`, `test/optmem.test.mjs`, `test/swarm-mcp.test.mjs`):**

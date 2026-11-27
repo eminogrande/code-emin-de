@@ -113,6 +113,9 @@ test("inter-block newlines are dropped but in-paragraph newlines survive", () =>
   // blank line -> two paragraphs, no newline between the tags
   assert.equal(renderMarkdown("a\n\nb"), "<p>a</p><p>b</p>");
   assert.equal(renderMarkdown("a\n\nb").includes("<br"), false);
+  // void tags (<br>, <hr>) must not keep a trailing \n that pre-wrap doubles
+  assert.equal(renderMarkdown("a  \nb"), "<p>a<br>b</p>");
+  assert.equal(renderMarkdown("a\n\n---\n\nb"), "<p>a</p><hr><p>b</p>");
 });
 
 test("code blocks keep exact whitespace and no trailing newline", () => {
