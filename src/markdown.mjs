@@ -102,6 +102,21 @@ const renderer = makeRenderer();
 // adding <br>, which would render every ordinary line break twice.
 marked.setOptions({ gfm: true, breaks: false, async: false });
 
+// User bubbles are white-space:pre-wrap, so a literal "\n" the renderer puts *between*
+// block tags/paragraphs is a visible blank line on top of the block's own margins.
+// Newlines that sit inside a paragraph stay untouched (that is the user's own line break).
+const BLOCK = "p|div|pre|ul|ol|li|blockquote|h[1-6]|table|thead|tbody|tr|th|td|section|hr|br";
+const AFTER_BLOCK = new RegExp(`(<\\/(?:${BLOCK})>)[ \\t]*\\n+`, "gi");
+const BEFORE_BLOCK = new RegExp(`\\n+[ \\t]*(<(?:${BLOCK})\\b)`, "gi");
+
+export function compactBreaks(html = "") {
+  return String(html)
+    .replace(AFTER_BLOCK, "$1")
+    .replace(BEFORE_BLOCK, "$1")
+    .replace(/^[ \t]*\n+/, "")
+    .replace(/\n+[ \t]*$/, "");
+}
+
 export function renderMarkdown(src) {
   if (!src) return "";
   let html;
@@ -110,5 +125,5 @@ export function renderMarkdown(src) {
   } catch {
     return `<p>${esc(src)}</p>`;
   }
-  return sanitize(html);
+  return compactBreaks(sanitize(html));
 }

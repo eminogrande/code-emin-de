@@ -443,3 +443,28 @@ test("collapsible Chain of Thought (CoT) renders live and on completed chat turn
   assert.match(wcot.querySelector(".cot-think").textContent, /Checking open ports/);
   w.close();
 });
+
+test("single-line user bubble: plain fallback then server html keeps one tight paragraph", async () => {
+  const { w } = boot([]);
+  await flush();
+  const origFetch = w.fetch;
+  w.fetch = (url, init) => {
+    const s = String(url);
+    if (s === "/api/render") {
+      return new Promise((res) =>
+        setTimeout(() => res({ ok: true, status: 200, json: async () => ({ html: "<p>how much context</p>" }) }), 20),
+      );
+    }
+    if (s === "/api/chat") return new Promise((res) => setTimeout(() => res({ ok: true, status: 200, json: async () => ({ text: "ok", html: "" }) }), 200));
+    return origFetch(url, init);
+  };
+  const q = w.document.getElementById("q");
+  q.value = "how much context";
+  w.eval("send(false)");
+  const bubble = w.document.querySelector("#log .m.u");
+  assert.equal(bubble.textContent, "how much context", "plain fallback has no stray newlines");
+  await new Promise((r) => setTimeout(r, 40));
+  assert.equal(bubble.innerHTML, "<p>how much context</p>", "no <br> and no edge newlines");
+  assert.equal(w.eval("getComputedStyle(document.querySelector('#log .m.u')).whiteSpace"), "pre-wrap");
+  w.close();
+});

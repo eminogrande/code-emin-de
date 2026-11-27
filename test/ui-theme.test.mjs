@@ -98,3 +98,12 @@ test("native copy button is plain local markup", () => {
   assert.equal(btn.textContent, "Copy");
   assert.equal(btn.getAttribute("aria-label"), "Copy");
 });
+
+test("user bubble resets paragraph margins and keeps pre-wrap without forced br", () => {
+  const style = doc().querySelector("style").textContent;
+  assert.match(style, /\.m\.u\{white-space:pre-wrap/);
+  assert.match(style, /\.m\.u>:first-child\{margin-top:0\}/);
+  assert.match(style, /\.m\.u>:last-child\{margin-bottom:0\}/);
+  assert.match(style, /\.m\.u p,[^{]*\{margin:\.45rem 0\}/);
+  assert.doesNotMatch(style, /\.m\.u[^{]*\{[^}]*white-space:normal/);
+});

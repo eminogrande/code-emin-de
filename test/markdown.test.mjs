@@ -99,3 +99,41 @@ test("failure/empty inputs render safely", () => {
   assert.equal(renderMarkdown(""), "");
   assert.match(renderMarkdown("plain < text"), /plain &lt; text/);
 });
+
+test("single-line user bubble emits one paragraph, no br, no edge newlines", () => {
+  const html = renderMarkdown("how much context you have left");
+  assert.equal(html, "<p>how much context you have left</p>");
+  assert.doesNotMatch(html, /<br/);
+  assert.doesNotMatch(html, /^\n|\n$/);
+});
+
+test("inter-block newlines are dropped but in-paragraph newlines survive", () => {
+  // single \n stays a raw newline (pre-wrap renders it) -> never doubled by CSS margins
+  assert.equal(renderMarkdown("a\nb"), "<p>a\nb</p>");
+  // blank line -> two paragraphs, no newline between the tags
+  assert.equal(renderMarkdown("a\n\nb"), "<p>a</p><p>b</p>");
+  assert.equal(renderMarkdown("a\n\nb").includes("<br"), false);
+});
+
+test("code blocks keep exact whitespace and no trailing newline", () => {
+  const src = "```js\nlet a  =  1\n\n  indented\n```";
+  const html = renderMarkdown(src);
+  const { window } = new JSDOM(`<div class="m u">${html}</div>`);
+  assert.equal(window.document.querySelector("code").textContent, "let a  =  1\n\n  indented");
+  assert.doesNotMatch(html, /\n$/);
+});
+
+test("stripped prefix tags leave no leading blank line", () => {
+  const clean = "[ROUTER_HINT: fanout_parallel — x]\nhello".replace(/^\[ROUTER_HINT:[^\]]+\]\n/, "");
+  assert.equal(renderMarkdown(clean), "<p>hello</p>");
+  assert.equal(renderMarkdown("[GIT_CONTEXT: repo=x | branch=y]\nhello"), "<p>[GIT_CONTEXT: repo=x | branch=y]\nhello</p>");
+});
+
+test("assistant blocks stay compact with no spurious br", () => {
+  const html = renderMarkdown("para\n\n- a\n- b\n\n> q\n\n```js\nx\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |");
+  assert.doesNotMatch(html, /<br/);
+  assert.doesNotMatch(html, />\n/);
+  assert.match(html, /<ul><li>a<\/li>/);
+  assert.match(html, /<blockquote><p>q<\/p><\/blockquote>/);
+  assert.match(html, /<pre><code class="language-js">x<\/code><\/pre>/);
+});

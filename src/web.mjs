@@ -240,6 +240,10 @@ body{display:flex;flex-direction:column;max-width:48rem;margin:0 auto;padding:0 
 .m::before{display:block;font-size:.68rem;font-weight:650;letter-spacing:.06em;text-transform:uppercase;margin-bottom:.2rem}
 .m.u{white-space:pre-wrap;background:var(--paper-2);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:.55rem;padding:.55rem .75rem;max-width:88%;align-self:flex-end}
 .m.u::before{content:"You";color:var(--heading)}
+.m.u>:first-child{margin-top:0}
+.m.u>:last-child{margin-bottom:0}
+.m.u p,.m.u ul,.m.u ol,.m.u blockquote,.m.u pre,.m.u .cb,.m.u .mmd,.m.u .table-scroll{margin:.45rem 0}
+.m.u li{margin:.15rem 0}
 .m.a::before{content:"Kimi";color:var(--muted)}
 .m.a.err::before{content:"System"}
 .a{color:var(--heading)}
